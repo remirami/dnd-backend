@@ -1,0 +1,215 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>D&D Monster Import</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            max-width: 800px;
+            margin: 0 auto;
+            padding: 20px;
+            background-color: #f5f5f5;
+        }
+
+        .container {
+            background: white;
+            padding: 30px;
+            border-radius: 10px;
+            box-shadow: 0 2px 10px rgba(0, 0, 0, 0.1);
+        }
+
+        h1 {
+            color: #2c3e50;
+            text-align: center;
+            margin-bottom: 30px;
+        }
+
+        .import-section {
+            margin-bottom: 30px;
+            padding: 20px;
+            border: 1px solid #ddd;
+            border-radius: 5px;
+            background-color: #f9f9f9;
+        }
+
+        .import-section h3 {
+            margin-top: 0;
+            color: #34495e;
+        }
+
+        .form-group {
+            margin-bottom: 15px;
+        }
+
+        label {
+            display: block;
+            margin-bottom: 5px;
+            font-weight: bold;
+        }
+
+        input[type="file"],
+        input[type="checkbox"] {
+            margin-bottom: 10px;
+        }
+
+        button {
+            background-color: #3498db;
+            color: white;
+            padding: 10px 20px;
+            border: none;
+            border-radius: 5px;
+            cursor: pointer;
+            font-size: 16px;
+        }
+
+        button:hover {
+            background-color: #2980b9;
+        }
+
+        .template-links {
+            margin-top: 20px;
+            text-align: center;
+        }
+
+        .template-links a {
+            color: #3498db;
+            text-decoration: none;
+            margin: 0 10px;
+        }
+
+        .template-links a:hover {
+            text-decoration: underline;
+        }
+
+        .status {
+            margin-top: 20px;
+            padding: 10px;
+            border-radius: 5px;
+            display: none;
+        }
+
+        .status.success {
+            background-color: #d4edda;
+            color: #155724;
+            border: 1px solid #c3e6cb;
+        }
+
+        .status.error {
+            background-color: #f8d7da;
+            color: #721c24;
+            border: 1px solid #f5c6cb;
+        }
+    </style>
+</head>
+
+<body>
+    <div class="container">
+        <h1>🎲 D&D Monster Import System</h1>
+
+        <div class="import-section">
+            <h3>📄 Import from JSON File</h3>
+            <form id="jsonForm" enctype="multipart/form-data">
+                <div class="form-group">
+                    <label for="jsonFile">Select JSON file:</label>
+                    <input type="file" id="jsonFile" name="file" accept=".json" required>
+                </div>
+                <div class="form-group">
+                    <label>
+                        <input type="checkbox" name="update_existing" value="true">
+                        Update existing monsters
+                    </label>
+                </div>
+                <button type="submit">Import JSON</button>
+            </form>
+        </div>
+
+        <div class="import-section">
+            <h3>📊 Import from CSV File</h3>
+            <form id="csvForm" enctype="multipart/form-data">
+                <div class="form-group">
+                    <label for="csvFile">Select CSV file:</label>
+                    <input type="file" id="csvFile" name="file" accept=".csv" required>
+                </div>
+                <div class="form-group">
+                    <label>
+                        <input type="checkbox" name="update_existing" value="true">
+                        Update existing monsters
+                    </label>
+                </div>
+                <button type="submit">Import CSV</button>
+            </form>
+        </div>
+
+        <div class="import-section">
+            <h3>📚 Import Official SRD Monsters</h3>
+            <p>Import monsters from the official D&D 5e System Reference Document.</p>
+            <form id="srdForm">
+                <div class="form-group">
+                    <label>
+                        <input type="checkbox" name="update_existing" value="true">
+                        Update existing monsters
+                    </label>
+                </div>
+                <button type="submit">Import SRD Monsters</button>
+            </form>
+        </div>
+
+        <div class="template-links">
+            <h3>📋 Download Templates</h3>
+            <a href="/api/enemies/export_template/?format=json" target="_blank">JSON Template</a>
+            <a href="/api/enemies/export_template/?format=csv" target="_blank">CSV Template</a>
+        </div>
+
+        <div id="status" class="status"></div>
+    </div>
+
+    <script>
+        function showStatus(message, type) {
+            const status = document.getElementById('status');
+            status.textContent = message;
+            status.className = `status ${type}`;
+            status.style.display = 'block';
+        }
+
+        function handleFormSubmit(form, endpoint) {
+            form.addEventListener('submit', async (e) => {
+                e.preventDefault();
+
+                const formData = new FormData(form);
+                const updateExisting = form.querySelector('input[name="update_existing"]').checked;
+
+                try {
+                    showStatus('Importing monsters...', 'success');
+
+                    const response = await fetch(`/api/enemies/${endpoint}/`, {
+                        method: 'POST',
+                        body: formData,
+                        headers: {
+                            'X-CSRFToken': document.querySelector('[name=csrfmiddlewaretoken]')?.value || ''
+                        }
+                    });
+
+                    const result = await response.json();
+
+                    if (response.ok) {
+                        showStatus(result.message || 'Import completed successfully!', 'success');
+                    } else {
+                        showStatus(result.error || 'Import failed', 'error');
+                    }
+                } catch (error) {
+                    showStatus(`Error: ${error.message}`, 'error');
+                }
+            });
+        }
+
+        // Handle form submissions
+        handleFormSubmit(document.getElementById('jsonForm'), 'import_json');
+        handleFormSubmit(document.getElementById('csvForm'), 'import_csv');
+        handleFormSubmit(document.getElementById('srdForm'), 'import_srd');
+    </script>
+</body>
+
+</html>
