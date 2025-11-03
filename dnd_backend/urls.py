@@ -18,9 +18,19 @@ from django.contrib import admin
 from django.urls import path, include
 from rest_framework.routers import DefaultRouter
 from bestiary.views import EnemyViewSet, import_monsters_view
+from rest_framework import routers
+from encounters.views import EncounterViewSet, EncounterEnemyViewSet
+
+router = routers.DefaultRouter()
+router.register(r'encounters', EncounterViewSet)
+router.register(r'encounter-enemies', EncounterEnemyViewSet)
+
 
 router = DefaultRouter()
 router.register(r'enemies', EnemyViewSet, basename='enemy')
+# Encounter system routes
+router.register(r'encounters', EncounterViewSet, basename='encounter')
+router.register(r'encounter-enemies', EncounterEnemyViewSet, basename='encounter-enemy')
 
 urlpatterns = [
     path('admin/', admin.site.urls),
