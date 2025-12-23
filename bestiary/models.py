@@ -42,8 +42,8 @@ class Enemy(models.Model):
     ]
     
     name = models.CharField(max_length=100)
-    hp = models.IntegerField()
-    ac = models.IntegerField()
+    hp = models.IntegerField(blank=True, null=True)
+    ac = models.IntegerField(blank=True, null=True)
     challenge_rating = models.CharField(max_length=10, blank=True, null=True)
     
     # Creature Properties

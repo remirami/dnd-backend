@@ -80,6 +80,7 @@ class EnemyTreasureInline(admin.TabularInline):
 
 @admin.register(Enemy)
 class EnemyAdmin(admin.ModelAdmin):
+    fields = ('name', 'challenge_rating', 'size', 'creature_type', 'alignment')
     inlines = [
         EnemyStatsInline, EnemyAttackInline, EnemyAbilityInline, EnemySpellInline, 
         EnemyResistanceInline, EnemyLanguageInline, EnemyConditionImmunityInline,
