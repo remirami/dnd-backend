@@ -1,3 +1,316 @@
 from django.db import models
+from bestiary.models import Language, DamageType
 
-# Create your models here.
+
+class CharacterClass(models.Model):
+    """D&D 5e character classes"""
+    CLASS_CHOICES = [
+        ('barbarian', 'Barbarian'),
+        ('bard', 'Bard'),
+        ('cleric', 'Cleric'),
+        ('druid', 'Druid'),
+        ('fighter', 'Fighter'),
+        ('monk', 'Monk'),
+        ('paladin', 'Paladin'),
+        ('ranger', 'Ranger'),
+        ('rogue', 'Rogue'),
+        ('sorcerer', 'Sorcerer'),
+        ('warlock', 'Warlock'),
+        ('wizard', 'Wizard'),
+    ]
+    
+    name = models.CharField(max_length=20, choices=CLASS_CHOICES, unique=True)
+    hit_dice = models.CharField(max_length=10)  # e.g. "d8", "d10"
+    primary_ability = models.CharField(max_length=3)  # STR, DEX, CON, INT, WIS, CHA
+    saving_throw_proficiencies = models.CharField(max_length=10)  # e.g. "STR,CON"
+    description = models.TextField(blank=True, null=True)
+    
+    def __str__(self):
+        return self.get_name_display()
+
+
+class CharacterRace(models.Model):
+    """D&D 5e character races"""
+    RACE_CHOICES = [
+        ('human', 'Human'),
+        ('elf', 'Elf'),
+        ('dwarf', 'Dwarf'),
+        ('halfling', 'Halfling'),
+        ('dragonborn', 'Dragonborn'),
+        ('gnome', 'Gnome'),
+        ('half-elf', 'Half-Elf'),
+        ('half-orc', 'Half-Orc'),
+        ('tiefling', 'Tiefling'),
+    ]
+    
+    name = models.CharField(max_length=20, choices=RACE_CHOICES, unique=True)
+    size = models.CharField(max_length=1, choices=[
+        ('S', 'Small'),
+        ('M', 'Medium'),
+    ], default='M')
+    speed = models.IntegerField(default=30)  # Base speed in feet
+    ability_score_increases = models.CharField(max_length=50, blank=True)  # e.g. "STR+1,DEX+1"
+    description = models.TextField(blank=True, null=True)
+    
+    def __str__(self):
+        return self.get_name_display()
+
+
+class CharacterBackground(models.Model):
+    """D&D 5e character backgrounds"""
+    BACKGROUND_CHOICES = [
+        ('acolyte', 'Acolyte'),
+        ('criminal', 'Criminal'),
+        ('folk-hero', 'Folk Hero'),
+        ('noble', 'Noble'),
+        ('sage', 'Sage'),
+        ('soldier', 'Soldier'),
+        ('hermit', 'Hermit'),
+        ('outlander', 'Outlander'),
+        ('entertainer', 'Entertainer'),
+        ('guild-artisan', 'Guild Artisan'),
+        ('charlatan', 'Charlatan'),
+        ('sailor', 'Sailor'),
+    ]
+    
+    name = models.CharField(max_length=20, choices=BACKGROUND_CHOICES, unique=True)
+    skill_proficiencies = models.CharField(max_length=100, blank=True)  # e.g. "Insight,Religion"
+    tool_proficiencies = models.CharField(max_length=100, blank=True)  # e.g. "Disguise Kit,Thieves' Tools"
+    languages = models.IntegerField(default=0)  # Number of additional languages
+    description = models.TextField(blank=True, null=True)
+    
+    def __str__(self):
+        return self.get_name_display()
+
+
+class Character(models.Model):
+    """Player character"""
+    SIZE_CHOICES = [
+        ('S', 'Small'),
+        ('M', 'Medium'),
+    ]
+    
+    ALIGNMENT_CHOICES = [
+        ('LG', 'Lawful Good'),
+        ('NG', 'Neutral Good'),
+        ('CG', 'Chaotic Good'),
+        ('LN', 'Lawful Neutral'),
+        ('N', 'Neutral'),
+        ('CN', 'Chaotic Neutral'),
+        ('LE', 'Lawful Evil'),
+        ('NE', 'Neutral Evil'),
+        ('CE', 'Chaotic Evil'),
+        ('U', 'Unaligned'),
+    ]
+    
+    name = models.CharField(max_length=100)
+    level = models.IntegerField(default=1)
+    character_class = models.ForeignKey(CharacterClass, on_delete=models.PROTECT, related_name='characters')
+    race = models.ForeignKey(CharacterRace, on_delete=models.PROTECT, related_name='characters')
+    background = models.ForeignKey(CharacterBackground, on_delete=models.PROTECT, related_name='characters', blank=True, null=True)
+    
+    # Basic properties
+    size = models.CharField(max_length=1, choices=SIZE_CHOICES, default='M')
+    alignment = models.CharField(max_length=2, choices=ALIGNMENT_CHOICES, default='N')
+    
+    # Experience points
+    experience_points = models.IntegerField(default=0)
+    
+    # Character description
+    player_name = models.CharField(max_length=100, blank=True)
+    description = models.TextField(blank=True, null=True)
+    backstory = models.TextField(blank=True, null=True)
+    
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+    
+    def __str__(self):
+        return f"{self.name} (Level {self.level} {self.character_class.get_name_display()})"
+    
+    @property
+    def proficiency_bonus(self):
+        """Calculate proficiency bonus based on level"""
+        return ((self.level - 1) // 4) + 2
+
+
+class CharacterStats(models.Model):
+    """Comprehensive D&D 5e stat block for player characters"""
+    character = models.OneToOneField(Character, on_delete=models.CASCADE, related_name="stats")
+    
+    # Core Stats (ability scores)
+    strength = models.IntegerField(default=10)
+    dexterity = models.IntegerField(default=10)
+    constitution = models.IntegerField(default=10)
+    intelligence = models.IntegerField(default=10)
+    wisdom = models.IntegerField(default=10)
+    charisma = models.IntegerField(default=10)
+    
+    # Combat Stats
+    hit_points = models.IntegerField()
+    max_hit_points = models.IntegerField()  # Maximum HP (for healing)
+    armor_class = models.IntegerField()
+    speed = models.IntegerField(default=30)  # Base speed in feet
+    initiative = models.IntegerField(default=0)  # Initiative modifier
+    
+    # Hit Dice
+    hit_dice_total = models.CharField(max_length=20, blank=True, null=True)  # e.g. "5d8"
+    hit_dice_current = models.CharField(max_length=20, blank=True, null=True)  # e.g. "3d8" (remaining)
+    
+    # Senses
+    darkvision = models.IntegerField(default=0)  # Range in feet
+    passive_perception = models.IntegerField(default=10)
+    passive_investigation = models.IntegerField(default=10)
+    passive_insight = models.IntegerField(default=10)
+    
+    # Spellcasting (if applicable)
+    spell_save_dc = models.IntegerField(blank=True, null=True)
+    spell_attack_bonus = models.IntegerField(blank=True, null=True)
+    
+    def __str__(self):
+        return f"{self.character.name} - Stats"
+    
+    @property
+    def strength_modifier(self):
+        return (self.strength - 10) // 2
+    
+    @property
+    def dexterity_modifier(self):
+        return (self.dexterity - 10) // 2
+    
+    @property
+    def constitution_modifier(self):
+        return (self.constitution - 10) // 2
+    
+    @property
+    def intelligence_modifier(self):
+        return (self.intelligence - 10) // 2
+    
+    @property
+    def wisdom_modifier(self):
+        return (self.wisdom - 10) // 2
+    
+    @property
+    def charisma_modifier(self):
+        return (self.charisma - 10) // 2
+
+
+class CharacterProficiency(models.Model):
+    """Character proficiencies (skills, tools, weapons, armor, languages)"""
+    PROFICIENCY_TYPES = [
+        ('skill', 'Skill'),
+        ('tool', 'Tool'),
+        ('weapon', 'Weapon'),
+        ('armor', 'Armor'),
+        ('language', 'Language'),
+        ('saving_throw', 'Saving Throw'),
+    ]
+    
+    PROFICIENCY_LEVELS = [
+        ('proficient', 'Proficient'),
+        ('expertise', 'Expertise'),  # Double proficiency (Rogues, Bards)
+    ]
+    
+    character = models.ForeignKey(Character, on_delete=models.CASCADE, related_name="proficiencies")
+    proficiency_type = models.CharField(max_length=20, choices=PROFICIENCY_TYPES)
+    proficiency_level = models.CharField(max_length=20, choices=PROFICIENCY_LEVELS, default='proficient')
+    
+    # For skills
+    skill_name = models.CharField(max_length=50, blank=True, null=True)  # e.g. "Athletics", "Stealth"
+    
+    # For tools, weapons, armor
+    item_name = models.CharField(max_length=100, blank=True, null=True)  # e.g. "Thieves' Tools", "Longsword"
+    
+    # For languages
+    language = models.ForeignKey(Language, on_delete=models.CASCADE, blank=True, null=True, related_name='character_proficiencies')
+    
+    # For saving throws
+    ability_score = models.CharField(max_length=3, blank=True, null=True)  # STR, DEX, CON, INT, WIS, CHA
+    
+    source = models.CharField(max_length=50, blank=True)  # e.g. "Class", "Race", "Background", "Feat"
+    
+    def __str__(self):
+        if self.proficiency_type == 'skill':
+            return f"{self.character.name} - {self.skill_name} ({self.proficiency_level})"
+        elif self.proficiency_type == 'language':
+            return f"{self.character.name} - {self.language.name}"
+        elif self.proficiency_type == 'saving_throw':
+            return f"{self.character.name} - {self.ability_score} Save"
+        else:
+            return f"{self.character.name} - {self.item_name} ({self.proficiency_type})"
+    
+    class Meta:
+        unique_together = [
+            ['character', 'proficiency_type', 'skill_name'],
+            ['character', 'proficiency_type', 'item_name'],
+            ['character', 'proficiency_type', 'language'],
+            ['character', 'proficiency_type', 'ability_score'],
+        ]
+
+
+class CharacterFeature(models.Model):
+    """Character features (class features, racial features, feats)"""
+    FEATURE_TYPES = [
+        ('class', 'Class Feature'),
+        ('racial', 'Racial Feature'),
+        ('background', 'Background Feature'),
+        ('feat', 'Feat'),
+    ]
+    
+    character = models.ForeignKey(Character, on_delete=models.CASCADE, related_name="features")
+    name = models.CharField(max_length=100)
+    feature_type = models.CharField(max_length=20, choices=FEATURE_TYPES)
+    description = models.TextField()
+    source = models.CharField(max_length=100, blank=True)  # e.g. "Fighter Level 2", "Elf Race"
+    
+    def __str__(self):
+        return f"{self.character.name} - {self.name}"
+
+
+class CharacterSpell(models.Model):
+    """Spells known/prepared by a character"""
+    SPELL_LEVELS = [
+        (0, 'Cantrip'),
+        (1, '1st Level'),
+        (2, '2nd Level'),
+        (3, '3rd Level'),
+        (4, '4th Level'),
+        (5, '5th Level'),
+        (6, '6th Level'),
+        (7, '7th Level'),
+        (8, '8th Level'),
+        (9, '9th Level'),
+    ]
+    
+    character = models.ForeignKey(Character, on_delete=models.CASCADE, related_name="spells")
+    name = models.CharField(max_length=100)
+    level = models.IntegerField(choices=SPELL_LEVELS)
+    school = models.CharField(max_length=50, blank=True)  # e.g. "Evocation", "Abjuration"
+    is_prepared = models.BooleanField(default=False)  # For prepared casters
+    is_ritual = models.BooleanField(default=False)
+    description = models.TextField(blank=True, null=True)
+    
+    def __str__(self):
+        return f"{self.character.name} - {self.name} (Level {self.level})"
+    
+    class Meta:
+        unique_together = ['character', 'name']
+
+
+class CharacterResistance(models.Model):
+    """Damage resistances/immunities for characters"""
+    RESISTANCE_TYPES = [
+        ('resistance', 'Resistance'),
+        ('immunity', 'Immunity'),
+        ('vulnerability', 'Vulnerability'),
+    ]
+    
+    character = models.ForeignKey(Character, on_delete=models.CASCADE, related_name="resistances")
+    damage_type = models.ForeignKey(DamageType, on_delete=models.CASCADE)
+    resistance_type = models.CharField(max_length=20, choices=RESISTANCE_TYPES)
+    source = models.CharField(max_length=100, blank=True)  # e.g. "Racial", "Class Feature", "Item"
+    
+    def __str__(self):
+        return f"{self.character.name} - {self.resistance_type.title()} to {self.damage_type.name}"
+    
+    class Meta:
+        unique_together = ['character', 'damage_type', 'resistance_type']

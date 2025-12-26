@@ -245,7 +245,7 @@ This project is licensed under the MIT License - see the LICENSE file for detail
 - [x] Complete bestiary system
 - [x] Import/export functionality
 - [x] Web interface
-- [ ] Character management system
+- [x] Character management system
 - [ ] Combat mechanics
 - [ ] Item/equipment system
 - [ ] Combat logging

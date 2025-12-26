@@ -18,19 +18,29 @@ from django.contrib import admin
 from django.urls import path, include
 from rest_framework.routers import DefaultRouter
 from bestiary.views import EnemyViewSet, import_monsters_view
-from rest_framework import routers
 from encounters.views import EncounterViewSet, EncounterEnemyViewSet
-
-router = routers.DefaultRouter()
-router.register(r'encounters', EncounterViewSet)
-router.register(r'encounter-enemies', EncounterEnemyViewSet)
-
+from characters.views import (
+    CharacterViewSet, CharacterClassViewSet, CharacterRaceViewSet,
+    CharacterBackgroundViewSet, CharacterStatsViewSet, CharacterProficiencyViewSet,
+    CharacterFeatureViewSet, CharacterSpellViewSet, CharacterResistanceViewSet
+)
 
 router = DefaultRouter()
+# Bestiary routes
 router.register(r'enemies', EnemyViewSet, basename='enemy')
 # Encounter system routes
 router.register(r'encounters', EncounterViewSet, basename='encounter')
 router.register(r'encounter-enemies', EncounterEnemyViewSet, basename='encounter-enemy')
+# Character management routes
+router.register(r'characters', CharacterViewSet, basename='character')
+router.register(r'character-classes', CharacterClassViewSet, basename='character-class')
+router.register(r'character-races', CharacterRaceViewSet, basename='character-race')
+router.register(r'character-backgrounds', CharacterBackgroundViewSet, basename='character-background')
+router.register(r'character-stats', CharacterStatsViewSet, basename='character-stats')
+router.register(r'character-proficiencies', CharacterProficiencyViewSet, basename='character-proficiency')
+router.register(r'character-features', CharacterFeatureViewSet, basename='character-feature')
+router.register(r'character-spells', CharacterSpellViewSet, basename='character-spell')
+router.register(r'character-resistances', CharacterResistanceViewSet, basename='character-resistance')
 
 urlpatterns = [
     path('admin/', admin.site.urls),
