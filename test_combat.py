@@ -189,35 +189,39 @@ def test_combat_flow():
     
     # Step 11: Test Phase 2 - Spell Casting
     print("\n11. Testing spell casting (Phase 2)...")
-    current = session.get_current_participant()
-    if current and current['participant_type'] == 'character':
+    # Get current state again to get the current participant
+    state_response = requests.get(f"{BASE_URL}/combat/sessions/{session_id}/")
+    state = state_response.json()
+    current_participant = state.get('current_participant')
+    
+    if current_participant and current_participant.get('participant_type') == 'character':
         spell_response = requests.post(
             f"{BASE_URL}/combat/sessions/{session_id}/cast_spell/",
-            {
-                'caster_id': current['id'],
+            json={
+                'caster_id': current_participant['id'],
                 'target_id': enemy_participant_id,
                 'spell_name': 'Firebolt',
                 'spell_level': 0,
                 'damage_string': '1d10',
                 'save_type': 'DEX',
                 'save_dc': 13
-            },
-            format='json'
+            }
         )
         spell_result = print_response(spell_response, "Spell Cast")
+    else:
+        print("  (Skipping spell test - current participant is not a character or not available)")
     
     # Step 12: Test Phase 2 - Saving Throw
     print("\n12. Testing saving throw (Phase 2)...")
-    if current:
+    if enemy_participant_id:
         save_response = requests.post(
             f"{BASE_URL}/combat/sessions/{session_id}/saving_throw/",
-            {
+            json={
                 'participant_id': enemy_participant_id,
                 'save_type': 'DEX',
                 'save_dc': 13,
                 'advantage': False
-            },
-            format='json'
+            }
         )
         save_result = print_response(save_response, "Saving Throw")
     
@@ -229,8 +233,7 @@ def test_combat_flow():
             # This will fail if no conditions exist, but that's okay for testing
             condition_response = requests.post(
                 f"{BASE_URL}/combat/participants/{char_participant_id}/add_condition/",
-                {'condition_id': 1},  # Assuming condition ID 1 exists
-                format='json'
+                json={'condition_id': 1}  # Assuming condition ID 1 exists
             )
             if condition_response.status_code < 400:
                 print_response(condition_response, "Condition Added")
