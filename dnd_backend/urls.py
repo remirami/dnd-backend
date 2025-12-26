@@ -24,6 +24,7 @@ from characters.views import (
     CharacterBackgroundViewSet, CharacterStatsViewSet, CharacterProficiencyViewSet,
     CharacterFeatureViewSet, CharacterSpellViewSet, CharacterResistanceViewSet
 )
+from combat.views import CombatSessionViewSet, CombatParticipantViewSet, CombatActionViewSet
 
 router = DefaultRouter()
 # Bestiary routes
@@ -41,6 +42,10 @@ router.register(r'character-proficiencies', CharacterProficiencyViewSet, basenam
 router.register(r'character-features', CharacterFeatureViewSet, basename='character-feature')
 router.register(r'character-spells', CharacterSpellViewSet, basename='character-spell')
 router.register(r'character-resistances', CharacterResistanceViewSet, basename='character-resistance')
+# Combat system routes
+router.register(r'combat/sessions', CombatSessionViewSet, basename='combat-session')
+router.register(r'combat/participants', CombatParticipantViewSet, basename='combat-participant')
+router.register(r'combat/actions', CombatActionViewSet, basename='combat-action')
 
 urlpatterns = [
     path('admin/', admin.site.urls),
