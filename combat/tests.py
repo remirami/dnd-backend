@@ -128,12 +128,12 @@ class CombatModelTests(TestCase):
             armor_class=18
         )
         
-        new_hp = participant.take_damage(10)
+        new_hp, _ = participant.take_damage(10)
         self.assertEqual(new_hp, 35)
         self.assertTrue(participant.is_active)
         
         # Test going to 0 HP
-        new_hp = participant.take_damage(35)
+        new_hp, _ = participant.take_damage(35)
         self.assertEqual(new_hp, 0)
         self.assertFalse(participant.is_active)
     
@@ -455,3 +455,131 @@ class CombatAPITests(TestCase):
         self.assertEqual(response.status_code, status.HTTP_200_OK)
         participant.refresh_from_db()
         self.assertFalse(participant.conditions.filter(id=condition.id).exists())
+    
+    def test_death_save(self):
+        """Test death saving throw"""
+        participant = CombatParticipant.objects.create(
+            combat_session=self.combat_session,
+            participant_type='character',
+            character=self.character,
+            initiative=15,
+            current_hp=0,  # Unconscious
+            max_hp=45,
+            armor_class=18
+        )
+        
+        self.combat_session.status = 'active'
+        self.combat_session.save()
+        
+        response = self.client.post(
+            f'/api/combat/sessions/{self.combat_session.id}/death_save/',
+            {'participant_id': participant.id},
+            format='json'
+        )
+        
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertIn('success', response.data)
+        self.assertIn('death_save_successes', response.data)
+        self.assertIn('death_save_failures', response.data)
+    
+    def test_concentration_check(self):
+        """Test concentration check"""
+        participant = CombatParticipant.objects.create(
+            combat_session=self.combat_session,
+            participant_type='character',
+            character=self.character,
+            initiative=15,
+            current_hp=45,
+            max_hp=45,
+            armor_class=18,
+            is_concentrating=True,
+            concentration_spell='Haste'
+        )
+        
+        self.combat_session.status = 'active'
+        self.combat_session.save()
+        
+        response = self.client.post(
+            f'/api/combat/sessions/{self.combat_session.id}/check_concentration/',
+            {
+                'participant_id': participant.id,
+                'damage_amount': 15
+            },
+            format='json'
+        )
+        
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertIn('concentration_broken', response.data)
+        self.assertIn('save_roll', response.data)
+        self.assertIn('save_dc', response.data)
+    
+    def test_opportunity_attack(self):
+        """Test opportunity attack"""
+        participant1 = CombatParticipant.objects.create(
+            combat_session=self.combat_session,
+            participant_type='character',
+            character=self.character,
+            initiative=15,
+            current_hp=45,
+            max_hp=45,
+            armor_class=18
+        )
+        participant2 = CombatParticipant.objects.create(
+            combat_session=self.combat_session,
+            participant_type='enemy',
+            encounter_enemy=self.encounter_enemy,
+            initiative=10,
+            current_hp=7,
+            max_hp=7,
+            armor_class=15
+        )
+        
+        self.combat_session.status = 'active'
+        self.combat_session.save()
+        
+        response = self.client.post(
+            f'/api/combat/sessions/{self.combat_session.id}/opportunity_attack/',
+            {
+                'attacker_id': participant1.id,
+                'target_id': participant2.id,
+                'attack_name': 'Opportunity Attack'
+            },
+            format='json'
+        )
+        
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertIn('hit', response.data)
+        participant1.refresh_from_db()
+        self.assertTrue(participant1.reaction_used)
+    
+    def test_legendary_action(self):
+        """Test legendary action"""
+        participant = CombatParticipant.objects.create(
+            combat_session=self.combat_session,
+            participant_type='enemy',
+            encounter_enemy=self.encounter_enemy,
+            initiative=15,
+            current_hp=100,
+            max_hp=100,
+            armor_class=18,
+            legendary_actions_max=3,
+            legendary_actions_remaining=3
+        )
+        
+        self.combat_session.status = 'active'
+        self.combat_session.save()
+        
+        response = self.client.post(
+            f'/api/combat/sessions/{self.combat_session.id}/legendary_action/',
+            {
+                'participant_id': participant.id,
+                'action_cost': 1,
+                'action_name': 'Wing Attack'
+            },
+            format='json'
+        )
+        
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertIn('legendary_actions_remaining', response.data)
+        participant.refresh_from_db()
+        self.assertEqual(participant.legendary_actions_remaining, 2)

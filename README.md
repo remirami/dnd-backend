@@ -246,7 +246,7 @@ This project is licensed under the MIT License - see the LICENSE file for detail
 - [x] Import/export functionality
 - [x] Web interface
 - [x] Character management system
-- [ ] Combat mechanics
+- [x] Combat mechanics (Phase 1, 2, 3)
 - [ ] Item/equipment system
 - [ ] Combat logging
 - [ ] Frontend interface

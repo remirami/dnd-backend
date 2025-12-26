@@ -19,6 +19,19 @@ class CombatParticipantSerializer(serializers.ModelSerializer):
     
     def get_name(self, obj):
         return obj.get_name()
+    
+    def to_representation(self, instance):
+        """Add computed fields"""
+        data = super().to_representation(instance)
+        # Add death save status
+        if instance.current_hp <= 0:
+            data['death_save_status'] = {
+                'successes': instance.death_save_successes,
+                'failures': instance.death_save_failures,
+                'is_stable': instance.death_save_successes >= 3,
+                'is_dead': instance.death_save_failures >= 3
+            }
+        return data
 
 
 class CombatActionSerializer(serializers.ModelSerializer):

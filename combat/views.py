@@ -313,11 +313,12 @@ class CombatSessionViewSet(viewsets.ModelViewSet):
         # Calculate damage if hit
         damage_amount = 0
         damage_breakdown = ""
+        concentration_broken = False
         if hit:
             damage_amount, damage_breakdown = calculate_damage(
                 damage_string, ability_mod, critical
             )
-            target.take_damage(damage_amount)
+            new_hp, concentration_broken = target.take_damage(damage_amount)
         
         # Create combat action
         action = CombatAction.objects.create(
@@ -445,7 +446,7 @@ class CombatSessionViewSet(viewsets.ModelViewSet):
                     damage_breakdown += f" | Save failed: full damage = {damage_amount}"
             
             if target:
-                target.take_damage(damage_amount)
+                new_hp, concentration_broken = target.take_damage(damage_amount)
         
         # Get damage type
         damage_type = None
@@ -455,6 +456,13 @@ class CombatSessionViewSet(viewsets.ModelViewSet):
                 damage_type = DamageType.objects.get(pk=damage_type_id)
             except DamageType.DoesNotExist:
                 pass
+        
+        # Check if spell requires concentration
+        requires_concentration = request.data.get('requires_concentration', False)
+        if requires_concentration:
+            caster.is_concentrating = True
+            caster.concentration_spell = spell_name
+            caster.save()
         
         # Create combat action
         action = CombatAction.objects.create(
@@ -471,7 +479,7 @@ class CombatSessionViewSet(viewsets.ModelViewSet):
             save_success=save_success,
             round_number=session.current_round,
             turn_number=session.current_turn_index,
-            description=f"Cast {spell_name} (Level {spell_level})"
+            description=f"Cast {spell_name} (Level {spell_level})" + (" [Concentration]" if requires_concentration else "")
         )
         
         # Mark action as used
@@ -577,6 +585,310 @@ class CombatSessionViewSet(viewsets.ModelViewSet):
         })
     
     @action(detail=True, methods=['post'])
+    def death_save(self, request, pk=None):
+        """Make a death saving throw"""
+        session = self.get_object()
+        
+        if session.status != 'active':
+            return Response(
+                {"error": "Combat is not active"},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+        
+        participant_id = request.data.get('participant_id')
+        roll = request.data.get('roll')  # Optional: can provide roll or auto-roll
+        
+        if not participant_id:
+            return Response(
+                {"error": "Missing 'participant_id'"},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+        
+        try:
+            participant = session.participants.get(pk=participant_id)
+        except CombatParticipant.DoesNotExist:
+            return Response(
+                {"error": "Participant not found in combat"},
+                status=status.HTTP_404_NOT_FOUND
+            )
+        
+        if participant.current_hp > 0:
+            return Response(
+                {"error": "Participant is not unconscious"},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+        
+        # Make death save
+        success, is_stable, is_dead, message = participant.make_death_save(roll)
+        
+        # Create combat action
+        action = CombatAction.objects.create(
+            combat_session=session,
+            actor=participant,
+            action_type='death_save',
+            round_number=session.current_round,
+            turn_number=session.current_turn_index,
+            description=message
+        )
+        
+        return Response({
+            "message": message,
+            "success": success,
+            "is_stable": is_stable,
+            "is_dead": is_dead,
+            "death_save_successes": participant.death_save_successes,
+            "death_save_failures": participant.death_save_failures,
+            "current_hp": participant.current_hp,
+            "action": CombatActionSerializer(action).data
+        })
+    
+    @action(detail=True, methods=['post'])
+    def check_concentration(self, request, pk=None):
+        """Check concentration after taking damage"""
+        session = self.get_object()
+        
+        if session.status != 'active':
+            return Response(
+                {"error": "Combat is not active"},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+        
+        participant_id = request.data.get('participant_id')
+        damage_amount = int(request.data.get('damage_amount', 0))
+        
+        if not participant_id:
+            return Response(
+                {"error": "Missing 'participant_id'"},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+        
+        try:
+            participant = session.participants.get(pk=participant_id)
+        except CombatParticipant.DoesNotExist:
+            return Response(
+                {"error": "Participant not found in combat"},
+                status=status.HTTP_404_NOT_FOUND
+            )
+        
+        # Check concentration
+        concentration_broken, save_roll, save_dc, message = participant.check_concentration(damage_amount)
+        
+        # Create combat action
+        action = CombatAction.objects.create(
+            combat_session=session,
+            actor=participant,
+            action_type='concentration_check',
+            save_type='CON',
+            save_dc=save_dc,
+            save_roll=save_roll,
+            save_success=not concentration_broken,
+            round_number=session.current_round,
+            turn_number=session.current_turn_index,
+            description=message
+        )
+        
+        return Response({
+            "message": message,
+            "concentration_broken": concentration_broken,
+            "save_roll": save_roll,
+            "save_dc": save_dc,
+            "is_concentrating": participant.is_concentrating,
+            "concentration_spell": participant.concentration_spell,
+            "action": CombatActionSerializer(action).data
+        })
+    
+    @action(detail=True, methods=['post'])
+    def opportunity_attack(self, request, pk=None):
+        """Make an opportunity attack"""
+        session = self.get_object()
+        
+        if session.status != 'active':
+            return Response(
+                {"error": "Combat is not active"},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+        
+        serializer = AttackRequestSerializer(data=request.data)
+        if not serializer.is_valid():
+            return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+        
+        data = serializer.validated_data
+        attacker_id = data['attacker_id']
+        target_id = data['target_id']
+        
+        try:
+            attacker = session.participants.get(pk=attacker_id)
+            target = session.participants.get(pk=target_id)
+        except CombatParticipant.DoesNotExist:
+            return Response(
+                {"error": "Attacker or target not found in combat"},
+                status=status.HTTP_404_NOT_FOUND
+            )
+        
+        if attacker.reaction_used:
+            return Response(
+                {"error": "Attacker has already used their reaction this turn"},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+        
+        if not attacker.is_active:
+            return Response(
+                {"error": "Attacker is not active"},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+        
+        # Get attack details
+        attack_name = data.get('attack_name', 'Opportunity Attack')
+        advantage = data.get('advantage', False)
+        disadvantage = data.get('disadvantage', False)
+        other_modifiers = data.get('other_modifiers', 0)
+        
+        # Find attack if it's an enemy attack
+        damage_string = "1d4"  # Default unarmed
+        if attacker.encounter_enemy:
+            enemy = attacker.encounter_enemy.enemy
+            attacks = enemy.attacks.all()
+            if attacks.exists():
+                enemy_attack = attacks.first()
+                attack_name = enemy_attack.name
+                damage_string = enemy_attack.damage
+        
+        # Roll attack
+        roll, roll_breakdown = roll_d20(advantage=advantage, disadvantage=disadvantage)
+        
+        # Calculate attack modifier
+        ability_mod = attacker.get_ability_modifier('STR')
+        if attacker.character:
+            proficiency_bonus = attacker.character.proficiency_bonus
+        else:
+            proficiency_bonus = 2
+        proficiency = True
+        
+        attack_total, attack_breakdown = calculate_attack_roll(
+            roll, ability_mod, proficiency_bonus, proficiency, other_modifiers
+        )
+        
+        # Check if hit
+        hit = check_hit(attack_total, target.armor_class)
+        critical = (roll == 20)
+        
+        # Calculate damage if hit
+        damage_amount = 0
+        damage_breakdown = ""
+        concentration_broken = False
+        if hit:
+            damage_amount, damage_breakdown = calculate_damage(
+                damage_string, ability_mod, critical
+            )
+            new_hp, concentration_broken = target.take_damage(damage_amount)
+        
+        # Create combat action
+        action = CombatAction.objects.create(
+            combat_session=session,
+            actor=attacker,
+            target=target,
+            action_type='opportunity_attack',
+            attack_name=attack_name,
+            attack_roll=roll,
+            attack_modifier=ability_mod + proficiency_bonus + other_modifiers,
+            attack_total=attack_total,
+            hit=hit,
+            damage_amount=damage_amount if hit else None,
+            critical=critical,
+            is_opportunity_attack=True,
+            round_number=session.current_round,
+            turn_number=session.current_turn_index,
+            description=f"Opportunity Attack: {roll_breakdown} | {attack_breakdown}"
+        )
+        
+        # Mark reaction as used
+        attacker.reaction_used = True
+        attacker.save()
+        
+        return Response({
+            "message": f"{attacker.get_name()} makes an opportunity attack on {target.get_name()}",
+            "attack_roll": roll,
+            "attack_total": attack_total,
+            "target_ac": target.armor_class,
+            "hit": hit,
+            "critical": critical,
+            "damage": damage_amount if hit else 0,
+            "target_hp": target.current_hp,
+            "breakdown": {
+                "roll": roll_breakdown,
+                "attack": attack_breakdown,
+                "damage": damage_breakdown if hit else None
+            },
+            "action": CombatActionSerializer(action).data
+        })
+    
+    @action(detail=True, methods=['post'])
+    def legendary_action(self, request, pk=None):
+        """Use a legendary action"""
+        session = self.get_object()
+        
+        if session.status != 'active':
+            return Response(
+                {"error": "Combat is not active"},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+        
+        participant_id = request.data.get('participant_id')
+        action_cost = int(request.data.get('action_cost', 1))
+        action_name = request.data.get('action_name', 'Legendary Action')
+        action_description = request.data.get('action_description', '')
+        
+        if not participant_id:
+            return Response(
+                {"error": "Missing 'participant_id'"},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+        
+        try:
+            participant = session.participants.get(pk=participant_id)
+        except CombatParticipant.DoesNotExist:
+            return Response(
+                {"error": "Participant not found in combat"},
+                status=status.HTTP_404_NOT_FOUND
+            )
+        
+        if participant.legendary_actions_max == 0:
+            return Response(
+                {"error": "Participant does not have legendary actions"},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+        
+        # Use legendary action
+        success, message = participant.use_legendary_action(action_cost)
+        
+        if not success:
+            return Response(
+                {"error": message},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+        
+        # Create combat action
+        action = CombatAction.objects.create(
+            combat_session=session,
+            actor=participant,
+            action_type='legendary_action',
+            attack_name=action_name,
+            is_legendary_action=True,
+            legendary_action_cost=action_cost,
+            round_number=session.current_round,
+            turn_number=session.current_turn_index,
+            description=action_description or f"Used {action_name} (Cost: {action_cost})"
+        )
+        
+        return Response({
+            "message": message,
+            "action_name": action_name,
+            "action_cost": action_cost,
+            "legendary_actions_remaining": participant.legendary_actions_remaining,
+            "action": CombatActionSerializer(action).data
+        })
+    
+    @action(detail=True, methods=['post'])
     def end(self, request, pk=None):
         """End the combat session"""
         session = self.get_object()
@@ -615,7 +927,7 @@ class CombatParticipantViewSet(viewsets.ModelViewSet):
                 status=status.HTTP_400_BAD_REQUEST
             )
         
-        new_hp = participant.take_damage(amount)
+        new_hp, concentration_broken = participant.take_damage(amount)
         serializer = self.get_serializer(participant)
         return Response({
             "message": f"{participant.get_name()} took {amount} damage",
@@ -696,6 +1008,56 @@ class CombatParticipantViewSet(viewsets.ModelViewSet):
         serializer = self.get_serializer(participant)
         return Response({
             "message": f"{condition.get_name_display()} removed from {participant.get_name()}",
+            "participant": serializer.data
+        })
+    
+    @action(detail=True, methods=['post'])
+    def start_concentration(self, request, pk=None):
+        """Start concentrating on a spell"""
+        participant = self.get_object()
+        spell_name = request.data.get('spell_name', '')
+        
+        if not spell_name:
+            return Response(
+                {"error": "Missing 'spell_name'"},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+        
+        if participant.is_concentrating:
+            return Response(
+                {"error": f"Already concentrating on {participant.concentration_spell}"},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+        
+        participant.is_concentrating = True
+        participant.concentration_spell = spell_name
+        participant.save()
+        
+        serializer = self.get_serializer(participant)
+        return Response({
+            "message": f"{participant.get_name()} starts concentrating on {spell_name}",
+            "participant": serializer.data
+        })
+    
+    @action(detail=True, methods=['post'])
+    def end_concentration(self, request, pk=None):
+        """End concentration"""
+        participant = self.get_object()
+        
+        if not participant.is_concentrating:
+            return Response(
+                {"error": "Not concentrating on any spell"},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+        
+        spell_name = participant.concentration_spell
+        participant.is_concentrating = False
+        participant.concentration_spell = ""
+        participant.save()
+        
+        serializer = self.get_serializer(participant)
+        return Response({
+            "message": f"{participant.get_name()} loses concentration on {spell_name}",
             "participant": serializer.data
         })
 
