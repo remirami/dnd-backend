@@ -1,5 +1,5 @@
 from django.contrib import admin
-from .models import CombatSession, CombatParticipant, CombatAction
+from .models import CombatSession, CombatParticipant, CombatAction, CombatLog
 
 
 class CombatParticipantInline(admin.TabularInline):
@@ -41,3 +41,11 @@ class CombatActionAdmin(admin.ModelAdmin):
     list_filter = ('action_type', 'hit', 'critical', 'round_number', 'created_at')
     search_fields = ('actor__character__name', 'actor__encounter_enemy__name', 'attack_name')
     readonly_fields = ('created_at',)
+
+
+@admin.register(CombatLog)
+class CombatLogAdmin(admin.ModelAdmin):
+    list_display = ('combat_session', 'total_rounds', 'total_turns', 'total_damage_dealt', 'total_damage_received', 'created_at')
+    list_filter = ('created_at', 'is_public')
+    search_fields = ('combat_session__encounter__name',)
+    readonly_fields = ('created_at', 'updated_at')

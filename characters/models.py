@@ -1,4 +1,5 @@
 from django.db import models
+from django.core.validators import MinValueValidator
 from bestiary.models import Language, DamageType
 
 
@@ -314,3 +315,35 @@ class CharacterResistance(models.Model):
     
     class Meta:
         unique_together = ['character', 'damage_type', 'resistance_type']
+
+
+class CharacterItem(models.Model):
+    """Tracks items in character inventory and equipment"""
+    EQUIPMENT_SLOTS = [
+        ('main_hand', 'Main Hand'),
+        ('off_hand', 'Off Hand'),
+        ('armor', 'Armor'),
+        ('shield', 'Shield'),
+        ('ring', 'Ring'),
+        ('amulet', 'Amulet'),
+        ('boots', 'Boots'),
+        ('gloves', 'Gloves'),
+        ('helmet', 'Helmet'),
+        ('cloak', 'Cloak'),
+        ('inventory', 'Inventory'),  # Not equipped
+    ]
+    
+    character = models.ForeignKey(Character, on_delete=models.CASCADE, related_name='character_items')
+    item = models.ForeignKey('items.Item', on_delete=models.CASCADE, related_name='character_items')
+    quantity = models.IntegerField(default=1, validators=[MinValueValidator(1)])
+    is_equipped = models.BooleanField(default=False)
+    equipment_slot = models.CharField(max_length=20, choices=EQUIPMENT_SLOTS, default='inventory')
+    notes = models.TextField(blank=True)
+    
+    class Meta:
+        unique_together = ['character', 'item', 'equipment_slot']
+        ordering = ['equipment_slot', 'item__name']
+    
+    def __str__(self):
+        status = "equipped" if self.is_equipped else "inventory"
+        return f"{self.character.name} - {self.item.name} x{self.quantity} ({status})"

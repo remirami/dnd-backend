@@ -1,5 +1,5 @@
 from rest_framework import serializers
-from .models import CombatSession, CombatParticipant, CombatAction
+from .models import CombatSession, CombatParticipant, CombatAction, CombatLog
 from encounters.serializers import EncounterSerializer, EncounterEnemySerializer
 from characters.serializers import CharacterSerializer
 from bestiary.serializers import ConditionSerializer, DamageTypeSerializer
@@ -31,6 +31,30 @@ class CombatParticipantSerializer(serializers.ModelSerializer):
                 'is_stable': instance.death_save_successes >= 3,
                 'is_dead': instance.death_save_failures >= 3
             }
+        
+        # Add equipped items info
+        if instance.character:
+            equipped_weapon = instance.get_equipped_weapon()
+            equipped_armor = instance.get_equipped_armor()
+            equipped_shield = instance.get_equipped_shield()
+            effective_ac = instance.calculate_effective_ac()
+            
+            data['equipped_items'] = {
+                'weapon': {
+                    'name': equipped_weapon.name,
+                    'damage_dice': equipped_weapon.damage_dice,
+                } if equipped_weapon else None,
+                'armor': {
+                    'name': equipped_armor.name,
+                    'base_ac': equipped_armor.base_ac,
+                } if equipped_armor else None,
+                'shield': {
+                    'name': equipped_shield.name,
+                    'ac_bonus': equipped_shield.base_ac,
+                } if equipped_shield else None,
+            }
+            data['effective_ac'] = effective_ac
+        
         return data
 
 
@@ -97,4 +121,13 @@ class SpellRequestSerializer(serializers.Serializer):
     save_dc = serializers.IntegerField(required=False, allow_null=True)
     damage_string = serializers.CharField(required=False, allow_blank=True)
     damage_type = serializers.IntegerField(required=False, allow_null=True)  # DamageType ID
+
+
+class CombatLogSerializer(serializers.ModelSerializer):
+    """Serializer for combat logs"""
+    combat_session = serializers.PrimaryKeyRelatedField(read_only=True)
+    
+    class Meta:
+        model = CombatLog
+        fields = '__all__'
 

@@ -60,6 +60,102 @@ class CombatSession(models.Model):
         
         self.save()
         return self.get_current_participant()
+    
+    def get_or_create_log(self):
+        """Get or create combat log for this session"""
+        log, created = CombatLog.objects.get_or_create(combat_session=self)
+        return log
+    
+    def generate_log(self):
+        """Generate/update combat log statistics"""
+        log = self.get_or_create_log()
+        return log.calculate_statistics()
+    
+    def get_combat_report(self):
+        """Generate a comprehensive combat report"""
+        log = self.get_or_create_log()
+        log.calculate_statistics()
+        
+        participants = self.participants.all()
+        actions = self.actions.all().order_by('round_number', 'turn_number', 'created_at')
+        
+        report = {
+            'session_id': self.id,
+            'encounter': {
+                'name': self.encounter.name,
+                'description': self.encounter.description,
+                'location': self.encounter.location,
+            },
+            'summary': {
+                'status': self.get_status_display(),
+                'rounds': log.total_rounds,
+                'turns': log.total_turns,
+                'duration_seconds': log.duration_seconds,
+                'duration_formatted': self._format_duration(log.duration_seconds),
+                'started_at': self.started_at.isoformat() if self.started_at else None,
+                'ended_at': self.ended_at.isoformat() if self.ended_at else None,
+            },
+            'statistics': {
+                'total_damage_dealt': log.total_damage_dealt,
+                'total_damage_received': log.total_damage_received,
+                'total_healing': log.total_healing,
+                'actions_by_type': log.actions_by_type,
+                'damage_by_type': log.damage_by_type,
+                'spells_cast': log.spells_cast,
+            },
+            'participants': [
+                {
+                    'id': p.id,
+                    'name': p.get_name(),
+                    'type': p.get_participant_type_display(),
+                    'stats': log.participant_stats.get(p.id, {}),
+                }
+                for p in participants
+            ],
+            'outcomes': {
+                'victors': [
+                    {'id': pid, 'name': log.participant_stats.get(pid, {}).get('name', 'Unknown')}
+                    for pid in log.victors
+                ],
+                'casualties': [
+                    {'id': pid, 'name': log.participant_stats.get(pid, {}).get('name', 'Unknown')}
+                    for pid in log.casualties
+                ],
+            },
+            'timeline': [
+                {
+                    'round': action.round_number,
+                    'turn': action.turn_number,
+                    'timestamp': action.created_at.isoformat(),
+                    'actor': action.actor.get_name(),
+                    'action_type': action.get_action_type_display(),
+                    'target': action.target.get_name() if action.target else None,
+                    'details': {
+                        'attack_name': action.attack_name,
+                        'hit': action.hit,
+                        'damage': action.damage_amount,
+                        'critical': action.critical,
+                        'description': action.description,
+                    }
+                }
+                for action in actions
+            ],
+        }
+        
+        return report
+    
+    def _format_duration(self, seconds):
+        """Format duration in human-readable format"""
+        if seconds < 60:
+            return f"{seconds} seconds"
+        elif seconds < 3600:
+            minutes = seconds // 60
+            secs = seconds % 60
+            return f"{minutes}m {secs}s"
+        else:
+            hours = seconds // 3600
+            minutes = (seconds % 3600) // 60
+            return f"{hours}h {minutes}m"
 
 
 class CombatParticipant(models.Model):
@@ -147,6 +243,134 @@ class CombatParticipant(models.Model):
             }
             return ability_map.get(ability, 0)
         return 0
+    
+    def get_equipped_weapon(self, slot='main_hand'):
+        """Get equipped weapon from character inventory"""
+        if not self.character:
+            return None
+        
+        from characters.models import CharacterItem
+        from items.models import Weapon
+        
+        try:
+            character_item = CharacterItem.objects.get(
+                character=self.character,
+                is_equipped=True,
+                equipment_slot=slot,
+                item__weapon__isnull=False
+            )
+            return character_item.item.weapon
+        except CharacterItem.DoesNotExist:
+            return None
+    
+    def get_equipped_armor(self):
+        """Get equipped armor from character inventory"""
+        if not self.character:
+            return None
+        
+        from characters.models import CharacterItem
+        from items.models import Armor
+        
+        try:
+            character_item = CharacterItem.objects.get(
+                character=self.character,
+                is_equipped=True,
+                equipment_slot='armor',
+                item__armor__isnull=False
+            )
+            return character_item.item.armor
+        except CharacterItem.DoesNotExist:
+            return None
+    
+    def get_equipped_shield(self):
+        """Get equipped shield from character inventory"""
+        if not self.character:
+            return None
+        
+        from characters.models import CharacterItem
+        from items.models import Armor
+        
+        try:
+            character_item = CharacterItem.objects.get(
+                character=self.character,
+                is_equipped=True,
+                equipment_slot='shield',
+                item__armor__isnull=False,
+                item__armor__armor_type='shield'
+            )
+            return character_item.item.armor
+        except CharacterItem.DoesNotExist:
+            return None
+    
+    def get_magic_item_bonuses(self):
+        """Get bonuses from equipped magic items"""
+        if not self.character:
+            return {
+                'to_hit': 0,
+                'to_damage': 0,
+                'to_ac': 0,
+                'to_saves': 0
+            }
+        
+        from characters.models import CharacterItem
+        from items.models import MagicItem
+        
+        bonuses = {
+            'to_hit': 0,
+            'to_damage': 0,
+            'to_ac': 0,
+            'to_saves': 0
+        }
+        
+        equipped_magic_items = CharacterItem.objects.filter(
+            character=self.character,
+            is_equipped=True,
+            item__magicitem__isnull=False
+        ).select_related('item__magicitem')
+        
+        for char_item in equipped_magic_items:
+            magic_item = char_item.item.magicitem
+            bonuses['to_hit'] += magic_item.bonus_to_hit
+            bonuses['to_damage'] += magic_item.bonus_to_damage
+            bonuses['to_ac'] += magic_item.bonus_to_ac
+            bonuses['to_saves'] += magic_item.bonus_to_saves
+        
+        return bonuses
+    
+    def calculate_effective_ac(self):
+        """Calculate effective AC including armor and magic items"""
+        base_ac = self.armor_class
+        
+        # Get armor bonuses
+        armor = self.get_equipped_armor()
+        shield = self.get_equipped_shield()
+        
+        if armor:
+            # Armor provides base AC
+            base_ac = armor.base_ac
+            
+            # Add DEX modifier if applicable
+            if armor.max_dex_bonus is not None:
+                dex_mod = min(self.get_ability_modifier('DEX'), armor.max_dex_bonus)
+            else:
+                dex_mod = self.get_ability_modifier('DEX')
+            
+            # Light and medium armor add DEX, heavy doesn't
+            if armor.armor_type in ['light', 'medium']:
+                base_ac += dex_mod
+            elif armor.armor_type == 'heavy':
+                # Heavy armor doesn't add DEX
+                pass
+        
+        # Add shield bonus
+        if shield:
+            base_ac += shield.base_ac
+        
+        # Add magic item bonuses
+        magic_bonuses = self.get_magic_item_bonuses()
+        base_ac += magic_bonuses['to_ac']
+        
+        return base_ac
     
     def take_damage(self, amount, damage_type=None, check_concentration=True):
         """Apply damage to this participant"""
@@ -349,3 +573,168 @@ class CombatAction(models.Model):
     
     def __str__(self):
         return f"{self.actor.get_name()} - {self.get_action_type_display()} (Round {self.round_number})"
+
+
+class CombatLog(models.Model):
+    """Enhanced combat logging with statistics and analytics"""
+    combat_session = models.OneToOneField(CombatSession, on_delete=models.CASCADE, related_name='log')
+    
+    # Basic statistics
+    total_rounds = models.IntegerField(default=0)
+    total_turns = models.IntegerField(default=0)
+    duration_seconds = models.IntegerField(default=0, help_text="Real-time duration in seconds")
+    
+    # Damage statistics
+    total_damage_dealt = models.IntegerField(default=0)
+    total_damage_received = models.IntegerField(default=0)
+    total_healing = models.IntegerField(default=0)
+    
+    # Action statistics (JSON fields for flexibility)
+    actions_by_type = models.JSONField(default=dict, help_text="Count of actions by type")
+    damage_by_type = models.JSONField(default=dict, help_text="Damage totals by damage type")
+    spells_cast = models.JSONField(default=dict, help_text="Spells cast with counts")
+    
+    # Participant statistics (JSON field)
+    participant_stats = models.JSONField(default=dict, help_text="Statistics per participant")
+    
+    # Combat outcomes
+    victors = models.JSONField(default=list, help_text="List of participant IDs who survived")
+    casualties = models.JSONField(default=list, help_text="List of participant IDs who died/unconscious")
+    
+    # Sharing
+    share_token = models.CharField(max_length=32, unique=True, blank=True, null=True)
+    is_public = models.BooleanField(default=False)
+    
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+    
+    class Meta:
+        ordering = ['-created_at']
+    
+    def __str__(self):
+        return f"Combat Log: {self.combat_session.encounter.name} ({self.total_rounds} rounds)"
+    
+    def calculate_statistics(self):
+        """Calculate and update all statistics from combat actions"""
+        session = self.combat_session
+        actions = session.actions.all()
+        
+        # Basic counts
+        self.total_rounds = session.current_round
+        self.total_turns = actions.count()
+        
+        # Calculate duration if combat has ended
+        if session.ended_at and session.started_at:
+            duration = session.ended_at - session.started_at
+            self.duration_seconds = int(duration.total_seconds())
+        
+        # Initialize counters
+        actions_by_type = {}
+        damage_by_type = {}
+        spells_cast = {}
+        participant_stats = {}
+        
+        # Initialize participant stats
+        for participant in session.participants.all():
+            participant_stats[participant.id] = {
+                'name': participant.get_name(),
+                'damage_dealt': 0,
+                'damage_received': 0,
+                'healing_received': 0,
+                'attacks_made': 0,
+                'attacks_hit': 0,
+                'attacks_missed': 0,
+                'critical_hits': 0,
+                'spells_cast': 0,
+                'spells_by_name': {},
+                'actions_by_type': {},
+                'start_hp': participant.max_hp,
+                'end_hp': participant.current_hp,
+                'status': 'alive' if participant.is_active else 'unconscious',
+            }
+        
+        # Process all actions
+        for action in actions:
+            # Count actions by type
+            action_type = action.action_type
+            actions_by_type[action_type] = actions_by_type.get(action_type, 0) + 1
+            
+            # Track participant actions
+            actor_id = action.actor.id
+            if actor_id in participant_stats:
+                participant_stats[actor_id]['actions_by_type'][action_type] = \
+                    participant_stats[actor_id]['actions_by_type'].get(action_type, 0) + 1
+            
+            # Track damage
+            if action.damage_amount:
+                # Damage dealt
+                if actor_id in participant_stats:
+                    participant_stats[actor_id]['damage_dealt'] += action.damage_amount
+                
+                # Damage received
+                if action.target:
+                    target_id = action.target.id
+                    if target_id in participant_stats:
+                        participant_stats[target_id]['damage_received'] += action.damage_amount
+                
+                # Damage by type
+                if action.damage_type:
+                    damage_type_name = action.damage_type.name
+                    damage_by_type[damage_type_name] = damage_by_type.get(damage_type_name, 0) + action.damage_amount
+            
+            # Track healing (if action type is heal or spell with healing)
+            if action.action_type in ['heal', 'spell'] and action.damage_amount and action.damage_amount < 0:
+                # Negative damage is healing
+                healing_amount = abs(action.damage_amount)
+                if action.target and action.target.id in participant_stats:
+                    participant_stats[action.target.id]['healing_received'] += healing_amount
+            
+            # Track attacks
+            if action.action_type == 'attack':
+                if actor_id in participant_stats:
+                    participant_stats[actor_id]['attacks_made'] += 1
+                    if action.hit:
+                        participant_stats[actor_id]['attacks_hit'] += 1
+                        if action.critical:
+                            participant_stats[actor_id]['critical_hits'] += 1
+                    else:
+                        participant_stats[actor_id]['attacks_missed'] += 1
+            
+            # Track spells
+            if action.action_type == 'spell':
+                if actor_id in participant_stats:
+                    participant_stats[actor_id]['spells_cast'] += 1
+                    spell_name = action.attack_name
+                    participant_stats[actor_id]['spells_by_name'][spell_name] = \
+                        participant_stats[actor_id]['spells_by_name'].get(spell_name, 0) + 1
+                    spells_cast[spell_name] = spells_cast.get(spell_name, 0) + 1
+        
+        # Calculate totals
+        self.total_damage_dealt = sum(
+            stats['damage_dealt'] for stats in participant_stats.values()
+        )
+        self.total_damage_received = sum(
+            stats['damage_received'] for stats in participant_stats.values()
+        )
+        self.total_healing = sum(
+            stats.get('healing_received', 0) for stats in participant_stats.values()
+        )
+        
+        # Store statistics
+        self.actions_by_type = actions_by_type
+        self.damage_by_type = damage_by_type
+        self.spells_cast = spells_cast
+        self.participant_stats = participant_stats
+        
+        # Determine victors and casualties
+        self.victors = [
+            pid for pid, stats in participant_stats.items()
+            if stats['status'] == 'alive'
+        ]
+        self.casualties = [
+            pid for pid, stats in participant_stats.items()
+            if stats['status'] == 'unconscious'
+        ]
+        
+        self.save()
+        return self

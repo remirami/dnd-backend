@@ -44,9 +44,9 @@ dnd_backend/
 │   ├── views.py         # API endpoints
 │   ├── admin.py         # Admin interface
 │   └── management/      # Import commands
-├── characters/           # Player characters (planned)
-├── combat/              # Combat mechanics (planned)
-├── items/               # Equipment and items (planned)
+├── characters/           # Player characters
+├── combat/              # Combat mechanics
+├── items/               # Equipment and items
 ├── logs/                # Combat logs (planned)
 ├── templates/           # Web interface templates
 └── docs/                # Documentation
@@ -247,8 +247,8 @@ This project is licensed under the MIT License - see the LICENSE file for detail
 - [x] Web interface
 - [x] Character management system
 - [x] Combat mechanics (Phase 1, 2, 3)
-- [ ] Item/equipment system
-- [ ] Combat logging
+- [x] Item/equipment system
+- [x] Combat logging
 - [ ] Frontend interface
 - [ ] User authentication
 - [ ] Campaign management

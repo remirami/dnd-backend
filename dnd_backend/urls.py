@@ -24,7 +24,11 @@ from characters.views import (
     CharacterBackgroundViewSet, CharacterStatsViewSet, CharacterProficiencyViewSet,
     CharacterFeatureViewSet, CharacterSpellViewSet, CharacterResistanceViewSet
 )
-from combat.views import CombatSessionViewSet, CombatParticipantViewSet, CombatActionViewSet
+from combat.views import CombatSessionViewSet, CombatParticipantViewSet, CombatActionViewSet, CombatLogViewSet
+from items.views import (
+    ItemViewSet, WeaponViewSet, ArmorViewSet, ConsumableViewSet,
+    MagicItemViewSet, ItemCategoryViewSet, ItemPropertyViewSet
+)
 
 router = DefaultRouter()
 # Bestiary routes
@@ -46,6 +50,15 @@ router.register(r'character-resistances', CharacterResistanceViewSet, basename='
 router.register(r'combat/sessions', CombatSessionViewSet, basename='combat-session')
 router.register(r'combat/participants', CombatParticipantViewSet, basename='combat-participant')
 router.register(r'combat/actions', CombatActionViewSet, basename='combat-action')
+router.register(r'combat/logs', CombatLogViewSet, basename='combat-log')
+# Items system routes
+router.register(r'items', ItemViewSet, basename='item')
+router.register(r'weapons', WeaponViewSet, basename='weapon')
+router.register(r'armor', ArmorViewSet, basename='armor')
+router.register(r'consumables', ConsumableViewSet, basename='consumable')
+router.register(r'magic-items', MagicItemViewSet, basename='magic-item')
+router.register(r'item-categories', ItemCategoryViewSet, basename='item-category')
+router.register(r'item-properties', ItemPropertyViewSet, basename='item-property')
 
 urlpatterns = [
     path('admin/', admin.site.urls),
