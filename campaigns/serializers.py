@@ -1,8 +1,15 @@
 from rest_framework import serializers
-from .models import Campaign, CampaignCharacter, CampaignEncounter
-from characters.serializers import CharacterSerializer
+from .models import Campaign, CampaignCharacter, CampaignEncounter, CharacterXP, TreasureRoom, TreasureRoomReward, RecruitableCharacter, RecruitmentRoom
+from characters.serializers import CharacterSerializer, CharacterClassSerializer, CharacterRaceSerializer, CharacterBackgroundSerializer
 from encounters.serializers import EncounterSerializer
 from combat.serializers import CombatSessionSerializer
+
+
+class CharacterXPSerializer(serializers.ModelSerializer):
+    """Serializer for character XP tracking"""
+    class Meta:
+        model = CharacterXP
+        fields = '__all__'
 
 
 class CampaignCharacterSerializer(serializers.ModelSerializer):
@@ -11,6 +18,7 @@ class CampaignCharacterSerializer(serializers.ModelSerializer):
     character_id = serializers.IntegerField(write_only=True)
     hit_dice_remaining_display = serializers.SerializerMethodField()
     available_hit_dice = serializers.SerializerMethodField()
+    xp_tracking = CharacterXPSerializer(read_only=True)
     
     class Meta:
         model = CampaignCharacter
@@ -39,10 +47,52 @@ class CampaignEncounterSerializer(serializers.ModelSerializer):
         fields = '__all__'
 
 
+class TreasureRoomRewardSerializer(serializers.ModelSerializer):
+    """Serializer for individual treasure room reward"""
+    item_name = serializers.CharField(source='item.name', read_only=True, allow_null=True)
+    claimed_by_name = serializers.CharField(source='claimed_by.character.name', read_only=True, allow_null=True)
+    
+    class Meta:
+        model = TreasureRoomReward
+        fields = '__all__'
+
+
+class TreasureRoomSerializer(serializers.ModelSerializer):
+    """Serializer for treasure room"""
+    reward_items = TreasureRoomRewardSerializer(many=True, read_only=True)
+    
+    class Meta:
+        model = TreasureRoom
+        fields = '__all__'
+
+
+class RecruitableCharacterSerializer(serializers.ModelSerializer):
+    """Serializer for recruitable character template"""
+    character_class = CharacterClassSerializer(read_only=True)
+    race = CharacterRaceSerializer(read_only=True)
+    background = CharacterBackgroundSerializer(read_only=True, allow_null=True)
+    
+    class Meta:
+        model = RecruitableCharacter
+        fields = '__all__'
+
+
+class RecruitmentRoomSerializer(serializers.ModelSerializer):
+    """Serializer for recruitment room"""
+    available_recruits = RecruitableCharacterSerializer(many=True, read_only=True)
+    recruit_selected = CampaignCharacterSerializer(read_only=True, allow_null=True)
+    
+    class Meta:
+        model = RecruitmentRoom
+        fields = '__all__'
+
+
 class CampaignSerializer(serializers.ModelSerializer):
     """Serializer for campaign"""
     campaign_characters = CampaignCharacterSerializer(many=True, read_only=True)
     campaign_encounters = CampaignEncounterSerializer(many=True, read_only=True)
+    treasure_rooms = TreasureRoomSerializer(many=True, read_only=True)
+    recruitment_rooms = RecruitmentRoomSerializer(many=True, read_only=True)
     current_encounter = serializers.SerializerMethodField()
     alive_characters_count = serializers.SerializerMethodField()
     can_short_rest = serializers.SerializerMethodField()

@@ -4,11 +4,13 @@ from rest_framework.response import Response
 from django.utils import timezone
 from django.db import transaction
 
-from .models import Campaign, CampaignCharacter, CampaignEncounter
+from .models import Campaign, CampaignCharacter, CampaignEncounter, CharacterXP, TreasureRoom, TreasureRoomReward, RecruitableCharacter, RecruitmentRoom
 from .serializers import (
     CampaignSerializer, CampaignCharacterSerializer, CampaignEncounterSerializer,
-    ShortRestRequestSerializer, LongRestRequestSerializer
+    ShortRestRequestSerializer, LongRestRequestSerializer, TreasureRoomSerializer,
+    RecruitableCharacterSerializer, RecruitmentRoomSerializer
 )
+from .utils import grant_encounter_xp, TreasureGenerator, RecruitmentGenerator, CampaignGenerator
 from encounters.models import Encounter
 from characters.models import Character
 from combat.models import CombatSession
@@ -26,6 +28,37 @@ class CampaignViewSet(viewsets.ModelViewSet):
     def perform_create(self, serializer):
         """Automatically set the owner when creating a campaign"""
         serializer.save(owner=self.request.user)
+    
+    @action(detail=True, methods=['post'])
+    def populate(self, request, pk=None):
+        """Auto-populate campaign with random encounters and treasures"""
+        campaign = self.get_object()
+        
+        if campaign.status != 'preparing':
+            return Response(
+                {"error": "Campaign must be in 'preparing' status to populate"},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+        
+        num_encounters = request.data.get('num_encounters', 5)
+        auto_treasure = request.data.get('auto_treasure', True)
+        
+        try:
+            summary = CampaignGenerator.populate_campaign(
+                campaign,
+                num_encounters=int(num_encounters),
+                auto_treasure=bool(auto_treasure)
+            )
+            
+            return Response({
+                "message": "Campaign populated successfully",
+                "summary": summary
+            })
+        except Exception as e:
+            return Response(
+                {"error": f"Failed to populate campaign: {str(e)}"},
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR
+            )
     
     @action(detail=True, methods=['post'])
     def start(self, request, pk=None):
@@ -251,12 +284,60 @@ class CampaignViewSet(viewsets.ModelViewSet):
         
         try:
             encounter.complete(combat_session=combat_session, rewards=rewards)
+            
+            # Grant XP to all characters
+            characters = campaign.get_alive_characters()
+            xp_results = grant_encounter_xp(encounter, characters)
+            
+            # Check if treasure room should be generated (every 2-3 encounters, or random 20% chance)
+            treasure_room = None
+            import random
+            should_generate_treasure = (
+                encounter.encounter_number % 3 == 0 or  # Every 3rd encounter
+                random.random() < 0.2  # 20% random chance
+            )
+            
+            if should_generate_treasure and encounter.encounter_number < campaign.total_encounters:
+                treasure_room = TreasureGenerator.generate_treasure_room(
+                    campaign,
+                    encounter.encounter_number
+                )
+            
+            # Check if recruitment room should be generated (solo mode only, every 3-5 encounters)
+            recruitment_room = None
+            if campaign.start_mode == 'solo' and campaign.get_alive_characters().count() < 4:
+                should_generate_recruitment = (
+                    encounter.encounter_number % 4 == 0 or  # Every 4th encounter
+                    (random.random() < 0.15 and encounter.encounter_number >= 3)  # 15% chance after encounter 3
+                )
+                
+                if should_generate_recruitment and encounter.encounter_number < campaign.total_encounters:
+                    try:
+                        recruitment_room = RecruitmentGenerator.generate_recruitment_room(
+                            campaign,
+                            encounter.encounter_number
+                        )
+                    except ValueError as e:
+                        # Silently fail if recruitment can't be generated (e.g., party already full)
+                        pass
+            
             serializer = CampaignEncounterSerializer(encounter)
-            return Response({
+            response_data = {
                 "message": f"Encounter {encounter.encounter_number} completed",
                 "campaign_encounter": serializer.data,
-                "campaign_status": campaign.status
-            })
+                "campaign_status": campaign.status,
+                "xp_rewards": xp_results
+            }
+            
+            if treasure_room:
+                response_data["treasure_room"] = TreasureRoomSerializer(treasure_room).data
+                response_data["message"] += " - Treasure room discovered!"
+            
+            if recruitment_room:
+                response_data["recruitment_room"] = RecruitmentRoomSerializer(recruitment_room).data
+                response_data["message"] += " - Recruitment room discovered!"
+            
+            return Response(response_data)
         except ValueError as e:
             return Response(
                 {"error": str(e)},
@@ -455,6 +536,15 @@ class CampaignViewSet(viewsets.ModelViewSet):
         party_status = []
         
         for char in campaign.get_alive_characters():
+            xp_info = {}
+            if hasattr(char, 'xp_tracking'):
+                xp_tracking = char.xp_tracking
+                xp_info = {
+                    "current_xp": xp_tracking.current_xp,
+                    "total_xp_gained": xp_tracking.total_xp_gained,
+                    "level_ups_gained": xp_tracking.level_ups_gained,
+                }
+            
             party_status.append({
                 "id": char.id,
                 "character": char.character.name,
@@ -466,7 +556,8 @@ class CampaignViewSet(viewsets.ModelViewSet):
                 "hit_dice_remaining": char.hit_dice_remaining,
                 "available_hit_dice": char.get_available_hit_dice(),
                 "spell_slots": char.spell_slots,
-                "is_alive": char.is_alive
+                "is_alive": char.is_alive,
+                **xp_info
             })
         
         return Response({
@@ -498,6 +589,399 @@ class CampaignViewSet(viewsets.ModelViewSet):
             "message": f"Campaign ended: {reason}",
             "campaign": serializer.data
         })
+    
+    @action(detail=True, methods=['get'])
+    def treasure_rooms(self, request, pk=None):
+        """Get all treasure rooms for this campaign"""
+        campaign = self.get_object()
+        rooms = campaign.treasure_rooms.all()
+        serializer = TreasureRoomSerializer(rooms, many=True)
+        return Response(serializer.data)
+    
+    @action(detail=True, methods=['post'])
+    def discover_treasure_room(self, request, pk=None):
+        """Manually discover a treasure room (for testing or special cases)"""
+        campaign = self.get_object()
+        encounter_number = request.data.get('encounter_number')
+        
+        if not encounter_number:
+            return Response(
+                {"error": "encounter_number is required"},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+        
+        # Check if room already exists
+        existing_room = TreasureRoom.objects.filter(
+            campaign=campaign,
+            encounter_number=encounter_number
+        ).first()
+        
+        if existing_room:
+            if existing_room.discovered:
+                return Response(
+                    {"error": "Treasure room already discovered"},
+                    status=status.HTTP_400_BAD_REQUEST
+                )
+            existing_room.discover()
+            serializer = TreasureRoomSerializer(existing_room)
+            return Response({
+                "message": "Treasure room discovered",
+                "treasure_room": serializer.data
+            })
+        else:
+            # Generate new treasure room
+            treasure_room = TreasureGenerator.generate_treasure_room(
+                campaign,
+                encounter_number
+            )
+            treasure_room.discover()
+            serializer = TreasureRoomSerializer(treasure_room)
+            return Response({
+                "message": "Treasure room discovered",
+                "treasure_room": serializer.data
+            }, status=status.HTTP_201_CREATED)
+    
+    @action(detail=True, methods=['post'])
+    def claim_treasure(self, request, pk=None):
+        """Claim individual rewards from a treasure room"""
+        campaign = self.get_object()
+        reward_id = request.data.get('reward_id')  # Individual reward ID
+        character_id = request.data.get('character_id')
+        
+        if not reward_id:
+            return Response(
+                {"error": "reward_id is required"},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+        
+        if not character_id:
+            return Response(
+                {"error": "character_id is required"},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+        
+        try:
+            reward = TreasureRoomReward.objects.get(
+                pk=reward_id,
+                treasure_room__campaign=campaign
+            )
+        except TreasureRoomReward.DoesNotExist:
+            return Response(
+                {"error": "Reward not found"},
+                status=status.HTTP_404_NOT_FOUND
+            )
+        
+        treasure_room = reward.treasure_room
+        
+        if not treasure_room.discovered:
+            return Response(
+                {"error": "Treasure room not discovered yet"},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+        
+        if reward.claimed_by:
+            return Response(
+                {"error": "This reward has already been claimed"},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+        
+        try:
+            campaign_char = CampaignCharacter.objects.get(
+                pk=character_id,
+                campaign=campaign,
+                is_alive=True
+            )
+        except CampaignCharacter.DoesNotExist:
+            return Response(
+                {"error": "Character not found or not alive in this campaign"},
+                status=status.HTTP_404_NOT_FOUND
+            )
+        
+        # Claim the reward
+        claim_result = reward.claim(campaign_char)
+        
+        # Handle XP bonus if applicable
+        if reward.xp_bonus > 0:
+            xp_tracking, created = CharacterXP.objects.get_or_create(
+                campaign_character=campaign_char
+            )
+            xp_result = xp_tracking.add_xp(reward.xp_bonus, source="treasure_room")
+            claim_result['xp_gained'] = reward.xp_bonus
+            claim_result['xp_result'] = xp_result
+        
+        # Check if all rewards are claimed
+        unclaimed_count = treasure_room.reward_items.filter(claimed_by__isnull=True).count()
+        if unclaimed_count == 0:
+            treasure_room.loot_distributed = True
+            treasure_room.save()
+        
+        return Response({
+            "message": "Reward claimed successfully",
+            "reward": claim_result,
+            "remaining_unclaimed": unclaimed_count - 1
+        })
+    
+    @action(detail=True, methods=['get'])
+    def treasure_room_rewards(self, request, pk=None):
+        """Get all rewards (claimed and unclaimed) for a treasure room"""
+        campaign = self.get_object()
+        room_id = request.query_params.get('room_id')
+        
+        if not room_id:
+            return Response(
+                {"error": "room_id query parameter is required"},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+        
+        try:
+            treasure_room = TreasureRoom.objects.get(
+                pk=room_id,
+                campaign=campaign
+            )
+        except TreasureRoom.DoesNotExist:
+            return Response(
+                {"error": "Treasure room not found"},
+                status=status.HTTP_404_NOT_FOUND
+            )
+        
+        rewards = treasure_room.reward_items.all()
+        from .serializers import TreasureRoomRewardSerializer
+        serializer = TreasureRoomRewardSerializer(rewards, many=True)
+        
+        return Response({
+            "treasure_room_id": room_id,
+            "rewards": serializer.data,
+            "unclaimed_count": rewards.filter(claimed_by__isnull=True).count()
+        })
+    
+    @action(detail=True, methods=['post'])
+    def grant_xp(self, request, pk=None):
+        """Manually grant XP to characters (for testing or special rewards)"""
+        campaign = self.get_object()
+        character_ids = request.data.get('character_ids', [])
+        xp_amount = request.data.get('xp_amount', 0)
+        source = request.data.get('source', 'manual')
+        
+        if not xp_amount or xp_amount <= 0:
+            return Response(
+                {"error": "xp_amount must be greater than 0"},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+        
+        if character_ids:
+            characters = campaign.campaign_characters.filter(
+                id__in=character_ids,
+                is_alive=True
+            )
+        else:
+            characters = campaign.get_alive_characters()
+        
+        if not characters.exists():
+            return Response(
+                {"error": "No alive characters to grant XP to"},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+        
+        results = {
+            'characters': [],
+            'total_xp_granted': 0,
+            'levels_gained': 0
+        }
+        
+        xp_per_character = xp_amount // characters.count()
+        
+        for campaign_char in characters:
+            xp_tracking, created = CharacterXP.objects.get_or_create(
+                campaign_character=campaign_char
+            )
+            
+            old_level = campaign_char.character.level
+            result = xp_tracking.add_xp(xp_per_character, source=source)
+            new_level = campaign_char.character.level
+            
+            level_gained = new_level > old_level
+            if level_gained:
+                results['levels_gained'] += (new_level - old_level)
+            
+            results['characters'].append({
+                'character_id': campaign_char.id,
+                'character_name': campaign_char.character.name,
+                'xp_gained': xp_per_character,
+                'total_xp': xp_tracking.current_xp,
+                'level': new_level,
+                'level_gained': level_gained,
+            })
+            
+            results['total_xp_granted'] += xp_per_character
+        
+        return Response({
+            "message": f"Granted {xp_amount} XP total",
+            "results": results
+        })
+    
+    @action(detail=True, methods=['get'])
+    def recruitment_rooms(self, request, pk=None):
+        """Get all recruitment rooms for this campaign"""
+        campaign = self.get_object()
+        rooms = campaign.recruitment_rooms.all()
+        serializer = RecruitmentRoomSerializer(rooms, many=True)
+        return Response(serializer.data)
+    
+    @action(detail=True, methods=['post'])
+    def discover_recruitment_room(self, request, pk=None):
+        """Manually discover a recruitment room (for testing or special cases)"""
+        campaign = self.get_object()
+        encounter_number = request.data.get('encounter_number')
+        
+        if campaign.start_mode != 'solo':
+            return Response(
+                {"error": "Recruitment rooms are only available in solo mode"},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+        
+        if not encounter_number:
+            return Response(
+                {"error": "encounter_number is required"},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+        
+        # Check if room already exists
+        existing_room = RecruitmentRoom.objects.filter(
+            campaign=campaign,
+            encounter_number=encounter_number
+        ).first()
+        
+        if existing_room:
+            if existing_room.discovered:
+                return Response(
+                    {"error": "Recruitment room already discovered"},
+                    status=status.HTTP_400_BAD_REQUEST
+                )
+            existing_room.discover()
+            serializer = RecruitmentRoomSerializer(existing_room)
+            return Response({
+                "message": "Recruitment room discovered",
+                "recruitment_room": serializer.data
+            })
+        else:
+            # Generate new recruitment room
+            try:
+                recruitment_room = RecruitmentGenerator.generate_recruitment_room(
+                    campaign,
+                    encounter_number
+                )
+                recruitment_room.discover()
+                serializer = RecruitmentRoomSerializer(recruitment_room)
+                return Response({
+                    "message": "Recruitment room discovered",
+                    "recruitment_room": serializer.data
+                }, status=status.HTTP_201_CREATED)
+            except ValueError as e:
+                return Response(
+                    {"error": str(e)},
+                    status=status.HTTP_400_BAD_REQUEST
+                )
+    
+    @action(detail=True, methods=['get'])
+    def recruitment_room_available(self, request, pk=None):
+        """Get available recruits for a recruitment room"""
+        campaign = self.get_object()
+        room_id = request.query_params.get('room_id')
+        
+        if not room_id:
+            return Response(
+                {"error": "room_id query parameter is required"},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+        
+        try:
+            recruitment_room = RecruitmentRoom.objects.get(
+                pk=room_id,
+                campaign=campaign
+            )
+        except RecruitmentRoom.DoesNotExist:
+            return Response(
+                {"error": "Recruitment room not found"},
+                status=status.HTTP_404_NOT_FOUND
+            )
+        
+        serializer = RecruitmentRoomSerializer(recruitment_room)
+        return Response(serializer.data)
+    
+    @action(detail=True, methods=['post'])
+    def recruit_character(self, request, pk=None):
+        """Recruit a character from a recruitment room"""
+        campaign = self.get_object()
+        room_id = request.data.get('room_id')
+        recruit_template_id = request.data.get('recruit_template_id')
+        
+        if campaign.start_mode != 'solo':
+            return Response(
+                {"error": "Recruitment is only available in solo mode"},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+        
+        if not room_id:
+            return Response(
+                {"error": "room_id is required"},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+        
+        if not recruit_template_id:
+            return Response(
+                {"error": "recruit_template_id is required"},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+        
+        try:
+            recruitment_room = RecruitmentRoom.objects.get(
+                pk=room_id,
+                campaign=campaign
+            )
+        except RecruitmentRoom.DoesNotExist:
+            return Response(
+                {"error": "Recruitment room not found"},
+                status=status.HTTP_404_NOT_FOUND
+            )
+        
+        if not recruitment_room.discovered:
+            return Response(
+                {"error": "Recruitment room not discovered yet"},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+        
+        if recruitment_room.recruit_selected:
+            return Response(
+                {"error": "A recruit has already been selected from this room"},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+        
+        # Check if the recruit template is available in this room
+        try:
+            recruit_template = recruitment_room.available_recruits.get(pk=recruit_template_id)
+        except RecruitableCharacter.DoesNotExist:
+            return Response(
+                {"error": "Recruit template not found in this recruitment room"},
+                status=status.HTTP_404_NOT_FOUND
+            )
+        
+        try:
+            campaign_char = RecruitmentGenerator.recruit_character(
+                campaign,
+                recruitment_room,
+                recruit_template
+            )
+            
+            serializer = CampaignCharacterSerializer(campaign_char)
+            return Response({
+                "message": f"{campaign_char.character.name} recruited successfully",
+                "campaign_character": serializer.data
+            }, status=status.HTTP_201_CREATED)
+        except ValueError as e:
+            return Response(
+                {"error": str(e)},
+                status=status.HTTP_400_BAD_REQUEST
+            )
 
 
 class CampaignCharacterViewSet(viewsets.ModelViewSet):

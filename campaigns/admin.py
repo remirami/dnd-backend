@@ -1,5 +1,5 @@
 from django.contrib import admin
-from .models import Campaign, CampaignCharacter, CampaignEncounter
+from .models import Campaign, CampaignCharacter, CampaignEncounter, TreasureRoom, TreasureRoomReward, RecruitableCharacter, RecruitmentRoom
 
 
 class CampaignCharacterInline(admin.TabularInline):
@@ -18,8 +18,8 @@ class CampaignEncounterInline(admin.TabularInline):
 
 @admin.register(Campaign)
 class CampaignAdmin(admin.ModelAdmin):
-    list_display = ('name', 'status', 'current_encounter_index', 'total_encounters', 'long_rests_used', 'long_rests_available', 'created_at')
-    list_filter = ('status', 'created_at')
+    list_display = ('name', 'status', 'start_mode', 'starting_level', 'current_encounter_index', 'total_encounters', 'long_rests_used', 'long_rests_available', 'created_at')
+    list_filter = ('status', 'start_mode', 'starting_level', 'created_at')
     search_fields = ('name', 'description')
     readonly_fields = ('created_at', 'started_at', 'ended_at')
     inlines = [CampaignCharacterInline, CampaignEncounterInline]
@@ -27,6 +27,9 @@ class CampaignAdmin(admin.ModelAdmin):
     fieldsets = (
         ('Basic Information', {
             'fields': ('name', 'description', 'status', 'notes')
+        }),
+        ('Roguelite Settings', {
+            'fields': ('starting_level', 'start_mode', 'starting_party_size')
         }),
         ('Progress', {
             'fields': ('current_encounter_index', 'total_encounters')
@@ -89,5 +92,103 @@ class CampaignEncounterAdmin(admin.ModelAdmin):
         }),
         ('Notes', {
             'fields': ('notes',)
+        }),
+    )
+
+
+@admin.register(RecruitableCharacter)
+class RecruitableCharacterAdmin(admin.ModelAdmin):
+    list_display = ('name', 'character_class', 'race', 'rarity', 'created_at')
+    list_filter = ('rarity', 'character_class', 'race', 'created_at')
+    search_fields = ('name', 'recruitment_description', 'personality_trait')
+    readonly_fields = ('created_at', 'updated_at')
+    
+    fieldsets = (
+        ('Basic Information', {
+            'fields': ('name', 'character_class', 'race', 'background')
+        }),
+        ('Recruitment Info', {
+            'fields': ('recruitment_description', 'personality_trait', 'rarity')
+        }),
+        ('Starting Stats', {
+            'fields': ('starting_stats', 'starting_equipment'),
+            'description': 'Starting stats and equipment for this recruit template'
+        }),
+        ('Timestamps', {
+            'fields': ('created_at', 'updated_at')
+        }),
+    )
+
+
+@admin.register(RecruitmentRoom)
+class RecruitmentRoomAdmin(admin.ModelAdmin):
+    list_display = ('campaign', 'encounter_number', 'discovered', 'recruit_selected', 'created_at')
+    list_filter = ('discovered', 'campaign', 'created_at')
+    search_fields = ('campaign__name',)
+    readonly_fields = ('created_at', 'discovered_at')
+    filter_horizontal = ('available_recruits',)
+    
+    fieldsets = (
+        ('Campaign', {
+            'fields': ('campaign', 'encounter_number')
+        }),
+        ('Recruitment', {
+            'fields': ('available_recruits', 'discovered', 'recruit_selected')
+        }),
+        ('Timestamps', {
+            'fields': ('created_at', 'discovered_at')
+        }),
+    )
+
+
+class TreasureRoomRewardInline(admin.TabularInline):
+    model = TreasureRoomReward
+    extra = 0
+    fields = ('item', 'quantity', 'gold_amount', 'xp_bonus', 'claimed_by', 'claimed_at')
+    readonly_fields = ('claimed_at',)
+
+
+@admin.register(TreasureRoom)
+class TreasureRoomAdmin(admin.ModelAdmin):
+    list_display = ('campaign', 'encounter_number', 'room_type', 'discovered', 'loot_distributed', 'created_at')
+    list_filter = ('room_type', 'discovered', 'loot_distributed', 'campaign', 'created_at')
+    search_fields = ('campaign__name',)
+    readonly_fields = ('created_at', 'discovered_at')
+    inlines = [TreasureRoomRewardInline]
+    
+    fieldsets = (
+        ('Campaign', {
+            'fields': ('campaign', 'encounter_number', 'room_type')
+        }),
+        ('Status', {
+            'fields': ('discovered', 'loot_distributed', 'rewards')
+        }),
+        ('Timestamps', {
+            'fields': ('created_at', 'discovered_at')
+        }),
+    )
+
+
+@admin.register(TreasureRoomReward)
+class TreasureRoomRewardAdmin(admin.ModelAdmin):
+    list_display = ('treasure_room', 'item', 'quantity', 'gold_amount', 'xp_bonus', 'claimed_by', 'claimed_at', 'is_claimed')
+    list_filter = ('treasure_room__campaign', 'claimed_at')
+    search_fields = ('treasure_room__campaign__name', 'item__name', 'claimed_by__character__name')
+    readonly_fields = ('claimed_at',)
+    
+    def is_claimed(self, obj):
+        return obj.claimed_by is not None
+    is_claimed.boolean = True
+    is_claimed.short_description = 'Claimed'
+    
+    fieldsets = (
+        ('Treasure Room', {
+            'fields': ('treasure_room',)
+        }),
+        ('Reward', {
+            'fields': ('item', 'quantity', 'gold_amount', 'xp_bonus')
+        }),
+        ('Claiming', {
+            'fields': ('claimed_by', 'claimed_at')
         }),
     )
