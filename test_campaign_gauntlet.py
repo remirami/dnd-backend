@@ -24,7 +24,12 @@ def print_response(response, title=""):
         print(json.dumps(data, indent=2))
     except:
         print(f"Status: {response.status_code}")
-        print(response.text)
+        try:
+            # Try to decode as UTF-8 first, fallback to error handling
+            text = response.text.encode('utf-8', errors='replace').decode('utf-8', errors='replace')
+            print(text[:500])  # Limit output to avoid huge errors
+        except:
+            print("Could not decode response")
     
     print(f"\nStatus Code: {response.status_code}")
     return data if response.status_code < 400 else None

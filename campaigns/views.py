@@ -1,4 +1,4 @@
-from rest_framework import viewsets, status
+from rest_framework import viewsets, status, permissions
 from rest_framework.decorators import action
 from rest_framework.response import Response
 from django.utils import timezone
@@ -16,8 +16,16 @@ from combat.models import CombatSession
 
 class CampaignViewSet(viewsets.ModelViewSet):
     """API endpoint for managing campaigns"""
-    queryset = Campaign.objects.all().order_by('-created_at')
     serializer_class = CampaignSerializer
+    permission_classes = [permissions.IsAuthenticated]
+    
+    def get_queryset(self):
+        """Filter campaigns to only show those owned by the current user"""
+        return Campaign.objects.filter(owner=self.request.user).order_by('-created_at')
+    
+    def perform_create(self, serializer):
+        """Automatically set the owner when creating a campaign"""
+        serializer.save(owner=self.request.user)
     
     @action(detail=True, methods=['post'])
     def start(self, request, pk=None):
@@ -48,8 +56,9 @@ class CampaignViewSet(viewsets.ModelViewSet):
                 status=status.HTTP_400_BAD_REQUEST
             )
         
+        # Ensure user can only add their own characters to campaigns
         try:
-            character = Character.objects.get(pk=character_id)
+            character = Character.objects.get(pk=character_id, user=request.user)
         except Character.DoesNotExist:
             return Response(
                 {"error": "Character not found"},
@@ -69,11 +78,29 @@ class CampaignViewSet(viewsets.ModelViewSet):
                 status=status.HTTP_400_BAD_REQUEST
             )
         
-        # Create campaign character
-        campaign_char = CampaignCharacter.objects.create(
+        # Validate character has required attributes before creating
+        if not hasattr(character, 'character_class'):
+            return Response(
+                {"error": "Character must have a character class to join campaign"},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+        
+        if not hasattr(character, 'stats') or not hasattr(character.stats, 'max_hit_points'):
+            return Response(
+                {"error": "Character must have stats with max_hit_points to join campaign"},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+        
+        # Create campaign character with initial values
+        # We need to provide required fields, so we'll initialize first
+        stats = character.stats
+        campaign_char = CampaignCharacter(
             campaign=campaign,
-            character=character
+            character=character,
+            current_hp=stats.max_hit_points,  # Temporary, will be set properly in initialize_from_character
+            max_hp=stats.max_hit_points  # Temporary, will be set properly in initialize_from_character
         )
+        # Now initialize properly (this will set all fields correctly)
         campaign_char.initialize_from_character()
         
         serializer = CampaignCharacterSerializer(campaign_char)
@@ -475,25 +502,27 @@ class CampaignViewSet(viewsets.ModelViewSet):
 
 class CampaignCharacterViewSet(viewsets.ModelViewSet):
     """API endpoint for managing campaign characters"""
-    queryset = CampaignCharacter.objects.all()
     serializer_class = CampaignCharacterSerializer
+    permission_classes = [permissions.IsAuthenticated]
     
     def get_queryset(self):
-        queryset = CampaignCharacter.objects.all()
+        """Filter to only show campaign characters from campaigns owned by the user"""
+        queryset = CampaignCharacter.objects.filter(campaign__owner=self.request.user)
         campaign_id = self.request.query_params.get('campaign', None)
         if campaign_id:
-            queryset = queryset.filter(campaign_id=campaign_id)
+            queryset = queryset.filter(campaign_id=campaign_id, campaign__owner=self.request.user)
         return queryset
 
 
 class CampaignEncounterViewSet(viewsets.ReadOnlyModelViewSet):
     """API endpoint for viewing campaign encounters"""
-    queryset = CampaignEncounter.objects.all()
     serializer_class = CampaignEncounterSerializer
+    permission_classes = [permissions.IsAuthenticated]
     
     def get_queryset(self):
-        queryset = CampaignEncounter.objects.all()
+        """Filter to only show campaign encounters from campaigns owned by the user"""
+        queryset = CampaignEncounter.objects.filter(campaign__owner=self.request.user)
         campaign_id = self.request.query_params.get('campaign', None)
         if campaign_id:
-            queryset = queryset.filter(campaign_id=campaign_id)
+            queryset = queryset.filter(campaign_id=campaign_id, campaign__owner=self.request.user)
         return queryset

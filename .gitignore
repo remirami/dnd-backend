@@ -104,3 +104,6 @@ sample_monsters.json
 test_monster.json
 comprehensive_monsters.json
 sample_monsters.csv
+
+# Documentation (internal)
+docs/user_authentication_guide.md

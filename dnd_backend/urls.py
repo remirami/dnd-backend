@@ -67,6 +67,7 @@ router.register(r'campaign-encounters', CampaignEncounterViewSet, basename='camp
 
 urlpatterns = [
     path('admin/', admin.site.urls),
+    path('api/auth/', include('authentication.urls')),
     path('api/enemies/import/', import_monsters_view, name='import_monsters'),
     path('api/', include(router.urls)),
 ]

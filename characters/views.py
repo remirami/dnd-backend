@@ -1,4 +1,4 @@
-from rest_framework import viewsets, status
+from rest_framework import viewsets, status, permissions
 from rest_framework.decorators import action
 from rest_framework.response import Response
 
@@ -15,8 +15,16 @@ from .serializers import (
 
 class CharacterViewSet(viewsets.ModelViewSet):
     """API endpoint for managing player characters."""
-    queryset = Character.objects.all().order_by('-created_at')
     serializer_class = CharacterSerializer
+    permission_classes = [permissions.IsAuthenticated]
+    
+    def get_queryset(self):
+        """Filter characters to only show those owned by the current user"""
+        return Character.objects.filter(user=self.request.user).order_by('-created_at')
+    
+    def perform_create(self, serializer):
+        """Automatically set the user when creating a character"""
+        serializer.save(user=self.request.user)
     
     @action(detail=True, methods=['post'])
     def level_up(self, request, pk=None):
@@ -334,29 +342,49 @@ class CharacterBackgroundViewSet(viewsets.ReadOnlyModelViewSet):
 
 class CharacterStatsViewSet(viewsets.ModelViewSet):
     """API endpoint for managing character stats."""
-    queryset = CharacterStats.objects.all()
     serializer_class = CharacterStatsSerializer
+    permission_classes = [permissions.IsAuthenticated]
+    
+    def get_queryset(self):
+        """Filter character stats to only show those for characters owned by the current user"""
+        return CharacterStats.objects.filter(character__user=self.request.user)
 
 
 class CharacterProficiencyViewSet(viewsets.ModelViewSet):
     """API endpoint for managing character proficiencies."""
-    queryset = CharacterProficiency.objects.all()
     serializer_class = CharacterProficiencySerializer
+    permission_classes = [permissions.IsAuthenticated]
+    
+    def get_queryset(self):
+        """Filter character proficiencies to only show those for characters owned by the current user"""
+        return CharacterProficiency.objects.filter(character__user=self.request.user)
 
 
 class CharacterFeatureViewSet(viewsets.ModelViewSet):
     """API endpoint for managing character features."""
-    queryset = CharacterFeature.objects.all()
     serializer_class = CharacterFeatureSerializer
+    permission_classes = [permissions.IsAuthenticated]
+    
+    def get_queryset(self):
+        """Filter character features to only show those for characters owned by the current user"""
+        return CharacterFeature.objects.filter(character__user=self.request.user)
 
 
 class CharacterSpellViewSet(viewsets.ModelViewSet):
     """API endpoint for managing character spells."""
-    queryset = CharacterSpell.objects.all()
     serializer_class = CharacterSpellSerializer
+    permission_classes = [permissions.IsAuthenticated]
+    
+    def get_queryset(self):
+        """Filter character spells to only show those for characters owned by the current user"""
+        return CharacterSpell.objects.filter(character__user=self.request.user)
 
 
 class CharacterResistanceViewSet(viewsets.ModelViewSet):
     """API endpoint for managing character resistances."""
-    queryset = CharacterResistance.objects.all()
     serializer_class = CharacterResistanceSerializer
+    permission_classes = [permissions.IsAuthenticated]
+    
+    def get_queryset(self):
+        """Filter character resistances to only show those for characters owned by the current user"""
+        return CharacterResistance.objects.filter(character__user=self.request.user)

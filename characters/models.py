@@ -1,5 +1,6 @@
 from django.db import models
 from django.core.validators import MinValueValidator
+from django.contrib.auth.models import User
 from bestiary.models import Language, DamageType
 
 
@@ -104,6 +105,7 @@ class Character(models.Model):
         ('U', 'Unaligned'),
     ]
     
+    user = models.ForeignKey(User, on_delete=models.CASCADE, related_name='characters', null=True, blank=True)
     name = models.CharField(max_length=100)
     level = models.IntegerField(default=1)
     character_class = models.ForeignKey(CharacterClass, on_delete=models.PROTECT, related_name='characters')

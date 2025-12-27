@@ -1,6 +1,7 @@
 from django.db import models
 from django.core.validators import MinValueValidator, MaxValueValidator
 from django.utils import timezone
+from django.contrib.auth.models import User
 from encounters.models import Encounter
 from characters.models import Character
 from combat.models import CombatSession
@@ -15,6 +16,7 @@ class Campaign(models.Model):
         ('failed', 'Failed'),
     ]
     
+    owner = models.ForeignKey(User, on_delete=models.CASCADE, related_name='campaigns', null=True, blank=True)
     name = models.CharField(max_length=200)
     description = models.TextField(blank=True, null=True)
     status = models.CharField(max_length=20, choices=STATUS_CHOICES, default='preparing')
@@ -43,8 +45,31 @@ class Campaign(models.Model):
         if self.status != 'preparing':
             raise ValueError("Campaign must be in 'preparing' status to start")
         
-        if not self.campaign_characters.filter(is_alive=True).exists():
-            raise ValueError("Campaign must have at least one alive character")
+        # Check for characters and their status
+        total_characters = self.campaign_characters.count()
+        alive_characters = self.campaign_characters.filter(is_alive=True)
+        alive_count = alive_characters.count()
+        
+        if total_characters == 0:
+            raise ValueError("Campaign must have at least one character. Add characters before starting.")
+        
+        if alive_count == 0:
+            # Try to re-initialize dead characters if they exist
+            dead_characters = self.campaign_characters.filter(is_alive=False)
+            for char in dead_characters:
+                try:
+                    char.initialize_from_character()
+                    alive_count += 1
+                except (ValueError, AttributeError):
+                    # Skip characters that can't be initialized
+                    pass
+            
+            if alive_count == 0:
+                raise ValueError(
+                    f"Campaign must have at least one alive character. "
+                    f"Found {total_characters} character(s) but none are alive. "
+                    f"All characters may need to be re-initialized or added properly."
+                )
         
         if not self.campaign_encounters.exists():
             raise ValueError("Campaign must have at least one encounter")
@@ -136,6 +161,9 @@ class CampaignCharacter(models.Model):
         stats = self.character.stats
         self.max_hp = stats.max_hit_points
         self.current_hp = stats.max_hit_points
+        
+        # Ensure character is marked as alive
+        self.is_alive = True
         
         # Initialize hit dice based on character level and class
         hit_dice_type = self.character.character_class.hit_dice  # e.g., "d8"
