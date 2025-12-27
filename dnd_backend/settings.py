@@ -43,6 +43,7 @@ INSTALLED_APPS = [
     'characters',
     'items',
     'combat',
+    'campaigns',
     'logs',
 
 ]

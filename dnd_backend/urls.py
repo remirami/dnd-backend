@@ -29,6 +29,7 @@ from items.views import (
     ItemViewSet, WeaponViewSet, ArmorViewSet, ConsumableViewSet,
     MagicItemViewSet, ItemCategoryViewSet, ItemPropertyViewSet
 )
+from campaigns.views import CampaignViewSet, CampaignCharacterViewSet, CampaignEncounterViewSet
 
 router = DefaultRouter()
 # Bestiary routes
@@ -59,6 +60,10 @@ router.register(r'consumables', ConsumableViewSet, basename='consumable')
 router.register(r'magic-items', MagicItemViewSet, basename='magic-item')
 router.register(r'item-categories', ItemCategoryViewSet, basename='item-category')
 router.register(r'item-properties', ItemPropertyViewSet, basename='item-property')
+# Campaign system routes
+router.register(r'campaigns', CampaignViewSet, basename='campaign')
+router.register(r'campaign-characters', CampaignCharacterViewSet, basename='campaign-character')
+router.register(r'campaign-encounters', CampaignEncounterViewSet, basename='campaign-encounter')
 
 urlpatterns = [
     path('admin/', admin.site.urls),

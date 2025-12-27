@@ -249,9 +249,9 @@ This project is licensed under the MIT License - see the LICENSE file for detail
 - [x] Combat mechanics (Phase 1, 2, 3)
 - [x] Item/equipment system
 - [x] Combat logging
+- [x] Campaign management (Roguelike Gauntlet)
 - [ ] Frontend interface
 - [ ] User authentication
-- [ ] Campaign management
 
 ## 🐛 Issues
 
