@@ -79,8 +79,8 @@ class CombatActionSerializer(serializers.ModelSerializer):
 class CombatSessionSerializer(serializers.ModelSerializer):
     """Serializer for combat sessions"""
     status_display = serializers.CharField(source='get_status_display', read_only=True)
-    encounter = EncounterSerializer(read_only=True)
-    encounter_id = serializers.IntegerField(write_only=True)
+    encounter = EncounterSerializer(read_only=True, allow_null=True)
+    encounter_id = serializers.IntegerField(write_only=True, required=False, allow_null=True)
     participants = CombatParticipantSerializer(many=True, read_only=True)
     current_participant = serializers.SerializerMethodField()
     initiative_order = serializers.SerializerMethodField()

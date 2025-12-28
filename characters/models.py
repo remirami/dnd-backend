@@ -122,6 +122,10 @@ class Character(models.Model):
     # Experience points
     experience_points = models.IntegerField(default=0)
     
+    # Pending choices (for standalone character tracking)
+    pending_asi_levels = models.JSONField(default=list, blank=True, help_text="List of levels where ASI/Feat is pending player choice (e.g., [4, 8])")
+    pending_subclass_selection = models.BooleanField(default=False, help_text="True if character needs to select subclass")
+    
     # Character description
     player_name = models.CharField(max_length=100, blank=True)
     description = models.TextField(blank=True, null=True)
@@ -178,6 +182,9 @@ class CharacterStats(models.Model):
     # Spellcasting (if applicable)
     spell_save_dc = models.IntegerField(blank=True, null=True)
     spell_attack_bonus = models.IntegerField(blank=True, null=True)
+    
+    # Spell slots tracking (stored as JSON: {"1": 3, "2": 2} means 3 level-1, 2 level-2 slots remaining)
+    spell_slots = models.JSONField(default=dict, blank=True, help_text="Current spell slots remaining by level")
     
     def __str__(self):
         return f"{self.character.name} - Stats"

@@ -14,7 +14,8 @@ class CombatSession(models.Model):
         ('ended', 'Ended'),
     ]
     
-    encounter = models.ForeignKey(Encounter, on_delete=models.CASCADE, related_name='combat_sessions')
+    encounter = models.ForeignKey(Encounter, on_delete=models.CASCADE, related_name='combat_sessions', blank=True, null=True, help_text="Optional encounter. If null, this is a practice/simulation session.")
+    is_practice = models.BooleanField(default=False, help_text="True if this is a practice/simulation session")
     status = models.CharField(max_length=20, choices=STATUS_CHOICES, default='preparing')
     current_round = models.IntegerField(default=0)
     current_turn_index = models.IntegerField(default=0)  # Index in initiative order
@@ -23,7 +24,9 @@ class CombatSession(models.Model):
     notes = models.TextField(blank=True)
     
     def __str__(self):
-        return f"Combat: {self.encounter.name} (Round {self.current_round})"
+        if self.encounter:
+            return f"Combat: {self.encounter.name} (Round {self.current_round})"
+        return f"Practice Combat (Round {self.current_round})"
     
     def get_current_participant(self):
         """Get the participant whose turn it is"""

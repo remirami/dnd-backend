@@ -1,7 +1,8 @@
 from rest_framework import serializers
 from .models import (
     Character, CharacterStats, CharacterClass, CharacterRace, CharacterBackground,
-    CharacterProficiency, CharacterFeature, CharacterSpell, CharacterResistance
+    CharacterProficiency, CharacterFeature, CharacterSpell, CharacterResistance, CharacterItem,
+    CharacterClassLevel
 )
 from bestiary.serializers import LanguageSerializer, DamageTypeSerializer
 

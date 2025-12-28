@@ -29,6 +29,23 @@ class CombatSessionViewSet(viewsets.ModelViewSet):
     queryset = CombatSession.objects.all().order_by('-started_at')
     serializer_class = CombatSessionSerializer
     
+    def perform_create(self, serializer):
+        """Handle creation with optional encounter"""
+        encounter_id = self.request.data.get('encounter_id')
+        is_practice = self.request.data.get('is_practice', False)
+        
+        if is_practice or not encounter_id:
+            # Practice mode: no encounter needed
+            serializer.save(encounter=None, is_practice=True)
+        else:
+            # Campaign mode: require encounter
+            try:
+                encounter = Encounter.objects.get(pk=encounter_id)
+                serializer.save(encounter=encounter, is_practice=False)
+            except Encounter.DoesNotExist:
+                from rest_framework.exceptions import ValidationError
+                raise ValidationError({"encounter_id": "Encounter not found"})
+    
     @action(detail=True, methods=['post'])
     def start(self, request, pk=None):
         """Start a combat session"""
@@ -106,42 +123,83 @@ class CombatSessionViewSet(viewsets.ModelViewSet):
         
         elif participant_type == 'enemy':
             encounter_enemy_id = request.data.get('encounter_enemy_id')
-            if not encounter_enemy_id:
+            enemy_id = request.data.get('enemy_id')  # Direct enemy ID for practice mode
+            
+            # Support both EncounterEnemy (for campaigns) and direct Enemy (for practice)
+            if enemy_id:
+                # Practice mode: add enemy directly
+                from bestiary.models import Enemy
+                try:
+                    enemy = Enemy.objects.get(pk=enemy_id)
+                except Enemy.DoesNotExist:
+                    return Response(
+                        {"error": "Enemy not found"},
+                        status=status.HTTP_404_NOT_FOUND
+                    )
+                
+                if not hasattr(enemy, 'stats'):
+                    return Response(
+                        {"error": "Enemy must have stats"},
+                        status=status.HTTP_400_BAD_REQUEST
+                    )
+                
+                enemy_name = request.data.get('enemy_name', enemy.name)
+                enemy_hp = request.data.get('enemy_hp', enemy.stats.hit_points if hasattr(enemy, 'stats') else 10)
+                
+                participant = CombatParticipant.objects.create(
+                    combat_session=session,
+                    participant_type='enemy',
+                    encounter_enemy=None,  # No EncounterEnemy for practice mode
+                    initiative=0,
+                    current_hp=enemy_hp,
+                    max_hp=enemy.stats.hit_points if hasattr(enemy, 'stats') else enemy_hp,
+                    armor_class=enemy.stats.armor_class if hasattr(enemy, 'stats') else 10
+                )
+                session.participants.add(participant)
+                
+                serializer = CombatParticipantSerializer(participant)
+                return Response({
+                    "message": f"{enemy_name} added to combat",
+                    "participant": serializer.data
+                })
+            
+            elif encounter_enemy_id:
+                # Campaign mode: use EncounterEnemy
+                try:
+                    encounter_enemy = EncounterEnemy.objects.get(pk=encounter_enemy_id)
+                except EncounterEnemy.DoesNotExist:
+                    return Response(
+                        {"error": "Encounter enemy not found"},
+                        status=status.HTTP_404_NOT_FOUND
+                    )
+                
+                if session.encounter and encounter_enemy.encounter != session.encounter:
+                    return Response(
+                        {"error": "Enemy must be from the same encounter"},
+                        status=status.HTTP_400_BAD_REQUEST
+                    )
+                
+                participant = CombatParticipant.objects.create(
+                    combat_session=session,
+                    participant_type='enemy',
+                    encounter_enemy=encounter_enemy,
+                    initiative=0,
+                    current_hp=encounter_enemy.current_hp,
+                    max_hp=encounter_enemy.enemy.stats.hit_points if hasattr(encounter_enemy.enemy, 'stats') else encounter_enemy.current_hp,
+                    armor_class=encounter_enemy.enemy.stats.armor_class if hasattr(encounter_enemy.enemy, 'stats') else 10
+                )
+                session.participants.add(participant)
+                
+                serializer = CombatParticipantSerializer(participant)
+                return Response({
+                    "message": f"{encounter_enemy.name} added to combat",
+                    "participant": serializer.data
+                })
+            else:
                 return Response(
-                    {"error": "Missing 'encounter_enemy_id'"},
+                    {"error": "Missing 'encounter_enemy_id' or 'enemy_id'"},
                     status=status.HTTP_400_BAD_REQUEST
                 )
-            
-            try:
-                encounter_enemy = EncounterEnemy.objects.get(pk=encounter_enemy_id)
-            except EncounterEnemy.DoesNotExist:
-                return Response(
-                    {"error": "Encounter enemy not found"},
-                    status=status.HTTP_404_NOT_FOUND
-                )
-            
-            if encounter_enemy.encounter != session.encounter:
-                return Response(
-                    {"error": "Enemy must be from the same encounter"},
-                    status=status.HTTP_400_BAD_REQUEST
-                )
-            
-            participant = CombatParticipant.objects.create(
-                combat_session=session,
-                participant_type='enemy',
-                encounter_enemy=encounter_enemy,
-                initiative=0,
-                current_hp=encounter_enemy.current_hp,
-                max_hp=encounter_enemy.enemy.stats.hit_points if hasattr(encounter_enemy.enemy, 'stats') else encounter_enemy.current_hp,
-                armor_class=encounter_enemy.enemy.stats.armor_class if hasattr(encounter_enemy.enemy, 'stats') else 10
-            )
-            session.participants.add(participant)
-            
-            serializer = CombatParticipantSerializer(participant)
-            return Response({
-                "message": f"{encounter_enemy.name} added to combat",
-                "participant": serializer.data
-            })
         
         else:
             return Response(
@@ -1338,6 +1396,111 @@ class CombatSessionViewSet(viewsets.ModelViewSet):
         position.current_hazards = hazards
         
         position.save()
+    
+    @action(detail=False, methods=['post'])
+    def practice_mode(self, request):
+        """
+        Create a practice combat session quickly.
+        
+        Request body:
+        {
+            "name": "Practice Combat",  // Optional name
+            "character_ids": [1, 2, 3],  // List of character IDs
+            "enemies": [  // List of enemies
+                {"enemy_id": 1, "name": "Goblin 1", "hp": 7},
+                {"enemy_id": 1, "name": "Goblin 2", "hp": 7}
+            ]
+        }
+        """
+        from bestiary.models import Enemy
+        
+        name = request.data.get('name', 'Practice Combat')
+        character_ids = request.data.get('character_ids', [])
+        enemies = request.data.get('enemies', [])
+        
+        # Create practice session
+        session = CombatSession.objects.create(
+            encounter=None,
+            is_practice=True,
+            status='preparing',
+            notes=f"Practice session: {name}"
+        )
+        
+        added_characters = []
+        added_enemies = []
+        
+        # Add characters
+        for char_id in character_ids:
+            try:
+                character = Character.objects.get(pk=char_id)
+                if not hasattr(character, 'stats'):
+                    continue
+                
+                stats = character.stats
+                participant = CombatParticipant.objects.create(
+                    combat_session=session,
+                    participant_type='character',
+                    character=character,
+                    initiative=0,
+                    current_hp=stats.hit_points,
+                    max_hp=stats.max_hit_points,
+                    armor_class=stats.armor_class
+                )
+                session.participants.add(participant)
+                added_characters.append({
+                    'id': character.id,
+                    'name': character.name,
+                    'participant_id': participant.id
+                })
+            except Character.DoesNotExist:
+                continue
+        
+        # Add enemies
+        for enemy_data in enemies:
+            enemy_id = enemy_data.get('enemy_id')
+            enemy_name = enemy_data.get('name', 'Enemy')
+            enemy_hp = enemy_data.get('hp')
+            
+            if not enemy_id:
+                continue
+            
+            try:
+                enemy = Enemy.objects.get(pk=enemy_id)
+                if not hasattr(enemy, 'stats'):
+                    continue
+                
+                hp = enemy_hp if enemy_hp is not None else enemy.stats.hit_points
+                
+                participant = CombatParticipant.objects.create(
+                    combat_session=session,
+                    participant_type='enemy',
+                    encounter_enemy=None,
+                    initiative=0,
+                    current_hp=hp,
+                    max_hp=enemy.stats.hit_points,
+                    armor_class=enemy.stats.armor_class
+                )
+                session.participants.add(participant)
+                added_enemies.append({
+                    'id': enemy.id,
+                    'name': enemy_name,
+                    'participant_id': participant.id
+                })
+            except Enemy.DoesNotExist:
+                continue
+        
+        serializer = self.get_serializer(session)
+        return Response({
+            "message": f"Practice combat session created: {name}",
+            "session": serializer.data,
+            "characters_added": added_characters,
+            "enemies_added": added_enemies,
+            "next_steps": [
+                "1. Roll initiative: POST /api/combat/sessions/{id}/roll_initiative/",
+                "2. Start combat: POST /api/combat/sessions/{id}/start/",
+                "3. Make attacks: POST /api/combat/sessions/{id}/attack/"
+            ]
+        }, status=status.HTTP_201_CREATED)
     
     @action(detail=True, methods=['get'])
     def export(self, request, pk=None):

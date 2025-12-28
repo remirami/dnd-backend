@@ -102,8 +102,15 @@ class CharacterViewSet(viewsets.ModelViewSet):
     @action(detail=True, methods=['post'])
     def level_up(self, request, pk=None):
         """
-        Level up a character.
+        Level up a character with automatic stat updates.
         For multiclass characters, specify which class to level up.
+        
+        Automatically:
+        - Updates HP (rolls hit dice + CON modifier)
+        - Updates spell slots
+        - Applies class features
+        - Tracks pending ASI/Feat choices at levels 4, 8, 12, 16, 19
+        - Prompts for subclass selection if needed
         
         Request body (optional):
         {
@@ -111,7 +118,12 @@ class CharacterViewSet(viewsets.ModelViewSet):
             "class_name": "Fighter"  // Or name of class
         }
         """
+        import random
+        from campaigns.utils import calculate_spell_slots, get_spellcasting_ability, calculate_spell_save_dc, calculate_spell_attack_bonus
+        from campaigns.class_features_data import get_class_features, get_subclass_features
+        
         character = self.get_object()
+        old_level = character.level
         
         # Check if multiclass level-up
         class_id = request.data.get('class_id')
@@ -132,7 +144,7 @@ class CharacterViewSet(viewsets.ModelViewSet):
             except CharacterClass.DoesNotExist:
                 return Response(
                     {"error": f"Class '{class_name}' not found"},
-                    status=status.HTTP_404_NOT_FOUND
+                    status=status.HTTP_400_BAD_REQUEST
                 )
         
         # If multiclassing, add level to that class
@@ -152,8 +164,10 @@ class CharacterViewSet(viewsets.ModelViewSet):
                             {"error": f"Cannot level up {target_class.get_name_display()} beyond level 20"},
                             status=status.HTTP_400_BAD_REQUEST
                         )
+                    old_class_level = class_level.level
                     class_level.level += 1
                     class_level.save()
+                    new_class_level = class_level.level
                 except CharacterClassLevel.DoesNotExist:
                     return Response(
                         {"error": reason},
@@ -161,51 +175,224 @@ class CharacterViewSet(viewsets.ModelViewSet):
                     )
             else:
                 # New class - create CharacterClassLevel
-                CharacterClassLevel.objects.create(
+                class_level = CharacterClassLevel.objects.create(
                     character=character,
                     character_class=target_class,
                     level=1
                 )
+                old_class_level = 0
+                new_class_level = 1
             
             # Update total level
             total_level = get_total_level(character)
             character.level = total_level
+            
+            # Use multiclass spell slot calculation
+            from .multiclassing import calculate_multiclass_spell_slots
+            new_slots = calculate_multiclass_spell_slots(character)
+            
+            # Calculate HP increase for this class level
+            hp_gain = 0
+            if hasattr(character, 'stats'):
+                hit_dice_type = target_class.hit_dice
+                if 'd' in hit_dice_type:
+                    die_part = hit_dice_type.split('d')[-1]
+                    die_size = int(die_part)
+                else:
+                    die_size = 8
+                
+                roll = random.randint(1, die_size)
+                con_mod = (character.stats.constitution - 10) // 2
+                hp_gain = max(1, roll + con_mod)
+                
+                character.stats.max_hit_points += hp_gain
+                character.stats.hit_points += hp_gain  # Full heal on level up
+                character.stats.save()
+            
+            # Apply class features for this class level
+            features_gained = []
+            class_features = get_class_features(target_class.name, new_class_level)
+            for feature_data in class_features:
+                CharacterFeature.objects.get_or_create(
+                    character=character,
+                    name=feature_data['name'],
+                    defaults={
+                        'feature_type': 'class',
+                        'description': feature_data['description'],
+                        'source': f"{target_class.get_name_display()} Level {new_class_level}"
+                    }
+                )
+                features_gained.append({
+                    'level': new_class_level,
+                    'name': feature_data['name'],
+                    'type': 'class'
+                })
+            
+            # Apply subclass features if applicable
+            if class_level.subclass:
+                subclass_features = get_subclass_features(class_level.subclass, new_class_level)
+                for feature_data in subclass_features:
+                    CharacterFeature.objects.get_or_create(
+                        character=character,
+                        name=feature_data['name'],
+                        defaults={
+                            'feature_type': 'class',
+                            'description': feature_data['description'],
+                            'source': f"{class_level.subclass} Level {new_class_level}"
+                        }
+                    )
+                    features_gained.append({
+                        'level': new_class_level,
+                        'name': feature_data['name'],
+                        'type': 'subclass'
+                    })
+            
+            # Update spell slots
+            if new_slots and hasattr(character, 'stats'):
+                character.stats.spell_slots = new_slots
+                spellcasting_ability = get_multiclass_spellcasting_ability(character)
+                if spellcasting_ability:
+                    character.stats.spell_save_dc = calculate_spell_save_dc(character, spellcasting_ability)
+                    character.stats.spell_attack_bonus = calculate_spell_attack_bonus(character, spellcasting_ability)
+                character.stats.save()
+            
             character.save()
             
             serializer = self.get_serializer(character)
             return Response({
                 "message": f"{character.name} gained a level in {target_class.get_name_display()}! Total level: {total_level}",
                 "character": serializer.data,
-                "class_levels": self._get_class_levels_data(character)
+                "class_levels": self._get_class_levels_data(character),
+                "features_gained": features_gained,
+                "hp_gain": hp_gain if hasattr(character, 'stats') else None,
+                "spell_slots": new_slots
             })
         
-        # Single-class level-up (original behavior)
+        # Single-class level-up
         if character.level >= 20:
             return Response(
                 {"error": "Character is already at maximum level (20)"},
                 status=status.HTTP_400_BAD_REQUEST
             )
         
-        character.level += 1
+        new_level = character.level + 1
         
         # Ensure primary class has a CharacterClassLevel entry
         primary_class = character.character_class
         class_level, created = CharacterClassLevel.objects.get_or_create(
             character=character,
             character_class=primary_class,
-            defaults={'level': character.level}
+            defaults={'level': new_level}
         )
         if not created:
-            class_level.level = character.level
+            class_level.level = new_level
             class_level.save()
+        
+        # Calculate HP increase
+        hp_gain = 0
+        if hasattr(character, 'stats'):
+            hit_dice_type = primary_class.hit_dice
+            if 'd' in hit_dice_type:
+                die_part = hit_dice_type.split('d')[-1]
+                die_size = int(die_part)
+            else:
+                die_size = 8
+            
+            roll = random.randint(1, die_size)
+            con_mod = (character.stats.constitution - 10) // 2
+            hp_gain = max(1, roll + con_mod)
+            
+            character.stats.max_hit_points += hp_gain
+            character.stats.hit_points += hp_gain  # Full heal on level up
+            
+            # Update spell slots
+            class_name = primary_class.name
+            new_slots = calculate_spell_slots(class_name, new_level)
+            if new_slots:
+                character.stats.spell_slots = new_slots
+                
+                # Update spell save DC and spell attack bonus
+                spellcasting_ability = get_spellcasting_ability(class_name)
+                if spellcasting_ability:
+                    character.stats.spell_save_dc = calculate_spell_save_dc(character, spellcasting_ability)
+                    character.stats.spell_attack_bonus = calculate_spell_attack_bonus(character, spellcasting_ability)
+            
+            character.stats.save()
+        
+        # Update character level
+        character.level = new_level
+        
+        # Handle Ability Score Improvements (ASI) at levels 4, 8, 12, 16, 19
+        asi_levels = [4, 8, 12, 16, 19]
+        if new_level in asi_levels:
+            if new_level not in character.pending_asi_levels:
+                character.pending_asi_levels.append(new_level)
+        
+        # Check if subclass selection is needed
+        subclass_levels = {
+            'cleric': 1,
+            'druid': 2,
+            'wizard': 2,
+            'sorcerer': 1,
+            'warlock': 1,
+        }
+        default_subclass_level = 3
+        subclass_level = subclass_levels.get(primary_class.name, default_subclass_level)
+        
+        if new_level >= subclass_level and not character.subclass:
+            character.pending_subclass_selection = True
+        
+        # Apply class features
+        features_gained = []
+        class_features = get_class_features(primary_class.name, new_level)
+        for feature_data in class_features:
+            CharacterFeature.objects.get_or_create(
+                character=character,
+                name=feature_data['name'],
+                defaults={
+                    'feature_type': 'class',
+                    'description': feature_data['description'],
+                    'source': f"{primary_class.get_name_display()} Level {new_level}"
+                }
+            )
+            features_gained.append({
+                'level': new_level,
+                'name': feature_data['name'],
+                'type': 'class'
+            })
+        
+        # Apply subclass features if character has a subclass
+        if character.subclass:
+            subclass_features = get_subclass_features(character.subclass, new_level)
+            for feature_data in subclass_features:
+                CharacterFeature.objects.get_or_create(
+                    character=character,
+                    name=feature_data['name'],
+                    defaults={
+                        'feature_type': 'class',
+                        'description': feature_data['description'],
+                        'source': f"{character.subclass} Level {new_level}"
+                    }
+                )
+                features_gained.append({
+                    'level': new_level,
+                    'name': feature_data['name'],
+                    'type': 'subclass'
+                })
         
         character.save()
         
         serializer = self.get_serializer(character)
         return Response({
-            "message": f"{character.name} leveled up to level {character.level}!",
+            "message": f"{character.name} leveled up to level {new_level}!",
             "character": serializer.data,
-            "class_levels": self._get_class_levels_data(character)
+            "class_levels": self._get_class_levels_data(character),
+            "features_gained": features_gained,
+            "hp_gain": hp_gain,
+            "spell_slots": new_slots if hasattr(character, 'stats') else None,
+            "pending_asi": new_level in asi_levels,
+            "pending_subclass": character.pending_subclass_selection,
+            "pending_asi_levels": character.pending_asi_levels
         })
     
     def _get_class_levels_data(self, character):
@@ -220,6 +407,208 @@ class CharacterViewSet(viewsets.ModelViewSet):
             }
             for cl in class_levels
         ]
+    
+    @action(detail=True, methods=['post'])
+    def apply_asi(self, request, pk=None):
+        """
+        Apply Ability Score Improvement (ASI) or Feat for a standalone character.
+        
+        Request body for ASI:
+        {
+            "level": 4,
+            "choice_type": "asi",
+            "asi_choice": {
+                "strength": 2  // +2 to one stat
+                // OR
+                "strength": 1, "dexterity": 1  // +1 to two stats
+            }
+        }
+        
+        Request body for Feat:
+        {
+            "level": 4,
+            "choice_type": "feat",
+            "feat_id": 5  // ID of the feat to take
+        }
+        """
+        from .models import Feat, CharacterFeat
+        
+        character = self.get_object()
+        level = request.data.get('level')
+        choice_type = request.data.get('choice_type', 'asi')  # 'asi' or 'feat'
+        
+        if not level:
+            return Response(
+                {"error": "level is required"},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+        
+        # Check if this level has pending ASI
+        if level not in character.pending_asi_levels:
+            return Response(
+                {"error": f"No pending ASI/Feat choice for level {level}"},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+        
+        if choice_type == 'feat':
+            # Handle feat selection
+            feat_id = request.data.get('feat_id')
+            if not feat_id:
+                return Response(
+                    {"error": "feat_id is required when choice_type is 'feat'"},
+                    status=status.HTTP_400_BAD_REQUEST
+                )
+            
+            try:
+                feat = Feat.objects.get(pk=feat_id)
+            except Feat.DoesNotExist:
+                return Response(
+                    {"error": f"Feat with id {feat_id} not found"},
+                    status=status.HTTP_404_NOT_FOUND
+                )
+            
+            # Check prerequisites
+            is_eligible, reason = feat.check_prerequisites(character)
+            if not is_eligible:
+                return Response(
+                    {"error": f"Feat prerequisites not met: {reason}"},
+                    status=status.HTTP_400_BAD_REQUEST
+                )
+            
+            # Check if character already has this feat
+            if CharacterFeat.objects.filter(character=character, feat=feat).exists():
+                return Response(
+                    {"error": f"Character already has the feat: {feat.name}"},
+                    status=status.HTTP_400_BAD_REQUEST
+                )
+            
+            # Apply feat
+            CharacterFeat.objects.create(
+                character=character,
+                feat=feat,
+                level_taken=level
+            )
+            
+            # Create CharacterFeature instance
+            CharacterFeature.objects.get_or_create(
+                character=character,
+                name=feat.name,
+                defaults={
+                    'feature_type': 'feat',
+                    'description': feat.description,
+                    'source': f"Feat (Level {level})"
+                }
+            )
+            
+            # Apply ability score increase if feat grants one
+            if feat.ability_score_increase and hasattr(character, 'stats'):
+                stats = character.stats
+                ability_map = {
+                    'STR': 'strength',
+                    'DEX': 'dexterity',
+                    'CON': 'constitution',
+                    'INT': 'intelligence',
+                    'WIS': 'wisdom',
+                    'CHA': 'charisma',
+                }
+                ability_field = ability_map.get(feat.ability_score_increase.upper())
+                if ability_field:
+                    current_value = getattr(stats, ability_field)
+                    new_value = min(20, current_value + 1)  # Cap at 20
+                    setattr(stats, ability_field, new_value)
+                    stats.save()
+            
+            # Remove this level from pending ASI
+            character.pending_asi_levels.remove(level)
+            character.save()
+            
+            return Response({
+                "message": f"Feat '{feat.name}' applied successfully for level {level}",
+                "feat": {
+                    "id": feat.id,
+                    "name": feat.name,
+                    "description": feat.description
+                },
+                "remaining_pending_asi": character.pending_asi_levels,
+                "ability_score_increase": feat.ability_score_increase if feat.ability_score_increase else None
+            })
+        
+        else:
+            # Handle ASI selection
+            if not hasattr(character, 'stats'):
+                return Response(
+                    {"error": "Character must have stats"},
+                    status=status.HTTP_400_BAD_REQUEST
+                )
+            
+            asi_choice = request.data.get('asi_choice', {})
+            
+            if not asi_choice:
+                return Response(
+                    {"error": "asi_choice is required when choice_type is 'asi'"},
+                    status=status.HTTP_400_BAD_REQUEST
+                )
+            
+            # Validate ASI choice
+            total_increase = sum(asi_choice.values())
+            if total_increase != 2:
+                return Response(
+                    {"error": "ASI must total +2 (either +2 to one stat or +1 to two stats)"},
+                    status=status.HTTP_400_BAD_REQUEST
+                )
+            
+            if len(asi_choice) > 2:
+                return Response(
+                    {"error": "Can only increase 1 or 2 different abilities"},
+                    status=status.HTTP_400_BAD_REQUEST
+                )
+            
+            # Apply ASI
+            stats = character.stats
+            ability_map = {
+                'strength': 'strength',
+                'dexterity': 'dexterity',
+                'constitution': 'constitution',
+                'intelligence': 'intelligence',
+                'wisdom': 'wisdom',
+                'charisma': 'charisma',
+            }
+            
+            applied_changes = {}
+            for ability_name, increase in asi_choice.items():
+                ability_field = ability_map.get(ability_name.lower())
+                if not ability_field:
+                    return Response(
+                        {"error": f"Invalid ability score: {ability_name}"},
+                        status=status.HTTP_400_BAD_REQUEST
+                    )
+                
+                if increase not in [1, 2]:
+                    return Response(
+                        {"error": f"Ability score increase must be 1 or 2, got {increase}"},
+                        status=status.HTTP_400_BAD_REQUEST
+                    )
+                
+                current_value = getattr(stats, ability_field)
+                new_value = min(20, current_value + increase)  # Cap at 20
+                setattr(stats, ability_field, new_value)
+                applied_changes[ability_name] = {
+                    'old': current_value,
+                    'new': new_value,
+                    'increase': increase
+                }
+            
+            stats.save()
+            
+            # Remove this level from pending ASI
+            character.pending_asi_levels.remove(level)
+            character.save()
+            
+            return Response({
+                "message": f"ASI applied successfully for level {level}",
+                "applied_changes": applied_changes,
+                "remaining_pending_asi": character.pending_asi_levels
+            })
     
     @action(detail=True, methods=['get'])
     def multiclass_info(self, request, pk=None):
@@ -646,6 +1035,225 @@ class CharacterViewSet(viewsets.ModelViewSet):
             },
             'weapon_usage': favorite_weapon,
             'spell_usage': favorite_spell,
+        })
+    
+    @action(detail=True, methods=['get'])
+    def character_sheet(self, request, pk=None):
+        """
+        Get complete character sheet information.
+        Perfect for simple character tracking without campaigns/combat.
+        """
+        character = self.get_object()
+        
+        # Get stats
+        stats_data = None
+        if hasattr(character, 'stats'):
+            stats = character.stats
+            stats_data = CharacterStatsSerializer(stats).data
+        
+        # Get spell slots (calculate if not set)
+        spell_slots = {}
+        if hasattr(character, 'stats') and character.stats.spell_slots:
+            spell_slots = character.stats.spell_slots
+        else:
+            # Calculate spell slots based on class and level
+            from campaigns.utils import calculate_spell_slots
+            from .multiclassing import calculate_multiclass_spell_slots
+            
+            # Check if multiclass
+            if CharacterClassLevel.objects.filter(character=character).count() > 1:
+                spell_slots = calculate_multiclass_spell_slots(character)
+            else:
+                spell_slots = calculate_spell_slots(character.character_class.name, character.level)
+            
+            # Store calculated slots if stats exist
+            if hasattr(character, 'stats'):
+                character.stats.spell_slots = spell_slots
+                character.stats.save()
+        
+        # Get spells
+        spells = CharacterSpell.objects.filter(character=character)
+        spells_data = CharacterSpellSerializer(spells, many=True).data
+        
+        # Get features
+        features = CharacterFeature.objects.filter(character=character)
+        features_data = CharacterFeatureSerializer(features, many=True).data
+        
+        # Get proficiencies
+        proficiencies = CharacterProficiency.objects.filter(character=character)
+        proficiencies_data = CharacterProficiencySerializer(proficiencies, many=True).data
+        
+        # Get inventory
+        items = CharacterItem.objects.filter(character=character)
+        inventory_data = []
+        for item in items:
+            inventory_data.append({
+                'id': item.id,
+                'item': {
+                    'id': item.item.id,
+                    'name': item.item.name,
+                    'category': item.item.category.name if item.item.category else None,
+                },
+                'quantity': item.quantity,
+                'is_equipped': item.is_equipped,
+                'equipment_slot': item.equipment_slot,
+            })
+        
+        # Get multiclass info
+        class_levels = CharacterClassLevel.objects.filter(character=character)
+        class_levels_data = [
+            {
+                'class_id': cl.character_class.id,
+                'class_name': cl.character_class.get_name_display(),
+                'level': cl.level,
+                'subclass': cl.subclass
+            }
+            for cl in class_levels
+        ]
+        
+        return Response({
+            'character': {
+                'id': character.id,
+                'name': character.name,
+                'level': character.level,
+                'total_level': get_total_level(character),
+                'character_class': character.character_class.get_name_display(),
+                'race': character.race.get_name_display(),
+                'background': character.background.get_name_display() if character.background else None,
+                'subclass': character.subclass,
+                'alignment': character.get_alignment_display(),
+                'size': character.get_size_display(),
+                'player_name': character.player_name,
+                'description': character.description,
+                'backstory': character.backstory,
+                'experience_points': character.experience_points,
+                'proficiency_bonus': character.proficiency_bonus,
+            },
+            'stats': stats_data,
+            'spell_slots': spell_slots,
+            'spells': spells_data,
+            'features': features_data,
+            'proficiencies': proficiencies_data,
+            'inventory': inventory_data,
+            'class_levels': class_levels_data,
+            'multiclass_info': {
+                'is_multiclass': class_levels.count() > 1,
+                'spellcasting_ability': get_multiclass_spellcasting_ability(character) if class_levels.count() > 1 else None,
+            }
+        })
+    
+    @action(detail=True, methods=['post'])
+    def update_spell_slots(self, request, pk=None):
+        """
+        Update spell slots for a character.
+        Useful for tracking spell slot usage outside of campaigns.
+        
+        Request body:
+        {
+            "spell_slots": {"1": 2, "2": 1, "3": 0}  // Slots remaining by level
+        }
+        """
+        character = self.get_object()
+        
+        if not hasattr(character, 'stats'):
+            return Response(
+                {"error": "Character must have stats"},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+        
+        spell_slots = request.data.get('spell_slots', {})
+        
+        # Validate spell slots format
+        if not isinstance(spell_slots, dict):
+            return Response(
+                {"error": "spell_slots must be a dictionary"},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+        
+        # Update spell slots
+        character.stats.spell_slots = spell_slots
+        character.stats.save()
+        
+        return Response({
+            "message": f"Spell slots updated for {character.name}",
+            "spell_slots": spell_slots
+        })
+    
+    @action(detail=True, methods=['post'])
+    def use_spell_slot(self, request, pk=None):
+        """
+        Use a spell slot of a specific level.
+        
+        Request body:
+        {
+            "spell_level": 1  // Level of spell slot to use
+        }
+        """
+        character = self.get_object()
+        
+        if not hasattr(character, 'stats'):
+            return Response(
+                {"error": "Character must have stats"},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+        
+        spell_level = request.data.get('spell_level')
+        if spell_level is None:
+            return Response(
+                {"error": "spell_level is required"},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+        
+        spell_level_str = str(spell_level)
+        current_slots = character.stats.spell_slots or {}
+        
+        # Check if slot available
+        if current_slots.get(spell_level_str, 0) <= 0:
+            return Response(
+                {"error": f"No level {spell_level} spell slots remaining"},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+        
+        # Use slot
+        current_slots[spell_level_str] = current_slots.get(spell_level_str, 0) - 1
+        character.stats.spell_slots = current_slots
+        character.stats.save()
+        
+        return Response({
+            "message": f"Used 1 level {spell_level} spell slot",
+            "spell_slots_remaining": current_slots
+        })
+    
+    @action(detail=True, methods=['post'])
+    def restore_spell_slots(self, request, pk=None):
+        """
+        Restore spell slots (e.g., after long rest).
+        Restores to maximum based on class and level.
+        """
+        character = self.get_object()
+        
+        if not hasattr(character, 'stats'):
+            return Response(
+                {"error": "Character must have stats"},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+        
+        # Calculate max spell slots
+        from campaigns.utils import calculate_spell_slots
+        from .multiclassing import calculate_multiclass_spell_slots
+        
+        if CharacterClassLevel.objects.filter(character=character).count() > 1:
+            max_slots = calculate_multiclass_spell_slots(character)
+        else:
+            max_slots = calculate_spell_slots(character.character_class.name, character.level)
+        
+        # Restore slots
+        character.stats.spell_slots = max_slots.copy()
+        character.stats.save()
+        
+        return Response({
+            "message": f"Spell slots restored for {character.name}",
+            "spell_slots": max_slots
         })
     
     @action(detail=True, methods=['get'])

@@ -38,6 +38,13 @@
    - Spellcasting ability determination
    - Hit dice tracking from all classes
    - API endpoints for multiclass operations
+11. **✅ Character Tracking / Character Sheet** - Simple character management
+   - Create characters with stats, background, description
+   - Complete character sheet endpoint (all info in one call)
+   - Spell slot tracking (automatic calculation + manual tracking)
+   - Use/restore spell slots
+   - Inventory management
+   - Works standalone (no campaigns/combat needed)
 
 ## ✅ Already Implemented (From Earlier)
 
@@ -59,8 +66,13 @@
 10. **✅ Combat System** - Full combat mechanics (Phases 1-3)
 11. **✅ Level-Up System** - XP, HP, spell slots, ASI
 12. **✅ Campaign System** - Roguelike gauntlet mode
-13. **✅ Monster Import** - 2,321 monsters from Open5e
-14. **✅ Item Import** - 73 items from Open5e
+13. **✅ Practice Mode / Combat Simulation** - Quick combat testing without encounters
+   - Create practice sessions with characters and enemies
+   - Direct enemy addition by ID
+   - Quick setup endpoint
+   - Full combat system support
+14. **✅ Monster Import** - 2,321 monsters from Open5e
+15. **✅ Item Import** - 73 items from Open5e
 
 ---
 
