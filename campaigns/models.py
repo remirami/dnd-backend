@@ -375,6 +375,10 @@ class CharacterXP(models.Model):
     total_xp_gained = models.IntegerField(default=0)
     level_ups_gained = models.IntegerField(default=0)  # Levels gained during campaign
     
+    # Pending choices (player must make these choices before continuing)
+    pending_asi_levels = models.JSONField(default=list, help_text="List of levels where ASI is pending player choice")
+    pending_subclass_selection = models.BooleanField(default=False, help_text="True if character needs to select subclass")
+    
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
     
@@ -483,6 +487,14 @@ class CharacterXP(models.Model):
             self.campaign_character.max_hp += total_hp_increase
             self.campaign_character.current_hp += total_hp_increase  # Full heal on level up
         
+        # Increase hit dice pool on level up
+        hit_dice_type = character.character_class.hit_dice  # e.g., "d8"
+        for _ in range(levels_gained):
+            if hit_dice_type in self.campaign_character.hit_dice_remaining:
+                self.campaign_character.hit_dice_remaining[hit_dice_type] += 1
+            else:
+                self.campaign_character.hit_dice_remaining[hit_dice_type] = 1
+        
         # Update spell slots based on new level
         from .utils import calculate_spell_slots, get_spellcasting_ability, calculate_spell_save_dc, calculate_spell_attack_bonus
         class_name = character.character_class.name
@@ -502,44 +514,80 @@ class CharacterXP(models.Model):
         asi_levels = [4, 8, 12, 16, 19]
         levels_with_asi = [lvl for lvl in range(old_level + 1, new_level + 1) if lvl in asi_levels]
         
-        # Apply ASI for each level gained that qualifies
-        # Note: This is simplified - in a full implementation, player would choose which stats to increase
-        # For now, we'll apply a default ASI (+2 to primary ability)
-        if levels_with_asi and hasattr(character, 'stats'):
-            stats = character.stats
-            primary_ability = character.character_class.primary_ability
+        # Mark ASI as pending for player choice instead of auto-applying
+        if levels_with_asi:
+            # Add pending ASI levels to the list
+            for level in levels_with_asi:
+                if level not in self.pending_asi_levels:
+                    self.pending_asi_levels.append(level)
             
-            # Apply +2 to primary ability for each ASI level (up to max of 20)
-            for _ in levels_with_asi:
-                if primary_ability == 'STR' and stats.strength < 20:
-                    stats.strength = min(20, stats.strength + 2)
-                elif primary_ability == 'DEX' and stats.dexterity < 20:
-                    stats.dexterity = min(20, stats.dexterity + 2)
-                elif primary_ability == 'CON' and stats.constitution < 20:
-                    stats.constitution = min(20, stats.constitution + 2)
-                elif primary_ability == 'INT' and stats.intelligence < 20:
-                    stats.intelligence = min(20, stats.intelligence + 2)
-                elif primary_ability == 'WIS' and stats.wisdom < 20:
-                    stats.wisdom = min(20, stats.wisdom + 2)
-                elif primary_ability == 'CHA' and stats.charisma < 20:
-                    stats.charisma = min(20, stats.charisma + 2)
-            
-            stats.save()
+            # Note: ASI will be applied when player makes choice via API endpoint
         
-        # Apply class features (simplified - could create CharacterFeature records)
-        # For now, we'll track this in a JSON field on CampaignCharacter
-        # In a full implementation, you'd create CharacterFeature instances
+        # Check if subclass selection is needed
+        # Most classes choose subclass at level 3, some at level 2 (Cleric, Druid, Wizard)
+        subclass_levels = {
+            'cleric': 1,  # Divine Domain at level 1
+            'druid': 2,   # Druid Circle at level 2
+            'wizard': 2,  # Arcane Tradition at level 2
+            'sorcerer': 1, # Sorcerous Origin at level 1
+            'warlock': 1,  # Otherworldly Patron at level 1
+        }
+        default_subclass_level = 3  # Most classes choose at level 3
+        
+        subclass_level = subclass_levels.get(character.character_class.name, default_subclass_level)
+        
+        if new_level >= subclass_level and not character.subclass:
+            # Mark that subclass selection is needed
+            self.pending_subclass_selection = True
+        
+        # Apply class features - create CharacterFeature instances
+        from characters.models import CharacterFeature
+        from .class_features_data import get_class_features, get_subclass_features
+        
         features_gained = []
         for level in range(old_level + 1, new_level + 1):
-            # This is a placeholder - in a full implementation, you'd have a feature table
-            # For now, we'll just note that features should be gained
-            if level == 2:
-                features_gained.append(f"Level {level}: Class Feature")
-            elif level == 3:
-                features_gained.append(f"Level {level}: Subclass Feature")
-            elif level == 5:
-                features_gained.append(f"Level {level}: Extra Attack or 3rd Level Spells")
-            # Add more level-based features as needed
+            # Get features for this level from the class features data
+            class_features = get_class_features(character.character_class.name, level)
+            
+            for feature_data in class_features:
+                # Create CharacterFeature instance
+                CharacterFeature.objects.create(
+                    character=character,
+                    name=feature_data['name'],
+                    feature_type='class',
+                    description=feature_data['description'],
+                    source=f"{character.character_class.name} Level {level}"
+                )
+                
+                # Track for return value
+                features_gained.append({
+                    'level': level,
+                    'name': feature_data['name'],
+                    'description': feature_data['description'],
+                    'type': 'class'
+                })
+            
+            # Apply subclass features if character has a subclass
+            if character.subclass:
+                subclass_features = get_subclass_features(character.subclass, level)
+                
+                for feature_data in subclass_features:
+                    # Create CharacterFeature instance
+                    CharacterFeature.objects.create(
+                        character=character,
+                        name=feature_data['name'],
+                        feature_type='class',
+                        description=feature_data['description'],
+                        source=f"{character.subclass} Level {level}"
+                    )
+                    
+                    # Track for return value
+                    features_gained.append({
+                        'level': level,
+                        'name': feature_data['name'],
+                        'description': feature_data['description'],
+                        'type': 'subclass'
+                    })
         
         # Save changes
         character.save()

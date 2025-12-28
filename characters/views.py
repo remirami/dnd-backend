@@ -11,6 +11,18 @@ from .serializers import (
     CharacterRaceSerializer, CharacterBackgroundSerializer, CharacterProficiencySerializer,
     CharacterFeatureSerializer, CharacterSpellSerializer, CharacterResistanceSerializer
 )
+from .spell_management import (
+    is_prepared_caster, is_known_caster, can_cast_rituals,
+    calculate_spells_prepared, calculate_spells_known,
+    get_wizard_spellbook_size, can_learn_spell, can_add_to_spellbook,
+    get_prepared_spells, get_known_spells, get_spellbook_spells,
+    can_cast_spell
+)
+from .inventory_management import (
+    equip_item, unequip_item, get_equipped_items,
+    calculate_total_weight, get_encumbrance_level, get_encumbrance_effects,
+    get_equipped_weapon, get_equipped_armor, get_equipped_shield
+)
 
 
 class CharacterViewSet(viewsets.ModelViewSet):
@@ -23,8 +35,63 @@ class CharacterViewSet(viewsets.ModelViewSet):
         return Character.objects.filter(user=self.request.user).order_by('-created_at')
     
     def perform_create(self, serializer):
-        """Automatically set the user when creating a character"""
-        serializer.save(user=self.request.user)
+        """Automatically set the user when creating a character and apply racial and background features"""
+        character = serializer.save(user=self.request.user)
+        
+        # Apply racial features automatically
+        from campaigns.racial_features_data import apply_racial_features_to_character
+        try:
+            apply_racial_features_to_character(character)
+        except Exception as e:
+            # Log error but don't fail character creation
+            print(f"Warning: Failed to apply racial features to {character.name}: {str(e)}")
+        
+        # Apply background features automatically
+        from campaigns.background_features_data import apply_background_features_to_character
+        try:
+            apply_background_features_to_character(character)
+        except Exception as e:
+            # Log error but don't fail character creation
+            print(f"Warning: Failed to apply background features to {character.name}: {str(e)}")
+    
+    @action(detail=True, methods=['post'])
+    def apply_racial_features(self, request, pk=None):
+        """Apply racial features to a character (for existing characters that don't have them)"""
+        character = self.get_object()
+        
+        from campaigns.racial_features_data import apply_racial_features_to_character
+        
+        try:
+            # Check if character already has racial features
+            existing_racial_features = CharacterFeature.objects.filter(
+                character=character,
+                feature_type='racial'
+            ).count()
+            
+            if existing_racial_features > 0:
+                return Response({
+                    "message": f"{character.name} already has {existing_racial_features} racial features",
+                    "features_count": existing_racial_features
+                })
+            
+            # Apply racial features
+            features = apply_racial_features_to_character(character)
+            
+            return Response({
+                "message": f"Applied {len(features)} racial features to {character.name}",
+                "features": [
+                    {
+                        'name': f.name,
+                        'description': f.description,
+                        'source': f.source
+                    } for f in features
+                ]
+            })
+        except Exception as e:
+            return Response(
+                {"error": f"Failed to apply racial features: {str(e)}"},
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR
+            )
     
     @action(detail=True, methods=['post'])
     def level_up(self, request, pk=None):
@@ -111,13 +178,34 @@ class CharacterViewSet(viewsets.ModelViewSet):
                         'id': item.item.id,
                         'name': item.item.name,
                         'category': item.item.category.name if item.item.category else None,
+                        'weight': float(item.item.weight) if item.item.weight else 0,
                     },
                     'quantity': item.quantity,
                     'is_equipped': item.is_equipped,
                     'equipment_slot': item.equipment_slot,
                     'equipment_slot_display': item.get_equipment_slot_display(),
                 })
-            return Response({'inventory': inventory_data})
+            
+            # Get encumbrance info
+            total_weight = calculate_total_weight(character)
+            encumbrance = get_encumbrance_level(character)
+            encumbrance_effects = get_encumbrance_effects(character)
+            capacity = calculate_carrying_capacity(character)
+            
+            return Response({
+                'inventory': inventory_data,
+                'encumbrance': {
+                    'total_weight': total_weight,
+                    'level': encumbrance,
+                    'capacity': capacity,
+                    'effects': encumbrance_effects
+                },
+                'equipped_items': {
+                    'weapon': get_equipped_weapon(character).name if get_equipped_weapon(character) else None,
+                    'armor': get_equipped_armor(character).name if get_equipped_armor(character) else None,
+                    'shield': get_equipped_shield(character).name if get_equipped_shield(character) else None,
+                }
+            })
         
         elif request.method == 'POST':
             # Add item to inventory
@@ -164,7 +252,15 @@ class CharacterViewSet(viewsets.ModelViewSet):
     
     @action(detail=True, methods=['post'])
     def equip_item(self, request, pk=None):
-        """Equip an item"""
+        """
+        Equip an item to a character.
+        
+        Request body:
+        {
+            "item_id": 1,
+            "slot": "main_hand"  // Optional, defaults based on item type
+        }
+        """
         character = self.get_object()
         character_item_id = request.data.get('character_item_id')
         equipment_slot = request.data.get('equipment_slot')
@@ -183,25 +279,33 @@ class CharacterViewSet(viewsets.ModelViewSet):
                 status=status.HTTP_404_NOT_FOUND
             )
         
-        # Unequip any item in the same slot
-        if equipment_slot:
-            CharacterItem.objects.filter(
-                character=character,
-                equipment_slot=equipment_slot,
-                is_equipped=True
-            ).update(is_equipped=False)
-            character_item.equipment_slot = equipment_slot
+        # Use inventory management utility
+        slot = equipment_slot or character_item.equipment_slot or 'main_hand'
+        success, message, char_item = equip_item(character, character_item.item, slot)
         
-        character_item.is_equipped = True
-        character_item.save()
+        if not success:
+            return Response(
+                {"error": message},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+        
+        # Get encumbrance info
+        total_weight = calculate_total_weight(character)
+        encumbrance = get_encumbrance_level(character)
+        encumbrance_effects = get_encumbrance_effects(character)
         
         return Response({
-            "message": f"{character.name} equipped {character_item.item.name}",
+            "message": message,
             "character_item": {
-                'id': character_item.id,
-                'item': character_item.item.name,
-                'equipment_slot': character_item.equipment_slot,
-                'is_equipped': character_item.is_equipped,
+                'id': char_item.id,
+                'item': char_item.item.name,
+                'equipment_slot': char_item.equipment_slot,
+                'is_equipped': char_item.is_equipped,
+            },
+            "encumbrance": {
+                'level': encumbrance,
+                'total_weight': total_weight,
+                'effects': encumbrance_effects
             }
         })
     
@@ -225,16 +329,34 @@ class CharacterViewSet(viewsets.ModelViewSet):
                 status=status.HTTP_404_NOT_FOUND
             )
         
-        character_item.is_equipped = False
-        character_item.equipment_slot = 'inventory'
-        character_item.save()
+        # Use inventory management utility
+        success, message = unequip_item(character, character_item.item)
+        
+        if not success:
+            return Response(
+                {"error": message},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+        
+        character_item.refresh_from_db()
+        
+        # Get encumbrance info
+        total_weight = calculate_total_weight(character)
+        encumbrance = get_encumbrance_level(character)
+        encumbrance_effects = get_encumbrance_effects(character)
         
         return Response({
-            "message": f"{character.name} unequipped {character_item.item.name}",
+            "message": message,
             "character_item": {
                 'id': character_item.id,
                 'item': character_item.item.name,
+                'equipment_slot': character_item.equipment_slot,
                 'is_equipped': character_item.is_equipped,
+            },
+            "encumbrance": {
+                'level': encumbrance,
+                'total_weight': total_weight,
+                'effects': encumbrance_effects
             }
         })
     
@@ -320,6 +442,258 @@ class CharacterViewSet(viewsets.ModelViewSet):
             'weapon_usage': favorite_weapon,
             'spell_usage': favorite_spell,
         })
+    
+    @action(detail=True, methods=['get'])
+    def spell_info(self, request, pk=None):
+        """Get spell management information for a character"""
+        character = self.get_object()
+        
+        info = {
+            'is_prepared_caster': is_prepared_caster(character),
+            'is_known_caster': is_known_caster(character),
+            'can_cast_rituals': can_cast_rituals(character),
+        }
+        
+        if is_prepared_caster(character):
+            spells_prepared_limit = calculate_spells_prepared(character)
+            prepared_spells = get_prepared_spells(character)
+            info['spells_prepared'] = {
+                'limit': spells_prepared_limit,
+                'current': prepared_spells.count(),
+                'spells': CharacterSpellSerializer(prepared_spells, many=True).data
+            }
+            
+            # For Wizards, also show spellbook info
+            if character.character_class.name == 'Wizard':
+                spellbook_size = get_wizard_spellbook_size(character)
+                spellbook_spells = get_spellbook_spells(character)
+                info['spellbook'] = {
+                    'size': spellbook_size,
+                    'current': spellbook_spells.count(),
+                    'spells': CharacterSpellSerializer(spellbook_spells, many=True).data
+                }
+        
+        elif is_known_caster(character):
+            spells_known_limit = calculate_spells_known(character)
+            known_spells = get_known_spells(character)
+            info['spells_known'] = {
+                'limit': spells_known_limit,
+                'current': known_spells.count(),
+                'spells': CharacterSpellSerializer(known_spells, many=True).data
+            }
+        
+        return Response(info)
+    
+    @action(detail=True, methods=['post'])
+    def prepare_spells(self, request, pk=None):
+        """
+        Prepare spells for a prepared caster (Cleric, Druid, Paladin, Wizard)
+        
+        Request body:
+        {
+            "spell_ids": [1, 2, 3]  // List of CharacterSpell IDs to prepare
+        }
+        """
+        character = self.get_object()
+        
+        if not is_prepared_caster(character):
+            return Response(
+                {"error": f"{character.character_class.name} is not a prepared caster"},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+        
+        spell_ids = request.data.get('spell_ids', [])
+        if not isinstance(spell_ids, list):
+            return Response(
+                {"error": "spell_ids must be a list"},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+        
+        # Get spells that belong to this character
+        spells = CharacterSpell.objects.filter(
+            character=character,
+            id__in=spell_ids
+        )
+        
+        if spells.count() != len(spell_ids):
+            return Response(
+                {"error": "Some spells not found or don't belong to this character"},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+        
+        # Check limit
+        spells_prepared_limit = calculate_spells_prepared(character)
+        if len(spell_ids) > spells_prepared_limit:
+            return Response(
+                {"error": f"Can only prepare {spells_prepared_limit} spells"},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+        
+        # Unprepare all spells first
+        CharacterSpell.objects.filter(character=character).update(is_prepared=False)
+        
+        # Prepare selected spells
+        spells.update(is_prepared=True)
+        
+        return Response({
+            "message": f"Prepared {len(spell_ids)} spell(s)",
+            "spells_prepared": CharacterSpellSerializer(spells, many=True).data,
+            "limit": spells_prepared_limit
+        })
+    
+    @action(detail=True, methods=['post'])
+    def learn_spell(self, request, pk=None):
+        """
+        Learn a new spell (for known casters: Bard, Ranger, Sorcerer, Warlock)
+        
+        Request body:
+        {
+            "spell_name": "Fireball",
+            "spell_level": 3,
+            "school": "Evocation",
+            "description": "...",
+            "is_ritual": false
+        }
+        """
+        character = self.get_object()
+        
+        if not is_known_caster(character):
+            return Response(
+                {"error": f"{character.character_class.name} is not a known caster"},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+        
+        spell_name = request.data.get('spell_name')
+        spell_level = request.data.get('spell_level')
+        
+        if not spell_name or spell_level is None:
+            return Response(
+                {"error": "spell_name and spell_level are required"},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+        
+        # Check if already known
+        if CharacterSpell.objects.filter(character=character, name=spell_name).exists():
+            return Response(
+                {"error": f"Already know {spell_name}"},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+        
+        # Check limit
+        if not can_learn_spell(character, spell_level):
+            spells_known_limit = calculate_spells_known(character)
+            return Response(
+                {"error": f"Cannot learn more spells (limit: {spells_known_limit})"},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+        
+        # Create spell
+        spell = CharacterSpell.objects.create(
+            character=character,
+            name=spell_name,
+            level=spell_level,
+            school=request.data.get('school', ''),
+            description=request.data.get('description', ''),
+            is_ritual=request.data.get('is_ritual', False)
+        )
+        
+        return Response({
+            "message": f"Learned {spell_name}",
+            "spell": CharacterSpellSerializer(spell).data
+        })
+    
+    @action(detail=True, methods=['post'])
+    def add_to_spellbook(self, request, pk=None):
+        """
+        Add a spell to Wizard's spellbook
+        
+        Request body:
+        {
+            "spell_name": "Fireball",
+            "spell_level": 3,
+            "school": "Evocation",
+            "description": "...",
+            "is_ritual": false
+        }
+        """
+        character = self.get_object()
+        
+        if character.character_class.name != 'Wizard':
+            return Response(
+                {"error": "Only Wizards have spellbooks"},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+        
+        spell_name = request.data.get('spell_name')
+        spell_level = request.data.get('spell_level')
+        
+        if not spell_name or spell_level is None:
+            return Response(
+                {"error": "spell_name and spell_level are required"},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+        
+        # Check if already in spellbook
+        if CharacterSpell.objects.filter(character=character, name=spell_name, in_spellbook=True).exists():
+            return Response(
+                {"error": f"{spell_name} is already in spellbook"},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+        
+        # Check limit
+        if not can_add_to_spellbook(character, spell_level):
+            spellbook_size = get_wizard_spellbook_size(character)
+            return Response(
+                {"error": f"Spellbook is full (limit: {spellbook_size})"},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+        
+        # Create or update spell
+        spell, created = CharacterSpell.objects.get_or_create(
+            character=character,
+            name=spell_name,
+            defaults={
+                'level': spell_level,
+                'school': request.data.get('school', ''),
+                'description': request.data.get('description', ''),
+                'is_ritual': request.data.get('is_ritual', False),
+                'in_spellbook': True
+            }
+        )
+        
+        if not created:
+            spell.in_spellbook = True
+            spell.save()
+        
+        return Response({
+            "message": f"Added {spell_name} to spellbook",
+            "spell": CharacterSpellSerializer(spell).data
+        })
+    
+    @action(detail=True, methods=['post'])
+    def learn_from_scroll(self, request, pk=None):
+        """
+        Learn a spell from a scroll (Wizards only)
+        
+        Request body:
+        {
+            "spell_name": "Fireball",
+            "spell_level": 3,
+            "school": "Evocation",
+            "description": "...",
+            "is_ritual": false
+        }
+        """
+        character = self.get_object()
+        
+        if character.character_class.name != 'Wizard':
+            return Response(
+                {"error": "Only Wizards can learn spells from scrolls"},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+        
+        # Same as add_to_spellbook, but this is for learning from scrolls
+        return self.add_to_spellbook(request, pk)
 
 
 class CharacterClassViewSet(viewsets.ReadOnlyModelViewSet):

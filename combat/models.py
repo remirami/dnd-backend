@@ -1,5 +1,6 @@
 from django.db import models
 from django.core.validators import MinValueValidator, MaxValueValidator
+from django.utils import timezone
 from encounters.models import Encounter, EncounterEnemy
 from characters.models import Character
 from bestiary.models import Condition, DamageType
@@ -36,16 +37,17 @@ class CombatSession(models.Model):
         return self.participants.filter(is_active=True).order_by('-initiative', 'id')
     
     def next_turn(self):
-        """Advance to the next turn"""
+        """Advance to the next turn and remove expired conditions"""
         participants = self.get_initiative_order()
         if not participants.exists():
             return None
         
-        # Reset legendary actions for all participants at start of new round
+        # Reset legendary actions and reactions for all participants at start of new round
         if self.current_turn_index == 0:
             for participant in participants:
                 if participant.legendary_actions_max > 0:
                     participant.reset_legendary_actions()
+                participant.reset_reaction()  # Reactions reset each round
         
         self.current_turn_index += 1
         
@@ -53,13 +55,80 @@ class CombatSession(models.Model):
         if self.current_turn_index >= participants.count():
             self.current_round += 1
             self.current_turn_index = 0
-            # Reset legendary actions at start of new round
+            # Reset legendary actions and reactions at start of new round
             for participant in participants:
                 if participant.legendary_actions_max > 0:
                     participant.reset_legendary_actions()
+                participant.reset_reaction()  # Reactions reset each round
+        
+        # Reset action economy for the new turn's participant
+        current_participant = self.get_current_participant()
+        if current_participant:
+            current_participant.reset_turn()
+        
+        # Remove expired conditions
+        self.remove_expired_conditions()
         
         self.save()
         return self.get_current_participant()
+    
+    def remove_expired_conditions(self):
+        """Remove conditions that have expired"""
+        for participant in self.participants.all():
+            expired_applications = ConditionApplication.objects.filter(
+                participant=participant,
+                removed_at__isnull=True
+            )
+            
+            for app in expired_applications:
+                if app.is_expired(self.current_round):
+                    # Check if condition should be removed
+                    from .condition_effects import should_remove_condition
+                    if should_remove_condition(participant, app.condition.name, 'end_of_turn'):
+                        app.remove('end_of_turn')
+                    elif app.duration_type == 'round' and app.expires_at_round and self.current_round > app.expires_at_round:
+                        app.remove('duration_expired')
+    
+    def trigger_opportunity_attack(self, attacker, target, movement_distance=0):
+        """
+        Trigger an opportunity attack from attacker against target.
+        
+        Args:
+            attacker: CombatParticipant making the opportunity attack
+            target: CombatParticipant leaving attacker's reach
+            movement_distance: Distance target is moving (for reach calculations)
+        
+        Returns:
+            dict: Result of the opportunity attack
+        """
+        if not attacker.can_make_opportunity_attack(target):
+            return {
+                'success': False,
+                'reason': 'Cannot make opportunity attack (reaction used or not eligible)'
+            }
+        
+        # Check if target used Disengage action (would prevent opportunity attacks)
+        # This would need to be tracked - simplified for now
+        
+        # Mark reaction as used
+        attacker.use_reaction()
+        
+        # Create opportunity attack action
+        opportunity_attack = CombatAction.objects.create(
+            combat_session=self,
+            actor=attacker,
+            target=target,
+            action_type='opportunity_attack',
+            round_number=self.current_round,
+            turn_number=self.current_turn_index,
+            description=f"{attacker.get_name()} makes an opportunity attack against {target.get_name()}"
+        )
+        
+        return {
+            'success': True,
+            'action_id': opportunity_attack.id,
+            'message': f"{attacker.get_name()} makes an opportunity attack against {target.get_name()}"
+        }
     
     def get_or_create_log(self):
         """Get or create combat log for this session"""
@@ -505,6 +574,59 @@ class CombatParticipant(models.Model):
         """Reset legendary actions at end of turn"""
         self.legendary_actions_remaining = self.legendary_actions_max
         self.save()
+    
+    def reset_turn(self):
+        """Reset action economy at start of turn"""
+        self.action_used = False
+        self.bonus_action_used = False
+        self.reaction_used = False
+        self.movement_used = 0
+        self.save()
+    
+    def reset_reaction(self):
+        """Reset reaction at start of round (reactions reset each round)"""
+        self.reaction_used = False
+        self.save()
+    
+    def can_use_reaction(self):
+        """Check if participant can use a reaction"""
+        return not self.reaction_used and self.is_active
+    
+    def use_reaction(self):
+        """Mark reaction as used"""
+        self.reaction_used = True
+        self.save()
+    
+    def get_reach(self):
+        """Get melee reach in feet (default 5 feet)"""
+        # Could be modified by weapons, size, etc.
+        return 5
+    
+    def can_make_opportunity_attack(self, target):
+        """
+        Check if this participant can make an opportunity attack against target.
+        
+        Args:
+            target: CombatParticipant instance
+        
+        Returns:
+            bool: True if opportunity attack is possible
+        """
+        # Must have reaction available
+        if not self.can_use_reaction():
+            return False
+        
+        # Must be active
+        if not self.is_active:
+            return False
+        
+        # Target must be active
+        if not target.is_active:
+            return False
+        
+        # Must be within reach (simplified - assumes 5 feet)
+        # In a full implementation, would check actual positions
+        return True
 
 
 class CombatAction(models.Model):
@@ -738,3 +860,60 @@ class CombatLog(models.Model):
         
         self.save()
         return self
+
+
+class ConditionApplication(models.Model):
+    """Tracks condition applications with duration"""
+    DURATION_TYPES = [
+        ('instant', 'Instant'),  # No duration, removed manually
+        ('turn', 'Turn'),  # Removed at end of turn
+        ('round', 'Round'),  # Removed after N rounds
+        ('spell', 'Spell'),  # Removed when spell ends
+        ('saving_throw', 'Saving Throw'),  # Removed on successful save
+        ('concentration', 'Concentration'),  # Removed when concentration ends
+    ]
+    
+    participant = models.ForeignKey(CombatParticipant, on_delete=models.CASCADE, related_name='condition_applications')
+    condition = models.ForeignKey(Condition, on_delete=models.CASCADE)
+    applied_at = models.DateTimeField(auto_now_add=True)
+    applied_round = models.IntegerField(default=1)
+    applied_turn = models.IntegerField(default=1)
+    
+    # Duration tracking
+    duration_type = models.CharField(max_length=20, choices=DURATION_TYPES, default='instant')
+    duration_rounds = models.IntegerField(default=0, help_text="Number of rounds (0 = until removed manually)")
+    expires_at_round = models.IntegerField(null=True, blank=True, help_text="Round when condition expires")
+    
+    # Source information
+    source_type = models.CharField(max_length=50, blank=True, help_text="e.g., 'spell', 'ability', 'attack'")
+    source_name = models.CharField(max_length=100, blank=True, help_text="e.g., 'Hold Person', 'Stunning Strike'")
+    
+    # Removal tracking
+    removed_at = models.DateTimeField(null=True, blank=True)
+    removal_reason = models.CharField(max_length=50, blank=True, help_text="e.g., 'end_of_turn', 'saving_throw_success'")
+    
+    class Meta:
+        ordering = ['-applied_at']
+        unique_together = ['participant', 'condition', 'applied_at']  # Prevent duplicates
+    
+    def __str__(self):
+        return f"{self.participant.get_name()} - {self.condition.get_name_display()} (Round {self.applied_round})"
+    
+    def is_expired(self, current_round):
+        """Check if condition has expired"""
+        if self.removed_at:
+            return True
+        
+        if self.duration_type == 'round' and self.expires_at_round:
+            return current_round > self.expires_at_round
+        
+        return False
+    
+    def remove(self, reason='manual'):
+        """Mark condition as removed"""
+        self.removed_at = timezone.now()
+        self.removal_reason = reason
+        self.save()
+        
+        # Remove from participant's conditions
+        self.participant.conditions.remove(self.condition)

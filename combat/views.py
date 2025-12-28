@@ -3,7 +3,8 @@ from rest_framework.decorators import action
 from rest_framework.response import Response
 from django.utils import timezone
 
-from .models import CombatSession, CombatParticipant, CombatAction, CombatLog
+from .models import CombatSession, CombatParticipant, CombatAction, CombatLog, ConditionApplication
+from .condition_effects import auto_apply_condition_from_spell, get_condition_for_spell
 from .serializers import (
     CombatSessionSerializer, CombatParticipantSerializer, CombatActionSerializer,
     AttackRequestSerializer, SpellRequestSerializer, CombatLogSerializer
@@ -410,6 +411,30 @@ class CombatSessionViewSet(viewsets.ModelViewSet):
                 status=status.HTTP_400_BAD_REQUEST
             )
         
+        # Validate spell can be cast (if character is a spellcaster)
+        if caster.character:
+            from characters.spell_management import can_cast_spell
+            is_ritual = request.data.get('is_ritual', False)
+            
+            if not can_cast_spell(caster.character, spell_name, allow_ritual=is_ritual):
+                # Check if it's a ritual spell
+                try:
+                    from characters.models import CharacterSpell
+                    spell = CharacterSpell.objects.get(character=caster.character, name=spell_name)
+                    if spell.is_ritual and is_ritual:
+                        # Allow ritual casting even if not prepared
+                        pass
+                    else:
+                        return Response(
+                            {"error": f"{caster.get_name()} cannot cast {spell_name}. Spell must be prepared (for prepared casters) or known (for known casters)."},
+                            status=status.HTTP_400_BAD_REQUEST
+                        )
+                except CharacterSpell.DoesNotExist:
+                    return Response(
+                        {"error": f"{caster.get_name()} does not know {spell_name}"},
+                        status=status.HTTP_400_BAD_REQUEST
+                    )
+        
         target = None
         if target_id:
             try:
@@ -450,6 +475,24 @@ class CombatSessionViewSet(viewsets.ModelViewSet):
                 
                 if damage_amount > 0:
                     new_hp, _ = target.take_damage(damage_amount)
+        
+        # Auto-apply conditions from spell (if save failed or no save)
+        applied_condition = None
+        if target and (not save_success or not save_type):
+            applied_condition = auto_apply_condition_from_spell(target, spell_name)
+            if applied_condition:
+                # Create condition application record
+                ConditionApplication.objects.create(
+                    participant=target,
+                    condition=applied_condition,
+                    applied_round=session.current_round,
+                    applied_turn=session.current_turn_index,
+                    duration_type='spell' if requires_concentration else 'round',
+                    duration_rounds=1 if not requires_concentration else 0,
+                    expires_at_round=session.current_round + 1 if not requires_concentration else None,
+                    source_type='spell',
+                    source_name=spell_name
+                )
         
         # Create combat action
         action = CombatAction.objects.create(
@@ -836,6 +879,102 @@ class CombatSessionViewSet(viewsets.ModelViewSet):
         })
     
     @action(detail=True, methods=['post'])
+    def use_reaction(self, request, pk=None):
+        """
+        Use a reaction (spell, ability, etc.)
+        
+        Request body:
+        {
+            "participant_id": 1,
+            "reaction_type": "spell",  // or "ability"
+            "spell_name": "Shield",  // if reaction_type is "spell"
+            "ability_name": "Uncanny Dodge",  // if reaction_type is "ability"
+            "target_id": 2,  // optional, for targeted reactions
+            "description": "Uses Shield spell to block attack"  // optional
+        }
+        """
+        session = self.get_object()
+        
+        if session.status != 'active':
+            return Response(
+                {"error": "Combat is not active"},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+        
+        participant_id = request.data.get('participant_id')
+        reaction_type = request.data.get('reaction_type')  # 'spell' or 'ability'
+        
+        if not participant_id or not reaction_type:
+            return Response(
+                {"error": "participant_id and reaction_type are required"},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+        
+        if reaction_type not in ['spell', 'ability']:
+            return Response(
+                {"error": "reaction_type must be 'spell' or 'ability'"},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+        
+        try:
+            participant = session.participants.get(pk=participant_id)
+        except CombatParticipant.DoesNotExist:
+            return Response(
+                {"error": "Participant not found"},
+                status=status.HTTP_404_NOT_FOUND
+            )
+        
+        if not participant.can_use_reaction():
+            return Response(
+                {"error": "Reaction already used this round"},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+        
+        target_id = request.data.get('target_id')
+        target = None
+        if target_id:
+            try:
+                target = session.participants.get(pk=target_id)
+            except CombatParticipant.DoesNotExist:
+                return Response(
+                    {"error": "Target not found"},
+                    status=status.HTTP_404_NOT_FOUND
+                )
+        
+        # Mark reaction as used
+        participant.use_reaction()
+        
+        # Get reaction details
+        if reaction_type == 'spell':
+            spell_name = request.data.get('spell_name', 'Unknown Spell')
+            description = request.data.get('description', f"{participant.get_name()} casts {spell_name} as a reaction")
+        else:
+            ability_name = request.data.get('ability_name', 'Unknown Ability')
+            description = request.data.get('description', f"{participant.get_name()} uses {ability_name} as a reaction")
+        
+        # Create reaction action
+        action = CombatAction.objects.create(
+            combat_session=session,
+            actor=participant,
+            target=target,
+            action_type='reaction',
+            attack_name=spell_name if reaction_type == 'spell' else ability_name,
+            round_number=session.current_round,
+            turn_number=session.current_turn_index,
+            description=description,
+            is_reaction=True
+        )
+        
+        return Response({
+            "message": description,
+            "reaction_type": reaction_type,
+            "participant": participant.get_name(),
+            "target": target.get_name() if target else None,
+            "reaction_used": True,
+            "action": CombatActionSerializer(action).data
+        })
+    
+    @action(detail=True, methods=['post'])
     def legendary_action(self, request, pk=None):
         """Use a legendary action"""
         session = self.get_object()
@@ -1064,6 +1203,21 @@ class CombatParticipantViewSet(viewsets.ModelViewSet):
             )
         
         participant.conditions.add(condition)
+        
+        # Create condition application record
+        session = participant.combat_session
+        ConditionApplication.objects.create(
+            participant=participant,
+            condition=condition,
+            applied_round=session.current_round,
+            applied_turn=session.current_turn_index,
+            duration_type=request.data.get('duration_type', 'instant'),
+            duration_rounds=request.data.get('duration_rounds', 0),
+            expires_at_round=request.data.get('expires_at_round'),
+            source_type=request.data.get('source_type', 'manual'),
+            source_name=request.data.get('source_name', ''),
+        )
+        
         serializer = self.get_serializer(participant)
         return Response({
             "message": f"{condition.get_name_display()} added to {participant.get_name()}",

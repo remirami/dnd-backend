@@ -14,11 +14,13 @@ A comprehensive Django REST API backend for D&D 5e combat simulation, featuring 
 - **Treasure**: Loot tables and treasure information
 
 ### 🔄 Import System
-- **Multiple Sources**: JSON, CSV, D&D Beyond API, official SRD
+- **Multiple Sources**: JSON, CSV, D&D Beyond API, official SRD, **Open5e API**
+- **Auto-Population**: Import 200+ monsters and 100+ items from free APIs
 - **Web Interface**: User-friendly file upload interface
 - **Command Line**: Bulk import capabilities
 - **Templates**: Pre-formatted import templates
 - **Validation**: Comprehensive error handling
+- **Smart Integration**: Imported content automatically available in treasure and encounters
 
 ### 🎯 API Endpoints
 - **RESTful API**: Complete CRUD operations for all entities
@@ -83,28 +85,60 @@ dnd_backend/
    python manage.py populate_conditions_environments
    ```
 
-5. **Start the server**
+5. **Import monsters and items from Open5e API** (Optional but recommended)
+   ```bash
+   # Import real D&D 5e monsters (200+)
+   python manage.py import_monsters_from_api --source open5e
+   
+   # Import real D&D 5e items (100+)
+   python manage.py import_items_from_api --source open5e
+   ```
+   
+   See [API Import Guide](docs/api_import_guide.md) for detailed instructions.
+
+6. **Start the server**
    ```bash
    python manage.py runserver
    ```
 
-6. **Access the application**
+7. **Access the application**
    - API: http://127.0.0.1:8000/api/
    - Admin: http://127.0.0.1:8000/admin/
    - Import Interface: http://127.0.0.1:8000/api/enemies/import/
 
 ## 📖 Usage
 
-### Import Monsters
+### Import Monsters and Items
+
+#### From Open5e API (Recommended - Free, No API Key Required)
+```bash
+# Import all SRD monsters (200+)
+python manage.py import_monsters_from_api --source open5e
+
+# Import only low-level monsters (CR 0-5)
+python manage.py import_monsters_from_api --source open5e --cr-max 5
+
+# Import all SRD items (weapons, armor, magic items)
+python manage.py import_items_from_api --source open5e
+
+# Preview before importing
+python manage.py import_monsters_from_api --source open5e --dry-run --limit 10
+```
+
+**Benefits:**
+- ✅ Real D&D 5e content from official SRD
+- ✅ Automatically populates treasure system
+- ✅ Automatically populates encounter generation
+- ✅ No manual data entry required
+- ✅ Free and legal to use
+
+See [API Import Guide](docs/api_import_guide.md) for complete documentation.
 
 #### Web Interface
 Visit `http://127.0.0.1:8000/api/enemies/import/` for the user-friendly import interface.
 
-#### Command Line
+#### From JSON/CSV Files
 ```bash
-# Import SRD monsters
-python manage.py import_monsters --source srd
-
 # Import from JSON file
 python manage.py import_monsters --source json --file monsters.json
 
@@ -113,9 +147,6 @@ python manage.py import_monsters --source csv --file monsters.csv
 
 # Dry run (preview)
 python manage.py import_monsters --source json --file monsters.json --dry-run
-
-# Update existing monsters
-python manage.py import_monsters --source json --file monsters.json --update-existing
 ```
 
 ### API Usage
@@ -227,6 +258,10 @@ python manage.py check
 
 - [Architecture Overview](docs/architecture.md)
 - [Monster Import Guide](docs/monster_import_guide.md)
+- **[API Import Guide](docs/api_import_guide.md)** - Import from Open5e API
+- [Campaign Gauntlet Design](docs/campaign_gauntlet_design.md)
+- [Combat System Guide](docs/combat_phase3_guide.md)
+- [User Authentication Guide](docs/user_authentication_guide.md)
 
 ## 🤝 Contributing
 

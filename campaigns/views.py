@@ -982,6 +982,333 @@ class CampaignViewSet(viewsets.ModelViewSet):
                 {"error": str(e)},
                 status=status.HTTP_400_BAD_REQUEST
             )
+    
+    @action(detail=True, methods=['post'])
+    def apply_asi(self, request, pk=None):
+        """
+        Apply Ability Score Improvement (ASI) or Feat for a character
+        
+        Request body for ASI:
+        {
+            "character_id": 1,
+            "level": 4,
+            "choice_type": "asi",
+            "asi_choice": {
+                "strength": 2  // +2 to one stat
+                // OR
+                "strength": 1, "dexterity": 1  // +1 to two stats
+            }
+        }
+        
+        Request body for Feat:
+        {
+            "character_id": 1,
+            "level": 4,
+            "choice_type": "feat",
+            "feat_id": 5  // ID of the feat to take
+        }
+        """
+        campaign = self.get_object()
+        character_id = request.data.get('character_id')
+        level = request.data.get('level')
+        choice_type = request.data.get('choice_type', 'asi')  # 'asi' or 'feat'
+        
+        if not character_id or not level:
+            return Response(
+                {"error": "character_id and level are required"},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+        
+        try:
+            # Get campaign character
+            campaign_char = CampaignCharacter.objects.get(
+                campaign=campaign,
+                id=character_id
+            )
+            
+            # Get XP tracking
+            xp_tracking = CharacterXP.objects.get(campaign_character=campaign_char)
+            
+            # Check if this level has pending ASI
+            if level not in xp_tracking.pending_asi_levels:
+                return Response(
+                    {"error": f"No pending ASI/Feat choice for level {level}"},
+                    status=status.HTTP_400_BAD_REQUEST
+                )
+            
+            character = campaign_char.character
+            
+            if choice_type == 'feat':
+                # Handle feat selection
+                from characters.models import Feat, CharacterFeat, CharacterFeature
+                
+                feat_id = request.data.get('feat_id')
+                if not feat_id:
+                    return Response(
+                        {"error": "feat_id is required when choice_type is 'feat'"},
+                        status=status.HTTP_400_BAD_REQUEST
+                    )
+                
+                try:
+                    feat = Feat.objects.get(pk=feat_id)
+                except Feat.DoesNotExist:
+                    return Response(
+                        {"error": f"Feat with id {feat_id} not found"},
+                        status=status.HTTP_404_NOT_FOUND
+                    )
+                
+                # Check prerequisites
+                is_eligible, reason = feat.check_prerequisites(character)
+                if not is_eligible:
+                    return Response(
+                        {"error": f"Feat prerequisites not met: {reason}"},
+                        status=status.HTTP_400_BAD_REQUEST
+                    )
+                
+                # Check if character already has this feat
+                if CharacterFeat.objects.filter(character=character, feat=feat).exists():
+                    return Response(
+                        {"error": f"Character already has the feat: {feat.name}"},
+                        status=status.HTTP_400_BAD_REQUEST
+                    )
+                
+                # Apply feat
+                CharacterFeat.objects.create(
+                    character=character,
+                    feat=feat,
+                    level_taken=level
+                )
+                
+                # Create CharacterFeature instance
+                CharacterFeature.objects.create(
+                    character=character,
+                    name=feat.name,
+                    feature_type='feat',
+                    description=feat.description,
+                    source=f"Feat (Level {level})"
+                )
+                
+                # Apply ability score increase if feat grants one
+                if feat.ability_score_increase:
+                    stats = character.stats
+                    ability_lower = feat.ability_score_increase.lower()
+                    current_value = getattr(stats, ability_lower)
+                    new_value = min(20, current_value + 1)  # Cap at 20
+                    setattr(stats, ability_lower, new_value)
+                    stats.save()
+                
+                # Remove this level from pending ASI
+                xp_tracking.pending_asi_levels.remove(level)
+                xp_tracking.save()
+                
+                return Response({
+                    "message": f"Feat '{feat.name}' applied successfully for level {level}",
+                    "feat": {
+                        "id": feat.id,
+                        "name": feat.name,
+                        "description": feat.description
+                    },
+                    "remaining_pending_asi": xp_tracking.pending_asi_levels,
+                    "ability_score_increase": feat.ability_score_increase if feat.ability_score_increase else None
+                })
+            
+            else:
+                # Handle ASI selection
+                asi_choice = request.data.get('asi_choice', {})
+                
+                if not asi_choice:
+                    return Response(
+                        {"error": "asi_choice is required when choice_type is 'asi'"},
+                        status=status.HTTP_400_BAD_REQUEST
+                    )
+                
+                # Validate ASI choice
+                total_increase = sum(asi_choice.values())
+                if total_increase != 2:
+                    return Response(
+                        {"error": "ASI must total +2 (either +2 to one stat or +1 to two stats)"},
+                        status=status.HTTP_400_BAD_REQUEST
+                    )
+                
+                if len(asi_choice) > 2:
+                    return Response(
+                        {"error": "Can only increase 1 or 2 different abilities"},
+                        status=status.HTTP_400_BAD_REQUEST
+                    )
+                
+                for ability, increase in asi_choice.items():
+                    if ability.lower() not in ['strength', 'dexterity', 'constitution', 'intelligence', 'wisdom', 'charisma']:
+                        return Response(
+                            {"error": f"Invalid ability: {ability}"},
+                            status=status.HTTP_400_BAD_REQUEST
+                        )
+                    if increase not in [1, 2]:
+                        return Response(
+                            {"error": "Each ability can only increase by 1 or 2"},
+                            status=status.HTTP_400_BAD_REQUEST
+                        )
+                
+                # Apply ASI
+                stats = character.stats
+                
+                for ability, increase in asi_choice.items():
+                    ability_lower = ability.lower()
+                    current_value = getattr(stats, ability_lower)
+                    new_value = min(20, current_value + increase)  # Cap at 20
+                    setattr(stats, ability_lower, new_value)
+                
+                stats.save()
+                
+                # Remove this level from pending ASI
+                xp_tracking.pending_asi_levels.remove(level)
+                xp_tracking.save()
+                
+                return Response({
+                    "message": f"ASI applied successfully for level {level}",
+                    "asi_applied": asi_choice,
+                    "remaining_pending_asi": xp_tracking.pending_asi_levels,
+                    "new_stats": {
+                        "strength": stats.strength,
+                        "dexterity": stats.dexterity,
+                        "constitution": stats.constitution,
+                        "intelligence": stats.intelligence,
+                        "wisdom": stats.wisdom,
+                        "charisma": stats.charisma
+                    }
+                })
+            
+        except CampaignCharacter.DoesNotExist:
+            return Response(
+                {"error": "Campaign character not found"},
+                status=status.HTTP_404_NOT_FOUND
+            )
+        except CharacterXP.DoesNotExist:
+            return Response(
+                {"error": "XP tracking not found"},
+                status=status.HTTP_404_NOT_FOUND
+            )
+        except Exception as e:
+            return Response(
+                {"error": f"Failed to apply ASI/Feat: {str(e)}"},
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR
+            )
+    
+    @action(detail=True, methods=['post'])
+    def select_subclass(self, request, pk=None):
+        """
+        Select subclass for a character
+        
+        Request body:
+        {
+            "character_id": 1,
+            "subclass": "Champion"  // or "Battle Master", "College of Lore", etc.
+        }
+        """
+        campaign = self.get_object()
+        character_id = request.data.get('character_id')
+        subclass = request.data.get('subclass')
+        
+        if not character_id or not subclass:
+            return Response(
+                {"error": "character_id and subclass are required"},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+        
+        try:
+            # Get campaign character
+            campaign_char = CampaignCharacter.objects.get(
+                campaign=campaign,
+                id=character_id
+            )
+            
+            # Get XP tracking
+            xp_tracking = CharacterXP.objects.get(campaign_character=campaign_char)
+            
+            # Check if subclass selection is pending
+            if not xp_tracking.pending_subclass_selection:
+                return Response(
+                    {"error": "No pending subclass selection"},
+                    status=status.HTTP_400_BAD_REQUEST
+                )
+            
+            # Check if character already has a subclass
+            character = campaign_char.character
+            if character.subclass:
+                return Response(
+                    {"error": f"Character already has subclass: {character.subclass}"},
+                    status=status.HTTP_400_BAD_REQUEST
+                )
+            
+            # Set subclass
+            character.subclass = subclass
+            character.save()
+            
+            # Clear pending flag
+            xp_tracking.pending_subclass_selection = False
+            xp_tracking.save()
+            
+            # Apply subclass features retroactively for current level
+            from characters.models import CharacterFeature
+            from .class_features_data import get_subclass_features
+            
+            features_applied = []
+            current_level = character.level
+            
+            # Determine when subclass features start
+            subclass_levels = {
+                'cleric': 1,
+                'druid': 2,
+                'wizard': 2,
+                'sorcerer': 1,
+                'warlock': 1,
+            }
+            start_level = subclass_levels.get(character.character_class.name, 3)
+            
+            # Apply all subclass features from start_level to current level
+            for level in range(start_level, current_level + 1):
+                subclass_features = get_subclass_features(subclass, level)
+                
+                for feature_data in subclass_features:
+                    CharacterFeature.objects.create(
+                        character=character,
+                        name=feature_data['name'],
+                        feature_type='class',
+                        description=feature_data['description'],
+                        source=f"{subclass} Level {level}"
+                    )
+                    
+                    features_applied.append({
+                        'level': level,
+                        'name': feature_data['name']
+                    })
+            
+            return Response({
+                "message": f"Subclass selected successfully: {subclass}",
+                "character": {
+                    "id": character.id,
+                    "name": character.name,
+                    "class": character.character_class.name,
+                    "subclass": character.subclass,
+                    "level": character.level
+                },
+                "features_applied": features_applied
+            })
+            
+        except CampaignCharacter.DoesNotExist:
+            return Response(
+                {"error": "Campaign character not found"},
+                status=status.HTTP_404_NOT_FOUND
+            )
+        except CharacterXP.DoesNotExist:
+            return Response(
+                {"error": "XP tracking not found"},
+                status=status.HTTP_404_NOT_FOUND
+            )
+        except Exception as e:
+            return Response(
+                {"error": f"Failed to select subclass: {str(e)}"},
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR
+            )
 
 
 class CampaignCharacterViewSet(viewsets.ModelViewSet):
