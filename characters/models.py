@@ -135,8 +135,15 @@ class Character(models.Model):
     
     @property
     def proficiency_bonus(self):
-        """Calculate proficiency bonus based on level"""
-        return ((self.level - 1) // 4) + 2
+        """Calculate proficiency bonus based on total level"""
+        total_level = self.level
+        # Check for multiclass
+        try:
+            from .multiclassing import get_total_level
+            total_level = get_total_level(self)
+        except:
+            pass
+        return ((total_level - 1) // 4) + 2
 
 
 class CharacterStats(models.Model):
@@ -469,3 +476,23 @@ class CharacterFeat(models.Model):
     
     def __str__(self):
         return f"{self.character.name} - {self.feat.name} (Level {self.level_taken})"
+
+
+class CharacterClassLevel(models.Model):
+    """Tracks levels in each class for multiclass characters"""
+    character = models.ForeignKey(Character, on_delete=models.CASCADE, related_name='class_levels')
+    character_class = models.ForeignKey(CharacterClass, on_delete=models.PROTECT, related_name='character_levels')
+    level = models.IntegerField(default=1, validators=[MinValueValidator(1), MaxValueValidator(20)])
+    
+    # Subclass for this class (if applicable)
+    subclass = models.CharField(max_length=100, blank=True, null=True, help_text="Subclass for this class")
+    
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+    
+    class Meta:
+        unique_together = ['character', 'character_class']
+        ordering = ['-level', 'character_class__name']
+    
+    def __str__(self):
+        return f"{self.character.name} - {self.character_class.get_name_display()} Level {self.level}"

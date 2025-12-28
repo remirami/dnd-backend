@@ -1,5 +1,5 @@
 from rest_framework import serializers
-from .models import CombatSession, CombatParticipant, CombatAction, CombatLog
+from .models import CombatSession, CombatParticipant, CombatAction, CombatLog, EnvironmentalEffect, ParticipantPosition
 from encounters.serializers import EncounterSerializer, EncounterEnemySerializer
 from characters.serializers import CharacterSerializer
 from bestiary.serializers import ConditionSerializer, DamageTypeSerializer
@@ -129,5 +129,28 @@ class CombatLogSerializer(serializers.ModelSerializer):
     
     class Meta:
         model = CombatLog
+        fields = '__all__'
+
+
+class EnvironmentalEffectSerializer(serializers.ModelSerializer):
+    """Serializer for environmental effects"""
+    effect_type_display = serializers.CharField(source='get_effect_type_display', read_only=True)
+    terrain_type_display = serializers.CharField(source='get_terrain_type_display', read_only=True, allow_null=True)
+    cover_type_display = serializers.CharField(source='get_cover_type_display', read_only=True, allow_null=True)
+    lighting_type_display = serializers.CharField(source='get_lighting_type_display', read_only=True, allow_null=True)
+    weather_type_display = serializers.CharField(source='get_weather_type_display', read_only=True, allow_null=True)
+    hazard_type_display = serializers.CharField(source='get_hazard_type_display', read_only=True, allow_null=True)
+    
+    class Meta:
+        model = EnvironmentalEffect
+        fields = '__all__'
+
+
+class ParticipantPositionSerializer(serializers.ModelSerializer):
+    """Serializer for participant positions"""
+    participant_name = serializers.CharField(source='participant.get_name', read_only=True)
+    
+    class Meta:
+        model = ParticipantPosition
         fields = '__all__'
 

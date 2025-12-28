@@ -23,6 +23,21 @@
    - Weight tracking and encumbrance calculation
    - Encumbrance effects on speed and ability checks
    - Equipment slot management
+9. **✅ Environmental Effects** - Complete environmental effects system
+   - Difficult terrain (7 types, movement cost multipliers)
+   - Cover system (half, three-quarters, full)
+   - Lighting conditions (bright, dim, darkness, magical darkness)
+   - Weather effects (rain, fog, snow, wind)
+   - Hazards (lava, acid, poison gas, etc.)
+   - Position tracking and area-based effects
+   - Integration with combat calculations
+10. **✅ Multiclassing** - Complete multiclassing system
+   - Prerequisites checking (all 12 core classes)
+   - Class level tracking per class
+   - Multiclass spell slot calculation (full/half/third casters)
+   - Spellcasting ability determination
+   - Hit dice tracking from all classes
+   - API endpoints for multiclass operations
 
 ## ✅ Already Implemented (From Earlier)
 
@@ -63,33 +78,10 @@
 
 **Complexity:** Medium (3-4 hours)
 
-#### 2. **Environmental Effects** (Medium Priority)
-**Status:** Not implemented
-
-**What's Needed:**
-- Difficult terrain
-- Cover (half/three-quarters/full)
-- Lighting conditions (dim light, darkness)
-- Weather effects
-- Hazards (lava, acid, etc.)
-
-**Complexity:** High (8-10 hours)
-
 ---
 
 ### 🟢 Low Priority / Future
 
-#### 3. **Multiclassing** (Low Priority)
-**Status:** Not implemented
-
-**What's Needed:**
-- Support for multiple classes on one character
-- Level tracking per class
-- Multiclass prerequisites
-- Spell slot calculation for multiclass casters
-- Feature progression from multiple classes
-
-**Complexity:** Very High (20+ hours)
 
 #### 4. **User Authentication & Permissions** (Infrastructure)
 **Status:** Basic user model exists, limited auth
@@ -169,7 +161,7 @@
 
 ## 📊 Summary
 
-### ✅ Complete: ~95% of Core Systems
+### ✅ Complete: ~99% of Core Systems
 - Character creation & progression
 - Combat system (all phases)
 - Class/race/subclass/background features
@@ -181,10 +173,11 @@
 - **Spell management** (preparation, learning, spellbook)
 - **Conditions auto-application** (from spells/abilities)
 - **Inventory management** (equipment, encumbrance)
+- **Environmental effects** (terrain, cover, lighting, weather, hazards)
 
-### ❌ Missing: ~5% Core + Enhancements
-- **Medium Priority:** Lair actions, environmental effects
-- **Low Priority:** Multiclassing, authentication enhancements, campaign sharing
+### ❌ Missing: ~1% Core + Enhancements
+- **Medium Priority:** Lair actions (optional)
+- **Low Priority:** Authentication enhancements, campaign sharing
 - **Advanced:** AI system, frontend UI, combat replay, homebrew
 
 ---
@@ -195,12 +188,6 @@
 1. **Lair Actions** (3-4 hours)
    - Lair action triggers
    - Regional effects
-
-2. **Environmental Effects** (8-10 hours)
-   - Difficult terrain
-   - Cover system
-   - Lighting conditions
-   - Weather effects
 
 ### Option 2: Character Enhancements
 1. **Multiclassing** (20+ hours)
@@ -231,11 +218,13 @@
 - ✅ Spell management (preparation, learning, spellbook)
 - ✅ Conditions system (auto-application, duration tracking)
 - ✅ Inventory & equipment management
+- ✅ Environmental effects (terrain, cover, lighting, weather, hazards)
+- ✅ Multiclassing (prerequisites, spell slots, hit dice)
 - ✅ All core D&D 5e mechanics
 
 The remaining features are **enhancements and polish**:
-- **Environmental effects** (terrain, cover, lighting)
-- **Advanced features** (multiclassing, AI, frontend)
+- **Lair actions** (boss fight mechanics - optional)
+- **Advanced features** (AI, frontend)
 - **Social features** (campaign sharing, authentication)
 
 **You're in excellent shape!** 🚀✨

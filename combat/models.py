@@ -88,6 +88,139 @@ class CombatSession(models.Model):
                         app.remove('end_of_turn')
                     elif app.duration_type == 'round' and app.expires_at_round and self.current_round > app.expires_at_round:
                         app.remove('duration_expired')
+
+
+class EnvironmentalEffect(models.Model):
+    """Environmental effects applied to a combat session"""
+    EFFECT_TYPES = [
+        ('terrain', 'Terrain'),
+        ('cover', 'Cover'),
+        ('lighting', 'Lighting'),
+        ('weather', 'Weather'),
+        ('hazard', 'Hazard'),
+    ]
+    
+    TERRAIN_TYPES = [
+        ('rubble', 'Rubble'),
+        ('mud', 'Mud'),
+        ('snow', 'Snow'),
+        ('thick_vegetation', 'Thick Vegetation'),
+        ('ice', 'Ice'),
+        ('swamp', 'Swamp'),
+        ('quicksand', 'Quicksand'),
+    ]
+    
+    COVER_TYPES = [
+        ('half', 'Half Cover'),
+        ('three_quarters', 'Three-Quarters Cover'),
+        ('full', 'Full Cover'),
+    ]
+    
+    LIGHTING_TYPES = [
+        ('bright_light', 'Bright Light'),
+        ('dim_light', 'Dim Light'),
+        ('darkness', 'Darkness'),
+        ('magical_darkness', 'Magical Darkness'),
+    ]
+    
+    WEATHER_TYPES = [
+        ('clear', 'Clear'),
+        ('light_rain', 'Light Rain'),
+        ('heavy_rain', 'Heavy Rain'),
+        ('fog', 'Fog'),
+        ('heavy_fog', 'Heavy Fog'),
+        ('snow', 'Snow'),
+        ('strong_wind', 'Strong Wind'),
+    ]
+    
+    HAZARD_TYPES = [
+        ('lava', 'Lava'),
+        ('acid', 'Acid'),
+        ('poison_gas', 'Poison Gas'),
+        ('spike_pit', 'Spike Pit'),
+        ('electrified_water', 'Electrified Water'),
+    ]
+    
+    combat_session = models.ForeignKey('CombatSession', on_delete=models.CASCADE, related_name='environmental_effects')
+    effect_type = models.CharField(max_length=20, choices=EFFECT_TYPES)
+    
+    # Terrain
+    terrain_type = models.CharField(max_length=20, choices=TERRAIN_TYPES, blank=True, null=True)
+    
+    # Cover (applied to specific areas or participants)
+    cover_type = models.CharField(max_length=20, choices=COVER_TYPES, blank=True, null=True)
+    cover_area_x = models.IntegerField(blank=True, null=True, help_text="X coordinate of cover area")
+    cover_area_y = models.IntegerField(blank=True, null=True, help_text="Y coordinate of cover area")
+    cover_area_radius = models.IntegerField(blank=True, null=True, help_text="Radius of cover area in feet")
+    
+    # Lighting
+    lighting_type = models.CharField(max_length=20, choices=LIGHTING_TYPES, blank=True, null=True)
+    lighting_area_x = models.IntegerField(blank=True, null=True)
+    lighting_area_y = models.IntegerField(blank=True, null=True)
+    lighting_area_radius = models.IntegerField(blank=True, null=True)
+    
+    # Weather (applies to entire combat)
+    weather_type = models.CharField(max_length=20, choices=WEATHER_TYPES, blank=True, null=True)
+    
+    # Hazards
+    hazard_type = models.CharField(max_length=20, choices=HAZARD_TYPES, blank=True, null=True)
+    hazard_area_x = models.IntegerField(blank=True, null=True)
+    hazard_area_y = models.IntegerField(blank=True, null=True)
+    hazard_area_radius = models.IntegerField(blank=True, null=True)
+    
+    # General properties
+    description = models.TextField(blank=True)
+    is_active = models.BooleanField(default=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    
+    class Meta:
+        ordering = ['-created_at']
+    
+    def __str__(self):
+        if self.effect_type == 'terrain':
+            return f"{self.get_terrain_type_display()} - {self.combat_session}"
+        elif self.effect_type == 'cover':
+            return f"{self.get_cover_type_display()} - {self.combat_session}"
+        elif self.effect_type == 'lighting':
+            return f"{self.get_lighting_type_display()} - {self.combat_session}"
+        elif self.effect_type == 'weather':
+            return f"{self.get_weather_type_display()} - {self.combat_session}"
+        elif self.effect_type == 'hazard':
+            return f"{self.get_hazard_type_display()} - {self.combat_session}"
+        return f"{self.get_effect_type_display()} - {self.combat_session}"
+
+
+class ParticipantPosition(models.Model):
+    """Tracks participant positions for environmental effects"""
+    participant = models.OneToOneField('CombatParticipant', on_delete=models.CASCADE, related_name='position')
+    x = models.IntegerField(default=0, help_text="X coordinate in feet")
+    y = models.IntegerField(default=0, help_text="Y coordinate in feet")
+    z = models.IntegerField(default=0, help_text="Z coordinate (height) in feet")
+    
+    # Current environmental effects at this position
+    current_terrain = models.CharField(max_length=20, blank=True, null=True)
+    current_cover = models.CharField(max_length=20, blank=True, null=True)
+    current_lighting = models.CharField(max_length=20, blank=True, null=True)
+    current_hazards = models.JSONField(default=list, blank=True, help_text="List of hazard types at this position")
+    
+    updated_at = models.DateTimeField(auto_now=True)
+    
+    def __str__(self):
+        return f"{self.participant.get_name()} at ({self.x}, {self.y}, {self.z})"
+    
+    def distance_to(self, other_position):
+        """Calculate distance to another position"""
+        dx = self.x - other_position.x
+        dy = self.y - other_position.y
+        dz = self.z - other_position.z
+        return int((dx**2 + dy**2 + dz**2)**0.5)
+    
+    def is_in_area(self, center_x, center_y, radius):
+        """Check if position is within an area"""
+        dx = self.x - center_x
+        dy = self.y - center_y
+        distance = (dx**2 + dy**2)**0.5
+        return distance <= radius
     
     def trigger_opportunity_attack(self, attacker, target, movement_distance=0):
         """
@@ -406,8 +539,8 @@ class CombatParticipant(models.Model):
         
         return bonuses
     
-    def calculate_effective_ac(self):
-        """Calculate effective AC including armor and magic items"""
+    def calculate_effective_ac(self, cover_bonus=0):
+        """Calculate effective AC including armor, magic items, and cover"""
         base_ac = self.armor_class
         
         # Get armor bonuses
@@ -438,6 +571,9 @@ class CombatParticipant(models.Model):
         # Add magic item bonuses
         magic_bonuses = self.get_magic_item_bonuses()
         base_ac += magic_bonuses['to_ac']
+        
+        # Add cover bonus
+        base_ac += cover_bonus
         
         return base_ac
     

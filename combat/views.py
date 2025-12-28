@@ -3,11 +3,17 @@ from rest_framework.decorators import action
 from rest_framework.response import Response
 from django.utils import timezone
 
-from .models import CombatSession, CombatParticipant, CombatAction, CombatLog, ConditionApplication
+from .models import CombatSession, CombatParticipant, CombatAction, CombatLog, ConditionApplication, EnvironmentalEffect, ParticipantPosition
 from .condition_effects import auto_apply_condition_from_spell, get_condition_for_spell
+from .environmental_effects import (
+    calculate_movement_cost, calculate_cover_ac_bonus, calculate_cover_save_bonus,
+    has_full_cover, get_lighting_attack_modifier, get_weather_ranged_modifier,
+    get_environmental_effects_summary
+)
 from .serializers import (
     CombatSessionSerializer, CombatParticipantSerializer, CombatActionSerializer,
-    AttackRequestSerializer, SpellRequestSerializer, CombatLogSerializer
+    AttackRequestSerializer, SpellRequestSerializer, CombatLogSerializer,
+    EnvironmentalEffectSerializer, ParticipantPositionSerializer
 )
 from .utils import (
     roll_d20, calculate_attack_roll, calculate_damage, check_hit,
@@ -301,8 +307,86 @@ class CombatSessionViewSet(viewsets.ModelViewSet):
             roll, ability_mod, proficiency_bonus, proficiency, other_modifiers
         )
         
-        # Get target's effective AC (including armor and magic items)
-        target_ac = target.calculate_effective_ac()
+        # Get environmental effects for target
+        cover_bonus = 0
+        target_has_full_cover = False
+        target_position = None
+        target_cover_type = None
+        
+        try:
+            target_position = target.position
+            if target_position.current_cover:
+                target_cover_type = target_position.current_cover
+                cover_bonus = calculate_cover_ac_bonus(target_position.current_cover)
+                target_has_full_cover = has_full_cover(target_position.current_cover)
+        except ParticipantPosition.DoesNotExist:
+            pass
+        
+        # Full cover prevents targeting
+        if target_has_full_cover:
+            return Response(
+                {"error": f"{target.get_name()} has full cover and cannot be targeted"},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+        
+        # Get lighting effects for attacker
+        lighting_modifier = None
+        attacker_position = None
+        attacker_lighting = None
+        
+        try:
+            attacker_position = attacker.position
+            if attacker_position.current_lighting:
+                attacker_lighting = attacker_position.current_lighting
+                has_darkvision = attacker.character.stats.darkvision > 0 if (attacker.character and hasattr(attacker.character, 'stats')) else False
+                lighting_mod = get_lighting_attack_modifier(attacker_position.current_lighting, has_darkvision)
+                lighting_modifier = lighting_mod
+                if lighting_mod == 'disadvantage':
+                    # Roll again and take lower
+                    roll2, _ = roll_d20()
+                    roll = min(roll, roll2)
+                    advantage = False
+                    disadvantage = True
+                elif lighting_mod == 'advantage':
+                    # Roll again and take higher
+                    roll2, _ = roll_d20()
+                    roll = max(roll, roll2)
+                    advantage = True
+                    disadvantage = False
+        except ParticipantPosition.DoesNotExist:
+            pass
+        
+        # Get weather effects for ranged attacks
+        weather_modifier = None
+        weather_effect = EnvironmentalEffect.objects.filter(
+            combat_session=session,
+            effect_type='weather',
+            is_active=True
+        ).first()
+        if weather_effect and weather_effect.weather_type:
+            weather_mod = get_weather_ranged_modifier(weather_effect.weather_type)
+            weather_modifier = weather_mod
+            if weather_mod == 'disadvantage':
+                # Check if ranged attack
+                if equipped_weapon and equipped_weapon.range_normal > 0:
+                    roll2, _ = roll_d20()
+                    roll = min(roll, roll2)
+                    advantage = False
+                    disadvantage = True
+            elif weather_mod == 'advantage':
+                if equipped_weapon and equipped_weapon.range_normal > 0:
+                    roll2, _ = roll_d20()
+                    roll = max(roll, roll2)
+                    advantage = True
+                    disadvantage = False
+        
+        # Recalculate attack total with new roll
+        attack_total, attack_breakdown = calculate_attack_roll(
+            roll, ability_mod, proficiency_bonus, proficiency, other_modifiers
+        )
+        
+        # Get target's effective AC (including armor, magic items, and cover)
+        target_ac = target.calculate_effective_ac(cover_bonus=cover_bonus)
         
         # Check if hit
         hit = check_hit(attack_total, target_ac)
@@ -347,6 +431,7 @@ class CombatSessionViewSet(viewsets.ModelViewSet):
             "attack_roll": roll,
             "attack_total": attack_total,
             "target_ac": target_ac,
+            "cover_bonus": cover_bonus,
             "weapon_used": attack_name if equipped_weapon else None,
             "ability_used": use_ability,
             "magic_bonuses": magic_bonuses,
@@ -354,6 +439,14 @@ class CombatSessionViewSet(viewsets.ModelViewSet):
             "critical": critical,
             "damage": damage_amount if hit else 0,
             "target_hp": target.current_hp,
+            "environmental_effects": {
+                "cover": cover_bonus > 0,
+                "cover_type": target_cover_type,
+                "lighting": attacker_lighting,
+                "lighting_modifier": lighting_modifier,
+                "weather": weather_effect.weather_type if weather_effect else None,
+                "weather_modifier": weather_modifier,
+            },
             "breakdown": {
                 "roll": roll_breakdown,
                 "attack": attack_breakdown,
@@ -1074,6 +1167,178 @@ class CombatSessionViewSet(viewsets.ModelViewSet):
         report = session.get_combat_report()
         return Response(report)
     
+    @action(detail=True, methods=['get', 'post'])
+    def environmental_effects(self, request, pk=None):
+        """
+        Get or add environmental effects to combat session.
+        
+        GET: List all environmental effects
+        POST: Add a new environmental effect
+        """
+        session = self.get_object()
+        
+        if request.method == 'GET':
+            effects = EnvironmentalEffect.objects.filter(combat_session=session, is_active=True)
+            serializer = EnvironmentalEffectSerializer(effects, many=True)
+            
+            # Get weather (applies to entire combat)
+            weather_effect = effects.filter(effect_type='weather').first()
+            weather = weather_effect.weather_type if weather_effect else None
+            
+            # Get summary
+            summary = get_environmental_effects_summary(
+                terrain=None,
+                cover=None,
+                lighting=None,
+                weather=weather,
+                hazards=None
+            )
+            
+            return Response({
+                'environmental_effects': serializer.data,
+                'summary': summary
+            })
+        
+        elif request.method == 'POST':
+            # Create new environmental effect
+            effect_type = request.data.get('effect_type')
+            
+            if not effect_type:
+                return Response(
+                    {"error": "effect_type is required"},
+                    status=status.HTTP_400_BAD_REQUEST
+                )
+            
+            effect_data = {
+                'combat_session': session.id,
+                'effect_type': effect_type,
+                'description': request.data.get('description', ''),
+            }
+            
+            # Set type-specific fields
+            if effect_type == 'terrain':
+                effect_data['terrain_type'] = request.data.get('terrain_type')
+            elif effect_type == 'cover':
+                effect_data['cover_type'] = request.data.get('cover_type')
+                effect_data['cover_area_x'] = request.data.get('cover_area_x')
+                effect_data['cover_area_y'] = request.data.get('cover_area_y')
+                effect_data['cover_area_radius'] = request.data.get('cover_area_radius')
+            elif effect_type == 'lighting':
+                effect_data['lighting_type'] = request.data.get('lighting_type')
+                effect_data['lighting_area_x'] = request.data.get('lighting_area_x')
+                effect_data['lighting_area_y'] = request.data.get('lighting_area_y')
+                effect_data['lighting_area_radius'] = request.data.get('lighting_area_radius')
+            elif effect_type == 'weather':
+                effect_data['weather_type'] = request.data.get('weather_type')
+            elif effect_type == 'hazard':
+                effect_data['hazard_type'] = request.data.get('hazard_type')
+                effect_data['hazard_area_x'] = request.data.get('hazard_area_x')
+                effect_data['hazard_area_y'] = request.data.get('hazard_area_y')
+                effect_data['hazard_area_radius'] = request.data.get('hazard_area_radius')
+            
+            serializer = EnvironmentalEffectSerializer(data=effect_data)
+            if serializer.is_valid():
+                effect = serializer.save()
+                return Response({
+                    "message": f"Environmental effect added: {effect.get_effect_type_display()}",
+                    "effect": serializer.data
+                }, status=status.HTTP_201_CREATED)
+            return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+    
+    @action(detail=True, methods=['post'])
+    def set_participant_position(self, request, pk=None):
+        """Set or update participant position"""
+        session = self.get_object()
+        participant_id = request.data.get('participant_id')
+        x = request.data.get('x', 0)
+        y = request.data.get('y', 0)
+        z = request.data.get('z', 0)
+        
+        if not participant_id:
+            return Response(
+                {"error": "participant_id is required"},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+        
+        try:
+            participant = session.participants.get(pk=participant_id)
+        except CombatParticipant.DoesNotExist:
+            return Response(
+                {"error": "Participant not found"},
+                status=status.HTTP_404_NOT_FOUND
+            )
+        
+        # Get or create position
+        position, created = ParticipantPosition.objects.get_or_create(
+            participant=participant,
+            defaults={'x': x, 'y': y, 'z': z}
+        )
+        
+        if not created:
+            position.x = x
+            position.y = y
+            position.z = z
+            position.save()
+        
+        # Update environmental effects at this position
+        self._update_position_environmental_effects(position, session)
+        
+        serializer = ParticipantPositionSerializer(position)
+        return Response({
+            "message": f"Position updated for {participant.get_name()}",
+            "position": serializer.data
+        })
+    
+    def _update_position_environmental_effects(self, position, session):
+        """Update environmental effects at participant's position"""
+        # Check for terrain
+        terrain_effects = EnvironmentalEffect.objects.filter(
+            combat_session=session,
+            effect_type='terrain',
+            is_active=True
+        )
+        if terrain_effects.exists():
+            position.current_terrain = terrain_effects.first().terrain_type
+        
+        # Check for cover
+        cover_effects = EnvironmentalEffect.objects.filter(
+            combat_session=session,
+            effect_type='cover',
+            is_active=True
+        )
+        for cover_effect in cover_effects:
+            if cover_effect.cover_area_x and cover_effect.cover_area_y and cover_effect.cover_area_radius:
+                if position.is_in_area(cover_effect.cover_area_x, cover_effect.cover_area_y, cover_effect.cover_area_radius):
+                    position.current_cover = cover_effect.cover_type
+                    break
+        
+        # Check for lighting
+        lighting_effects = EnvironmentalEffect.objects.filter(
+            combat_session=session,
+            effect_type='lighting',
+            is_active=True
+        )
+        for lighting_effect in lighting_effects:
+            if lighting_effect.lighting_area_x and lighting_effect.lighting_area_y and lighting_effect.lighting_area_radius:
+                if position.is_in_area(lighting_effect.lighting_area_x, lighting_effect.lighting_area_y, lighting_effect.lighting_area_radius):
+                    position.current_lighting = lighting_effect.lighting_type
+                    break
+        
+        # Check for hazards
+        hazard_effects = EnvironmentalEffect.objects.filter(
+            combat_session=session,
+            effect_type='hazard',
+            is_active=True
+        )
+        hazards = []
+        for hazard_effect in hazard_effects:
+            if hazard_effect.hazard_area_x and hazard_effect.hazard_area_y and hazard_effect.hazard_area_radius:
+                if position.is_in_area(hazard_effect.hazard_area_x, hazard_effect.hazard_area_y, hazard_effect.hazard_area_radius):
+                    hazards.append(hazard_effect.hazard_type)
+        position.current_hazards = hazards
+        
+        position.save()
+    
     @action(detail=True, methods=['get'])
     def export(self, request, pk=None):
         """Export combat log in various formats"""
@@ -1167,6 +1432,172 @@ class CombatParticipantViewSet(viewsets.ModelViewSet):
         return Response({
             "message": f"{participant.get_name()} healed {amount} HP",
             "current_hp": new_hp,
+            "participant": serializer.data
+        })
+    
+    @action(detail=True, methods=['post'])
+    def move(self, request, pk=None):
+        """
+        Move a participant, considering difficult terrain.
+        
+        Request body:
+        {
+            "distance": 30,  // Distance to move in feet
+            "x": 10,  // Optional: new X position
+            "y": 10,  // Optional: new Y position
+            "z": 0   // Optional: new Z position
+        }
+        """
+        participant = self.get_object()
+        session = participant.combat_session
+        
+        if session.status != 'active':
+            return Response(
+                {"error": "Combat is not active"},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+        
+        distance = request.data.get('distance', 0)
+        x = request.data.get('x')
+        y = request.data.get('y')
+        z = request.data.get('z', 0)
+        
+        # Get participant's base speed
+        base_speed = 30  # Default
+        if participant.character and hasattr(participant.character, 'stats'):
+            base_speed = participant.character.stats.speed or 30
+        
+        # Get current position
+        try:
+            position = participant.position
+        except ParticipantPosition.DoesNotExist:
+            position = ParticipantPosition.objects.create(
+                participant=participant,
+                x=x or 0,
+                y=y or 0,
+                z=z or 0
+            )
+        
+        # Calculate movement cost considering terrain
+        terrain_type = position.current_terrain
+        weather_effect = EnvironmentalEffect.objects.filter(
+            combat_session=session,
+            effect_type='weather',
+            is_active=True
+        ).first()
+        weather = weather_effect.weather_type if weather_effect else None
+        
+        effective_movement, cost_multiplier = calculate_movement_cost(
+            base_speed,
+            terrain_type=terrain_type,
+            weather=weather
+        )
+        
+        # Calculate actual movement cost
+        movement_cost = int(distance * cost_multiplier)
+        
+        # Check if participant has enough movement
+        movement_remaining = effective_movement - participant.movement_used
+        if movement_cost > movement_remaining:
+            return Response(
+                {"error": f"Not enough movement. Need {movement_cost} feet, have {movement_remaining} feet remaining"},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+        
+        # Update position if provided
+        if x is not None and y is not None:
+            position.x = x
+            position.y = y
+            position.z = z
+            # Update environmental effects at new position
+            session_viewset = CombatSessionViewSet()
+            session_viewset._update_position_environmental_effects(position, session)
+            position.save()
+        
+        # Update movement used
+        participant.movement_used += movement_cost
+        participant.save()
+        
+        serializer = self.get_serializer(participant)
+        return Response({
+            "message": f"{participant.get_name()} moved {distance} feet (cost: {movement_cost} feet)",
+            "movement_used": participant.movement_used,
+            "movement_remaining": effective_movement - participant.movement_used,
+            "terrain_multiplier": cost_multiplier,
+            "position": ParticipantPositionSerializer(position).data if hasattr(position, 'id') else None,
+            "participant": serializer.data
+        })
+    
+    @action(detail=True, methods=['post'])
+    def apply_hazard_damage(self, request, pk=None):
+        """
+        Apply damage from hazards at participant's position.
+        Called automatically at start of turn if in hazard area.
+        """
+        participant = self.get_object()
+        
+        try:
+            position = participant.position
+        except ParticipantPosition.DoesNotExist:
+            return Response(
+                {"error": "Participant has no position"},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+        
+        if not position.current_hazards:
+            return Response(
+                {"error": "Participant is not in any hazard area"},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+        
+        session = participant.combat_session
+        hazards_applied = []
+        
+        for hazard_type in position.current_hazards:
+            from .environmental_effects import calculate_hazard_damage
+            damage_dice, damage_type_name, save_type, save_dc, condition = calculate_hazard_damage(hazard_type)
+            
+            if not damage_dice:
+                continue
+            
+            # Roll damage
+            from .utils import calculate_damage, roll_d20, calculate_saving_throw
+            damage_amount, damage_breakdown = calculate_damage(damage_dice, 0, False)
+            
+            # Make saving throw if applicable
+            if save_type and save_dc:
+                save_roll, _ = roll_d20()
+                ability_mod = participant.get_ability_modifier(save_type)
+                proficiency_bonus = participant.character.proficiency_bonus if participant.character else 2
+                save_total, _ = calculate_saving_throw(save_roll, ability_mod, proficiency_bonus, False)
+                
+                if save_total >= save_dc:
+                    damage_amount = damage_amount // 2  # Half damage on successful save
+            
+            # Apply damage
+            new_hp, _ = participant.take_damage(damage_amount)
+            
+            # Apply condition if applicable
+            if condition:
+                from bestiary.models import Condition
+                try:
+                    cond = Condition.objects.get(name=condition)
+                    participant.conditions.add(cond)
+                except Condition.DoesNotExist:
+                    pass
+            
+            hazards_applied.append({
+                'hazard_type': hazard_type,
+                'damage': damage_amount,
+                'damage_type': damage_type_name,
+                'save_success': save_total >= save_dc if save_type else None,
+            })
+        
+        serializer = self.get_serializer(participant)
+        return Response({
+            "message": f"{participant.get_name()} took damage from hazards",
+            "hazards_applied": hazards_applied,
+            "current_hp": participant.current_hp,
             "participant": serializer.data
         })
     

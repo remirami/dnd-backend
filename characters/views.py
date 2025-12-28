@@ -4,7 +4,13 @@ from rest_framework.response import Response
 
 from .models import (
     Character, CharacterStats, CharacterClass, CharacterRace, CharacterBackground,
-    CharacterProficiency, CharacterFeature, CharacterSpell, CharacterResistance, CharacterItem
+    CharacterProficiency, CharacterFeature, CharacterSpell, CharacterResistance, CharacterItem,
+    CharacterClassLevel
+)
+from .multiclassing import (
+    can_multiclass_into, calculate_multiclass_spell_slots, get_multiclass_spellcasting_ability,
+    get_multiclass_hit_dice, get_total_level, get_class_level, get_primary_class,
+    MULTICLASS_PREREQUISITES
 )
 from .serializers import (
     CharacterSerializer, CharacterStatsSerializer, CharacterClassSerializer,
@@ -95,15 +101,214 @@ class CharacterViewSet(viewsets.ModelViewSet):
     
     @action(detail=True, methods=['post'])
     def level_up(self, request, pk=None):
-        """Level up a character"""
+        """
+        Level up a character.
+        For multiclass characters, specify which class to level up.
+        
+        Request body (optional):
+        {
+            "class_id": 2,  // ID of class to level up (for multiclass)
+            "class_name": "Fighter"  // Or name of class
+        }
+        """
         character = self.get_object()
+        
+        # Check if multiclass level-up
+        class_id = request.data.get('class_id')
+        class_name = request.data.get('class_name')
+        target_class = None
+        
+        if class_id:
+            try:
+                target_class = CharacterClass.objects.get(pk=class_id)
+            except CharacterClass.DoesNotExist:
+                return Response(
+                    {"error": f"Class with id {class_id} not found"},
+                    status=status.HTTP_404_NOT_FOUND
+                )
+        elif class_name:
+            try:
+                target_class = CharacterClass.objects.get(name=class_name.lower())
+            except CharacterClass.DoesNotExist:
+                return Response(
+                    {"error": f"Class '{class_name}' not found"},
+                    status=status.HTTP_404_NOT_FOUND
+                )
+        
+        # If multiclassing, add level to that class
+        if target_class:
+            # Check prerequisites if this is a new class
+            can_multiclass, reason = can_multiclass_into(character, target_class.name)
+            if not can_multiclass:
+                # Check if already has this class
+                try:
+                    class_level = CharacterClassLevel.objects.get(
+                        character=character,
+                        character_class=target_class
+                    )
+                    # Already has this class, just level it up
+                    if class_level.level >= 20:
+                        return Response(
+                            {"error": f"Cannot level up {target_class.get_name_display()} beyond level 20"},
+                            status=status.HTTP_400_BAD_REQUEST
+                        )
+                    class_level.level += 1
+                    class_level.save()
+                except CharacterClassLevel.DoesNotExist:
+                    return Response(
+                        {"error": reason},
+                        status=status.HTTP_400_BAD_REQUEST
+                    )
+            else:
+                # New class - create CharacterClassLevel
+                CharacterClassLevel.objects.create(
+                    character=character,
+                    character_class=target_class,
+                    level=1
+                )
+            
+            # Update total level
+            total_level = get_total_level(character)
+            character.level = total_level
+            character.save()
+            
+            serializer = self.get_serializer(character)
+            return Response({
+                "message": f"{character.name} gained a level in {target_class.get_name_display()}! Total level: {total_level}",
+                "character": serializer.data,
+                "class_levels": self._get_class_levels_data(character)
+            })
+        
+        # Single-class level-up (original behavior)
+        if character.level >= 20:
+            return Response(
+                {"error": "Character is already at maximum level (20)"},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+        
         character.level += 1
+        
+        # Ensure primary class has a CharacterClassLevel entry
+        primary_class = character.character_class
+        class_level, created = CharacterClassLevel.objects.get_or_create(
+            character=character,
+            character_class=primary_class,
+            defaults={'level': character.level}
+        )
+        if not created:
+            class_level.level = character.level
+            class_level.save()
+        
         character.save()
         
         serializer = self.get_serializer(character)
         return Response({
             "message": f"{character.name} leveled up to level {character.level}!",
-            "character": serializer.data
+            "character": serializer.data,
+            "class_levels": self._get_class_levels_data(character)
+        })
+    
+    def _get_class_levels_data(self, character):
+        """Get class levels data for character"""
+        class_levels = CharacterClassLevel.objects.filter(character=character)
+        return [
+            {
+                'class_id': cl.character_class.id,
+                'class_name': cl.character_class.get_name_display(),
+                'level': cl.level,
+                'subclass': cl.subclass
+            }
+            for cl in class_levels
+        ]
+    
+    @action(detail=True, methods=['get'])
+    def multiclass_info(self, request, pk=None):
+        """Get multiclassing information for character"""
+        character = self.get_object()
+        
+        # Get current class levels
+        class_levels = CharacterClassLevel.objects.filter(character=character)
+        current_classes = [
+            {
+                'class_id': cl.character_class.id,
+                'class_name': cl.character_class.get_name_display(),
+                'level': cl.level,
+                'subclass': cl.subclass
+            }
+            for cl in class_levels
+        ]
+        
+        # Get total level
+        total_level = get_total_level(character)
+        
+        # Get spellcasting info
+        spellcasting_ability = get_multiclass_spellcasting_ability(character)
+        spell_slots = calculate_multiclass_spell_slots(character)
+        
+        # Get hit dice
+        hit_dice = get_multiclass_hit_dice(character)
+        
+        # Get available classes for multiclassing
+        all_classes = CharacterClass.objects.all()
+        available_classes = []
+        
+        for char_class in all_classes:
+            # Skip if already has this class
+            if CharacterClassLevel.objects.filter(character=character, character_class=char_class).exists():
+                continue
+            
+            can_multiclass, reason = can_multiclass_into(character, char_class.name)
+            available_classes.append({
+                'class_id': char_class.id,
+                'class_name': char_class.get_name_display(),
+                'can_multiclass': can_multiclass,
+                'reason': reason if not can_multiclass else None,
+                'prerequisites': MULTICLASS_PREREQUISITES.get(char_class.name, {})
+            })
+        
+        return Response({
+            'total_level': total_level,
+            'current_classes': current_classes,
+            'spellcasting': {
+                'ability': spellcasting_ability,
+                'spell_slots': spell_slots
+            },
+            'hit_dice': hit_dice,
+            'available_classes': available_classes
+        })
+    
+    @action(detail=True, methods=['post'])
+    def check_multiclass(self, request, pk=None):
+        """Check if character can multiclass into a specific class"""
+        character = self.get_object()
+        class_id = request.data.get('class_id')
+        class_name = request.data.get('class_name')
+        
+        if not class_id and not class_name:
+            return Response(
+                {"error": "Either class_id or class_name is required"},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+        
+        try:
+            if class_id:
+                target_class = CharacterClass.objects.get(pk=class_id)
+            else:
+                target_class = CharacterClass.objects.get(name=class_name.lower())
+        except CharacterClass.DoesNotExist:
+            return Response(
+                {"error": "Class not found"},
+                status=status.HTTP_404_NOT_FOUND
+            )
+        
+        can_multiclass, reason = can_multiclass_into(character, target_class.name)
+        
+        return Response({
+            'class_id': target_class.id,
+            'class_name': target_class.get_name_display(),
+            'can_multiclass': can_multiclass,
+            'reason': reason,
+            'prerequisites': MULTICLASS_PREREQUISITES.get(target_class.name, {})
         })
     
     @action(detail=True, methods=['post'])

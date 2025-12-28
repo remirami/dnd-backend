@@ -82,12 +82,23 @@ class CharacterStatsSerializer(serializers.ModelSerializer):
         fields = "__all__"
 
 
+class CharacterClassLevelSerializer(serializers.ModelSerializer):
+    """Serializer for character class levels"""
+    class_name = serializers.CharField(source='character_class.get_name_display', read_only=True)
+    character_class_id = serializers.IntegerField(source='character_class.id', read_only=True)
+    
+    class Meta:
+        model = CharacterClassLevel
+        fields = ['id', 'character_class_id', 'class_name', 'level', 'subclass', 'created_at', 'updated_at']
+
+
 class CharacterSerializer(serializers.ModelSerializer):
     stats = CharacterStatsSerializer(read_only=True)
     proficiencies = CharacterProficiencySerializer(many=True, read_only=True)
     features = CharacterFeatureSerializer(many=True, read_only=True)
     spells = CharacterSpellSerializer(many=True, read_only=True)
     resistances = CharacterResistanceSerializer(many=True, read_only=True)
+    class_levels = CharacterClassLevelSerializer(many=True, read_only=True)
     
     # Nested serializers for related objects
     character_class = CharacterClassSerializer(read_only=True)
@@ -105,6 +116,33 @@ class CharacterSerializer(serializers.ModelSerializer):
     
     # Computed fields
     proficiency_bonus = serializers.ReadOnlyField()
+    
+    # Multiclass info
+    total_level = serializers.SerializerMethodField()
+    multiclass_info = serializers.SerializerMethodField()
+    
+    def get_total_level(self, obj):
+        """Get total character level (sum of all class levels)"""
+        try:
+            from .multiclassing import get_total_level
+            return get_total_level(obj)
+        except:
+            return obj.level
+    
+    def get_multiclass_info(self, obj):
+        """Get multiclass information"""
+        try:
+            from .multiclassing import (
+                calculate_multiclass_spell_slots, get_multiclass_spellcasting_ability,
+                get_multiclass_hit_dice
+            )
+            return {
+                'spell_slots': calculate_multiclass_spell_slots(obj),
+                'spellcasting_ability': get_multiclass_spellcasting_ability(obj),
+                'hit_dice': get_multiclass_hit_dice(obj),
+            }
+        except:
+            return {}
     
     def validate_character_class_id(self, value):
         """Validate that the character class exists"""
