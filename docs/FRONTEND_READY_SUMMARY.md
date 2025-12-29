@@ -57,9 +57,20 @@
 - ✅ Full combat system (attacks, spells, environmental effects)
 
 ### Campaign/Gauntlet Mode
-- ✅ Campaign creation and management
-- ✅ Sequential encounters
-- ✅ Resource tracking
+- ✅ `GET /api/campaigns/` - List campaigns
+- ✅ `POST /api/campaigns/` - Create campaign
+- ✅ `GET /api/campaigns/{id}/` - Get campaign details
+- ✅ `POST /api/campaigns/{id}/start/` - Start campaign
+- ✅ `POST /api/campaigns/{id}/add_character/` - Add character to campaign
+- ✅ `POST /api/campaigns/{id}/add_encounter/` - Add encounter to campaign
+- ✅ `GET /api/campaigns/{id}/status/` - Get full campaign status
+- ✅ `GET /api/campaigns/{id}/party_status/` - Get party status (HP, resources)
+- ✅ `GET /api/campaigns/{id}/current_encounter/` - Get current encounter info
+- ✅ `POST /api/campaigns/{id}/start_encounter/` - Start an encounter
+- ✅ `POST /api/campaigns/{id}/complete_encounter/` - Complete encounter
+- ✅ `POST /api/campaigns/{id}/short_rest/` - Take short rest
+- ✅ `POST /api/campaigns/{id}/long_rest/` - Take long rest
+- ✅ `POST /api/campaigns/{id}/populate/` - Auto-populate with encounters
 
 ---
 
@@ -239,6 +250,33 @@ export default {
 - [ ] Attack/spell buttons
 - [ ] Turn tracker
 
+### Campaign Gauntlet Page (Text-Based)
+- [ ] Campaign list view
+- [ ] Campaign creation form
+- [ ] Campaign status display (text-based)
+  - Campaign name, status, progress
+  - Current encounter number
+  - Long rests remaining
+- [ ] Party status display
+  - Character names and HP (e.g., "Aragorn: 45/50 HP")
+  - Hit dice remaining
+  - Spell slots remaining
+- [ ] Encounter list (text-based)
+  - Show all encounters in order
+  - Mark completed/pending/active
+- [ ] Action buttons
+  - Start campaign
+  - Start encounter
+  - Complete encounter
+  - Short rest
+  - Long rest
+- [ ] Encounter details (text-based)
+  - Encounter name and description
+  - Enemies list
+  - Status (pending/active/completed)
+
+**Note:** Start with a simple text-based UI. You can enhance it later with visual elements, maps, or graphics. The backend provides all the data needed for a rich display.
+
 ---
 
 ## 🚀 Getting Started
@@ -284,12 +322,72 @@ export const useSpellSlot = (id: number, level: number) => {
 // ... more API functions
 ```
 
+```typescript
+// api/campaigns.ts
+import axios from 'axios';
+import { API_BASE_URL } from './config';
+
+export const getCampaigns = () => {
+  return axios.get(`${API_BASE_URL}/campaigns/`);
+};
+
+export const createCampaign = (data: any) => {
+  return axios.post(`${API_BASE_URL}/campaigns/`, data);
+};
+
+export const getCampaignStatus = (id: number) => {
+  return axios.get(`${API_BASE_URL}/campaigns/${id}/status/`);
+};
+
+export const getPartyStatus = (id: number) => {
+  return axios.get(`${API_BASE_URL}/campaigns/${id}/party_status/`);
+};
+
+export const startCampaign = (id: number) => {
+  return axios.post(`${API_BASE_URL}/campaigns/${id}/start/`);
+};
+
+export const addCharacter = (id: number, characterId: number) => {
+  return axios.post(`${API_BASE_URL}/campaigns/${id}/add_character/`, {
+    character_id: characterId
+  });
+};
+
+export const addEncounter = (id: number, encounterId: number) => {
+  return axios.post(`${API_BASE_URL}/campaigns/${id}/add_encounter/`, {
+    encounter_id: encounterId
+  });
+};
+
+export const startEncounter = (id: number) => {
+  return axios.post(`${API_BASE_URL}/campaigns/${id}/start_encounter/`);
+};
+
+export const completeEncounter = (id: number, combatSessionId: number, rewards: any) => {
+  return axios.post(`${API_BASE_URL}/campaigns/${id}/complete_encounter/`, {
+    combat_session_id: combatSessionId,
+    rewards: rewards
+  });
+};
+
+export const shortRest = (id: number, restData: any) => {
+  return axios.post(`${API_BASE_URL}/campaigns/${id}/short_rest/`, restData);
+};
+
+export const longRest = (id: number) => {
+  return axios.post(`${API_BASE_URL}/campaigns/${id}/long_rest/`);
+};
+```
+
 ### 4. Build UI Components
 
 - CharacterSheet component
 - StatsDisplay component
 - SpellSlotsDisplay component
 - InventoryDisplay component
+- CampaignList component
+- CampaignStatus component (text-based)
+- PartyStatus component (text-based)
 - etc.
 
 ---
@@ -319,11 +417,115 @@ The frontend just needs to:
 ## 📚 Documentation Available
 
 - `docs/CHARACTER_TRACKING_GUIDE.md` - Complete character tracking guide
-- `docs/SPELL_MANAGEMENT_IMPLEMENTATION.md` - Spell management details
-- `docs/MULTICLASSING_IMPLEMENTATION.md` - Multiclassing guide
-- `docs/PRACTICE_MODE_IMPLEMENTATION.md` - Combat simulation guide
-- `docs/ENVIRONMENTAL_EFFECTS_IMPLEMENTATION.md` - Environmental effects
+- `docs/campaign_gauntlet_guide.md` - Campaign/gauntlet system guide
+- `docs/combat_phase2_guide.md` - Combat system guide
+- `docs/combat_phase3_guide.md` - Advanced combat features
 - `docs/IMPLEMENTATION_STATUS.md` - Overall status
+
+---
+
+## 🎮 Campaign Gauntlet UI Example (Text-Based)
+
+Here's a simple example of how to display campaign gauntlet information in a text-based format:
+
+### Campaign Status Display
+
+```typescript
+// React component example
+function CampaignStatus({ campaignId }) {
+  const [campaign, setCampaign] = useState(null);
+  const [partyStatus, setPartyStatus] = useState(null);
+  
+  useEffect(() => {
+    // Load campaign status
+    getCampaignStatus(campaignId).then(res => setCampaign(res.data));
+    getPartyStatus(campaignId).then(res => setPartyStatus(res.data));
+  }, [campaignId]);
+  
+  if (!campaign) return <div>Loading...</div>;
+  
+  return (
+    <div className="campaign-status">
+      <h2>{campaign.name}</h2>
+      <p>Status: {campaign.status}</p>
+      <p>Encounter {campaign.current_encounter_index + 1} of {campaign.total_encounters}</p>
+      <p>Long Rests: {campaign.long_rests_used} / {campaign.long_rests_available}</p>
+      
+      <h3>Party Status</h3>
+      {partyStatus?.characters?.map(char => (
+        <div key={char.id}>
+          <strong>{char.character_name}</strong>
+          <p>HP: {char.current_hp} / {char.max_hp}</p>
+          <p>Hit Dice: {char.hit_dice_remaining}</p>
+          <p>Status: {char.is_alive ? 'Alive' : 'Dead'}</p>
+        </div>
+      ))}
+      
+      <div className="actions">
+        {campaign.status === 'preparing' && (
+          <button onClick={() => startCampaign(campaignId)}>Start Campaign</button>
+        )}
+        {campaign.status === 'active' && (
+          <>
+            <button onClick={() => startEncounter(campaignId)}>Start Encounter</button>
+            <button onClick={() => shortRest(campaignId, {})}>Short Rest</button>
+            <button onClick={() => longRest(campaignId)}>Long Rest</button>
+          </>
+        )}
+      </div>
+    </div>
+  );
+}
+```
+
+### Text-Based Display Format
+
+```
+==========================================
+Campaign: The Gauntlet of Doom
+Status: Active
+Progress: Encounter 3 of 5
+Long Rests: 1 / 2
+==========================================
+
+Party Status:
+--------------
+Aragorn (Fighter 5)
+  HP: 45 / 50
+  Hit Dice: 3d10
+  Status: Alive
+
+Gandalf (Wizard 5)
+  HP: 28 / 35
+  Hit Dice: 2d6
+  Spell Slots: 4/3/2 (1st/2nd/3rd)
+  Status: Alive
+
+Legolas (Ranger 5)
+  HP: 0 / 42
+  Status: Dead
+--------------
+
+Encounters:
+--------------
+[✓] Encounter 1: Goblin Ambush (Completed)
+[✓] Encounter 2: Orc Warband (Completed)
+[→] Encounter 3: Troll Bridge (Active)
+[ ] Encounter 4: Dragon's Lair (Pending)
+[ ] Encounter 5: Final Boss (Pending)
+--------------
+
+Actions:
+--------------
+[Start Encounter] [Short Rest] [Long Rest]
+--------------
+```
+
+This text-based approach is perfect for:
+- Quick implementation
+- Clear information display
+- Easy to read and understand
+- Can be enhanced later with styling, colors, or graphics
 
 ---
 
