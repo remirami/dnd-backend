@@ -2,7 +2,7 @@
 
 ## Overview
 
-**Yes!** The system fully supports simple character tracking. You can create characters, set stats, backgrounds, descriptions, and track spell slots **without needing campaigns or combat**.
+The system fully supports simple character tracking. You can create characters, set stats, backgrounds, descriptions, and track spell slots **without needing campaigns or combat**.
 
 ---
 
@@ -389,18 +389,4 @@ POST /api/characters/1/restore_spell_slots/
 - `POST /api/characters/{id}/equip_item/` - Equip item
 - `POST /api/characters/{id}/unequip_item/` - Unequip item
 
----
-
-## 🎉 Status: Fully Supported!
-
-The system **already supports** simple character tracking! You can:
-- ✅ Create characters with all info
-- ✅ Set stats, background, description
-- ✅ Track spell slots
-- ✅ Manage inventory
-- ✅ View complete character sheet
-
-**No campaigns or combat required!** Just use the character endpoints directly.
-
-The `character_sheet` endpoint gives you everything in one call - perfect for displaying a character sheet UI.
 

@@ -6,6 +6,9 @@ Make sure you've run: python manage.py test_combat_logging first
 """
 import requests
 import json
+import sys
+
+SESSION = requests.Session()
 
 BASE_URL = "http://127.0.0.1:8000/api"
 
@@ -19,12 +22,38 @@ def print_response(response, title=""):
     try:
         data = response.json()
         print(json.dumps(data, indent=2))
+        return data
     except:
         print(f"Status: {response.status_code}")
-        print(response.text)
+        try:
+            # Try to decode safely
+            text = response.text
+            # Replace non-printable characters or encode/decode safely
+            print(text.encode(sys.stdout.encoding, errors='replace').decode(sys.stdout.encoding))
+        except Exception as e:
+            print(f"Could not print response text: {e}")
     
-    print(f"\nStatus Code: {response.status_code}")
-    return data if response.status_code < 400 else None
+    return None
+
+def authenticate():
+    """Authenticate via API"""
+    print("\nAuthenticating...")
+    try:
+        response = SESSION.post(f"{BASE_URL}/auth/login/", json={
+            "username": "test_gauntlet",
+            "password": "password123"
+        })
+        if response.status_code == 200:
+            token = response.json().get('access')
+            SESSION.headers.update({'Authorization': f'Bearer {token}'})
+            print("Authentication successful")
+            return True
+        else:
+            print(f"Authentication failed: {response.status_code}")
+            return False
+    except Exception as e:
+        print(f"Authentication error: {e}")
+        return False
 
 def test_combat_logging():
     """Test the combat logging endpoints"""
@@ -33,9 +62,12 @@ def test_combat_logging():
     print("COMBAT LOGGING SYSTEM TEST")
     print("="*60)
     
+    # Authenticate first (optional but good practice)
+    authenticate()
+    
     # Step 1: Get combat sessions
     print("\n1. Getting combat sessions...")
-    sessions_response = requests.get(f"{BASE_URL}/combat/sessions/")
+    sessions_response = SESSION.get(f"{BASE_URL}/combat/sessions/")
     sessions = sessions_response.json().get('results', [])
     
     if not sessions:
@@ -60,7 +92,7 @@ def test_combat_logging():
     
     # Step 2: Get statistics
     print("\n2. Getting combat statistics...")
-    stats_response = requests.get(f"{BASE_URL}/combat/sessions/{session_id}/stats/")
+    stats_response = SESSION.get(f"{BASE_URL}/combat/sessions/{session_id}/stats/")
     stats = print_response(stats_response, "Combat Statistics")
     
     if stats:
@@ -71,7 +103,7 @@ def test_combat_logging():
     
     # Step 3: Get full report
     print("\n3. Getting full combat report...")
-    report_response = requests.get(f"{BASE_URL}/combat/sessions/{session_id}/report/")
+    report_response = SESSION.get(f"{BASE_URL}/combat/sessions/{session_id}/report/")
     report = print_response(report_response, "Combat Report")
     
     if report:
@@ -83,7 +115,7 @@ def test_combat_logging():
     
     # Step 4: Export as JSON
     print("\n4. Exporting as JSON...")
-    json_response = requests.get(f"{BASE_URL}/combat/sessions/{session_id}/export/?format=json")
+    json_response = SESSION.get(f"{BASE_URL}/combat/sessions/{session_id}/export/?format=json")
     json_data = print_response(json_response, "JSON Export")
     
     if json_data:
@@ -91,7 +123,7 @@ def test_combat_logging():
     
     # Step 5: Export as CSV
     print("\n5. Exporting as CSV...")
-    csv_response = requests.get(f"{BASE_URL}/combat/sessions/{session_id}/export/?format=csv")
+    csv_response = SESSION.get(f"{BASE_URL}/combat/sessions/{session_id}/export/?format=csv")
     
     if csv_response.status_code == 200:
         print("  CSV export successful")
@@ -108,7 +140,7 @@ def test_combat_logging():
     
     # Step 6: Get combat logs
     print("\n6. Getting combat logs...")
-    logs_response = requests.get(f"{BASE_URL}/combat/logs/")
+    logs_response = SESSION.get(f"{BASE_URL}/combat/logs/")
     logs = logs_response.json().get('results', [])
     
     if logs:
@@ -118,7 +150,7 @@ def test_combat_logging():
         
         # Step 7: Get log analytics
         print("\n7. Getting log analytics...")
-        analytics_response = requests.get(f"{BASE_URL}/combat/logs/{log_id}/analytics/")
+        analytics_response = SESSION.get(f"{BASE_URL}/combat/logs/{log_id}/analytics/")
         analytics = print_response(analytics_response, "Log Analytics")
         
         if analytics:
@@ -140,7 +172,7 @@ def test_combat_logging():
     
     # Step 8: Get character combat stats
     print("\n8. Getting character combat statistics...")
-    characters_response = requests.get(f"{BASE_URL}/characters/")
+    characters_response = SESSION.get(f"{BASE_URL}/characters/")
     characters = characters_response.json().get('results', [])
     
     if characters:
@@ -148,7 +180,7 @@ def test_combat_logging():
         char_id = character['id']
         print(f"  Using character: {character.get('name', 'Unknown')} (ID: {char_id})")
         
-        char_stats_response = requests.get(f"{BASE_URL}/characters/{char_id}/combat_stats/")
+        char_stats_response = SESSION.get(f"{BASE_URL}/characters/{char_id}/combat_stats/")
         char_stats = print_response(char_stats_response, "Character Combat Statistics")
         
         if char_stats:

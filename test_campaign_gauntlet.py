@@ -11,6 +11,7 @@ import json
 import time
 
 BASE_URL = "http://127.0.0.1:8000/api"
+SESSION = requests.Session()
 
 def print_response(response, title=""):
     """Pretty print API response"""
@@ -30,9 +31,30 @@ def print_response(response, title=""):
             print(text[:500])  # Limit output to avoid huge errors
         except:
             print("Could not decode response")
+        data = None
     
-    print(f"\nStatus Code: {response.status_code}")
+    # print(f"\nStatus Code: {response.status_code}")
     return data if response.status_code < 400 else None
+
+def authenticate():
+    """Authenticate and set session headers"""
+    print("\nAuthenticating as test_gauntlet...")
+    try:
+        response = SESSION.post(f"{BASE_URL}/auth/login/", json={
+            "username": "test_gauntlet",
+            "password": "password123"
+        })
+        if response.status_code == 200:
+            token = response.json().get('access')
+            SESSION.headers.update({'Authorization': f'Bearer {token}'})
+            print("Authentication successful")
+            return True
+        else:
+            print(f"Authentication failed: {response.text}")
+            return False
+    except Exception as e:
+        print(f"Authentication error: {e}")
+        return False
 
 def test_campaign_gauntlet():
     """Test the roguelike gauntlet campaign system"""
@@ -41,12 +63,17 @@ def test_campaign_gauntlet():
     print("ROGUELIKE GAUNTLET CAMPAIGN SYSTEM TEST")
     print("="*60)
     
+    if not authenticate():
+        print("Skipping test due to authentication failure.")
+        return
+
     # Step 1: Get or create characters
     print("\n1. Getting characters...")
-    chars_response = requests.get(f"{BASE_URL}/characters/")
+    chars_response = SESSION.get(f"{BASE_URL}/characters/")
     characters = chars_response.json().get('results', [])
     
     if len(characters) < 2:
+        print(f"  Found {len(characters)} characters.")
         print("  ERROR: Need at least 2 characters with stats")
         print("  Run: python manage.py create_test_characters")
         return
@@ -64,7 +91,7 @@ def test_campaign_gauntlet():
     
     # Step 2: Get or create encounters
     print("\n2. Getting encounters...")
-    encounters_response = requests.get(f"{BASE_URL}/encounters/")
+    encounters_response = SESSION.get(f"{BASE_URL}/encounters/")
     encounters = encounters_response.json().get('results', [])
     
     if len(encounters) < 3:
@@ -87,7 +114,7 @@ def test_campaign_gauntlet():
         "description": "A test roguelike gauntlet campaign",
         "long_rests_available": 2
     }
-    campaign_response = requests.post(f"{BASE_URL}/campaigns/", json=campaign_data)
+    campaign_response = SESSION.post(f"{BASE_URL}/campaigns/", json=campaign_data)
     campaign = print_response(campaign_response, "Campaign Created")
     
     if not campaign:
@@ -99,13 +126,13 @@ def test_campaign_gauntlet():
     # Step 4: Add characters to campaign
     print("\n4. Adding characters to campaign...")
     
-    add_char1 = requests.post(
+    add_char1 = SESSION.post(
         f"{BASE_URL}/campaigns/{campaign_id}/add_character/",
         json={"character_id": char1['id']}
     )
     result1 = print_response(add_char1, f"Added {char1['name']}")
     
-    add_char2 = requests.post(
+    add_char2 = SESSION.post(
         f"{BASE_URL}/campaigns/{campaign_id}/add_character/",
         json={"character_id": char2['id']}
     )
@@ -114,19 +141,19 @@ def test_campaign_gauntlet():
     # Step 5: Add encounters to campaign
     print("\n5. Adding encounters to campaign...")
     
-    add_enc1 = requests.post(
+    add_enc1 = SESSION.post(
         f"{BASE_URL}/campaigns/{campaign_id}/add_encounter/",
         json={"encounter_id": enc1['id']}
     )
     print_response(add_enc1, f"Added Encounter 1: {enc1['name']}")
     
-    add_enc2 = requests.post(
+    add_enc2 = SESSION.post(
         f"{BASE_URL}/campaigns/{campaign_id}/add_encounter/",
         json={"encounter_id": enc2['id']}
     )
     print_response(add_enc2, f"Added Encounter 2: {enc2['name']}")
     
-    add_enc3 = requests.post(
+    add_enc3 = SESSION.post(
         f"{BASE_URL}/campaigns/{campaign_id}/add_encounter/",
         json={"encounter_id": enc3['id']}
     )
@@ -134,12 +161,12 @@ def test_campaign_gauntlet():
     
     # Step 6: Check party status before starting
     print("\n6. Checking initial party status...")
-    party_response = requests.get(f"{BASE_URL}/campaigns/{campaign_id}/party_status/")
+    party_response = SESSION.get(f"{BASE_URL}/campaigns/{campaign_id}/party_status/")
     party = print_response(party_response, "Initial Party Status")
     
     # Step 7: Start campaign
     print("\n7. Starting campaign...")
-    start_response = requests.post(f"{BASE_URL}/campaigns/{campaign_id}/start/")
+    start_response = SESSION.post(f"{BASE_URL}/campaigns/{campaign_id}/start/")
     start_result = print_response(start_response, "Campaign Started")
     
     if not start_result:
@@ -147,7 +174,7 @@ def test_campaign_gauntlet():
     
     # Step 8: Get current encounter
     print("\n8. Getting current encounter...")
-    current_enc_response = requests.get(f"{BASE_URL}/campaigns/{campaign_id}/current_encounter/")
+    current_enc_response = SESSION.get(f"{BASE_URL}/campaigns/{campaign_id}/current_encounter/")
     current_enc = print_response(current_enc_response, "Current Encounter")
     
     if current_enc:
@@ -155,7 +182,7 @@ def test_campaign_gauntlet():
     
     # Step 9: Start first encounter
     print("\n9. Starting first encounter...")
-    start_enc_response = requests.post(f"{BASE_URL}/campaigns/{campaign_id}/start_encounter/")
+    start_enc_response = SESSION.post(f"{BASE_URL}/campaigns/{campaign_id}/start_encounter/")
     start_enc_result = print_response(start_enc_response, "Encounter Started")
     
     # Step 10: Simulate combat (damage characters)
@@ -164,7 +191,7 @@ def test_campaign_gauntlet():
     print("  Simulating: Characters take some damage...")
     
     # Get campaign characters
-    campaign_chars_response = requests.get(f"{BASE_URL}/campaign-characters/?campaign={campaign_id}")
+    campaign_chars_response = SESSION.get(f"{BASE_URL}/campaign-characters/?campaign={campaign_id}")
     campaign_chars = campaign_chars_response.json().get('results', [])
     
     if campaign_chars:
@@ -174,7 +201,7 @@ def test_campaign_gauntlet():
     
     # Step 11: Complete first encounter (simulate victory)
     print("\n11. Completing first encounter...")
-    complete_response = requests.post(
+    complete_response = SESSION.post(
         f"{BASE_URL}/campaigns/{campaign_id}/complete_encounter/",
         json={
             "rewards": {
@@ -187,13 +214,13 @@ def test_campaign_gauntlet():
     
     # Step 12: Check party status after encounter
     print("\n12. Checking party status after encounter 1...")
-    party_after1 = requests.get(f"{BASE_URL}/campaigns/{campaign_id}/party_status/")
+    party_after1 = SESSION.get(f"{BASE_URL}/campaigns/{campaign_id}/party_status/")
     party_status1 = print_response(party_after1, "Party Status After Encounter 1")
     
     # Step 13: Take a short rest
     print("\n13. Taking a short rest...")
     print("  Characters will spend hit dice to heal")
-    short_rest_response = requests.post(
+    short_rest_response = SESSION.post(
         f"{BASE_URL}/campaigns/{campaign_id}/short_rest/",
         json={
             "hit_dice_to_spend": {
@@ -210,12 +237,12 @@ def test_campaign_gauntlet():
     
     # Step 14: Start second encounter
     print("\n14. Starting second encounter...")
-    start_enc2_response = requests.post(f"{BASE_URL}/campaigns/{campaign_id}/start_encounter/")
+    start_enc2_response = SESSION.post(f"{BASE_URL}/campaigns/{campaign_id}/start_encounter/")
     start_enc2_result = print_response(start_enc2_response, "Encounter 2 Started")
     
     # Step 15: Complete second encounter
     print("\n15. Completing second encounter...")
-    complete2_response = requests.post(
+    complete2_response = SESSION.post(
         f"{BASE_URL}/campaigns/{campaign_id}/complete_encounter/",
         json={
             "rewards": {
@@ -229,7 +256,7 @@ def test_campaign_gauntlet():
     # Step 16: Take a long rest (strategic decision!)
     print("\n16. Taking a long rest (strategic decision!)...")
     print("  This will fully restore HP and hit dice, but uses one of the limited long rests")
-    long_rest_response = requests.post(
+    long_rest_response = SESSION.post(
         f"{BASE_URL}/campaigns/{campaign_id}/long_rest/",
         json={"confirm": True}
     )
@@ -243,12 +270,12 @@ def test_campaign_gauntlet():
     
     # Step 17: Start third encounter
     print("\n17. Starting third encounter...")
-    start_enc3_response = requests.post(f"{BASE_URL}/campaigns/{campaign_id}/start_encounter/")
+    start_enc3_response = SESSION.post(f"{BASE_URL}/campaigns/{campaign_id}/start_encounter/")
     start_enc3_result = print_response(start_enc3_response, "Encounter 3 Started")
     
     # Step 18: Complete third encounter (campaign should complete)
     print("\n18. Completing third encounter (final encounter)...")
-    complete3_response = requests.post(
+    complete3_response = SESSION.post(
         f"{BASE_URL}/campaigns/{campaign_id}/complete_encounter/",
         json={
             "rewards": {
@@ -261,7 +288,7 @@ def test_campaign_gauntlet():
     
     # Step 19: Check final campaign status
     print("\n19. Checking final campaign status...")
-    final_status = requests.get(f"{BASE_URL}/campaigns/{campaign_id}/status/")
+    final_status = SESSION.get(f"{BASE_URL}/campaigns/{campaign_id}/status/")
     final = print_response(final_status, "Final Campaign Status")
     
     if final:
@@ -281,7 +308,7 @@ def test_campaign_gauntlet():
     
     # Step 20: Get full campaign details
     print("\n20. Getting full campaign details...")
-    campaign_details = requests.get(f"{BASE_URL}/campaigns/{campaign_id}/")
+    campaign_details = SESSION.get(f"{BASE_URL}/campaigns/{campaign_id}/")
     details = print_response(campaign_details, "Campaign Details")
     
     # Summary
@@ -323,4 +350,3 @@ if __name__ == "__main__":
         print(f"\n  ERROR: {e}")
         import traceback
         traceback.print_exc()
-

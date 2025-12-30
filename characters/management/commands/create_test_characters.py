@@ -2,12 +2,19 @@ from django.core.management.base import BaseCommand
 from characters.models import (
     Character, CharacterStats, CharacterClass, CharacterRace, CharacterBackground
 )
+from django.contrib.auth.models import User
 
 
 class Command(BaseCommand):
     help = 'Create test characters with stats for combat testing'
 
     def handle(self, *args, **options):
+        # Create or get test user for API testing
+        test_user, _ = User.objects.get_or_create(username='test_gauntlet')
+        if not test_user.check_password('password123'):
+            test_user.set_password('password123')
+            test_user.save()
+
         # Ensure base data exists
         fighter_class, _ = CharacterClass.objects.get_or_create(
             name='fighter',
@@ -63,6 +70,10 @@ class Command(BaseCommand):
             }
         )
         
+        # Cleanup duplicate characters from previous failed runs
+        for name in ['Test Fighter', 'Test Wizard', 'Test Rogue', 'Test Soldier']:
+             Character.objects.filter(name=name).delete()
+
         # Create Fighter character
         fighter, created = Character.objects.get_or_create(
             name='Test Fighter',
@@ -73,7 +84,8 @@ class Command(BaseCommand):
                 'background': soldier_bg,
                 'alignment': 'LG',
                 'experience_points': 6500,
-                'player_name': 'Test Player 1'
+                'player_name': 'Test Player 1',
+                'user': test_user
             }
         )
         
@@ -116,7 +128,8 @@ class Command(BaseCommand):
                 'background': sage_bg,
                 'alignment': 'NG',
                 'experience_points': 6500,
-                'player_name': 'Test Player 2'
+                'player_name': 'Test Player 2',
+                'user': test_user
             }
         )
         
@@ -171,7 +184,8 @@ class Command(BaseCommand):
                 'background': soldier_bg,
                 'alignment': 'CN',
                 'experience_points': 2700,
-                'player_name': 'Test Player 3'
+                'player_name': 'Test Player 3',
+                'user': test_user
             }
         )
         

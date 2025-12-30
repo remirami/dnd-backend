@@ -246,9 +246,12 @@ def test_reactions():
     )
     
     # Create combat session
-    encounter, _ = Encounter.objects.get_or_create(
+    # Cleanup previous runs
+    Encounter.objects.filter(name='Test Encounter').delete()
+    
+    encounter = Encounter.objects.create(
         name='Test Encounter',
-        defaults={'description': 'Test'}
+        description='Test'
     )
     
     session = CombatSession.objects.create(
