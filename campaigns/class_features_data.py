@@ -1161,6 +1161,43 @@ SUBCLASS_FEATURES = {
         ],
     },
 
+    'Battle Master': {
+        3: [
+            {
+                'name': 'Combat Superiority',
+                'description': 'When you choose this archetype at 3rd level, you learn maneuvers that are fueled by special dice called superiority dice. You learn three maneuvers of your choice. You gain four superiority dice, which are d8s. A superiority die is expended when you use it. You regain all of your expended superiority dice when you finish a short or long rest.'
+            },
+            {
+                'name': 'Student of War',
+                'description': 'At 3rd level, you gain proficiency with one type of artisan\'s tools of your choice.'
+            },
+        ],
+        7: [
+            {
+                'name': 'Know Your Enemy',
+                'description': 'Starting at 7th level, if you spend at least 1 minute observing or interacting with another creature outside combat, you can learn certain information about its capabilities compared to your own.'
+            },
+        ],
+        10: [
+            {
+                'name': 'Improved Combat Superiority (d10)',
+                'description': 'At 10th level, your superiority dice turn into d10s.'
+            },
+        ],
+        15: [
+            {
+                'name': 'Relentless',
+                'description': 'Starting at 15th level, when you roll initiative and have no superiority dice remaining, you regain 1 superiority die.'
+            },
+        ],
+        18: [
+            {
+                'name': 'Improved Combat Superiority (d12)',
+                'description': 'At 18th level, your superiority dice turn into d12s.'
+            },
+        ],
+    },
+
     'College of Lore': {
         3: [
             {
@@ -1372,6 +1409,37 @@ SUBCLASS_FEATURES = {
             {
                 'name': 'Thief\'s Reflexes',
                 'description': 'When you reach 17th level, you have become adept at laying ambushes and quickly escaping danger. You can take two turns during the first round of any combat. You take your first turn at your normal initiative and your second turn at your initiative minus 10. You can\'t use this feature when you are surprised.'
+            },
+        ],
+    },
+
+    'Assassin': {
+        3: [
+            {
+                'name': 'Bonus Proficiencies',
+                'description': 'When you choose this archetype at 3rd level, you gain proficiency with the disguise kit and the poisoner\'s kit.'
+            },
+            {
+                'name': 'Assassinate',
+                'description': 'Starting at 3rd level, you are at your deadliest when you get the drop on your enemies. You have advantage on attack rolls against any creature that hasn\'t taken a turn in the combat yet. In addition, any hit you score against a creature that is surprised is a critical hit.'
+            },
+        ],
+        9: [
+            {
+                'name': 'Infiltration Expertise',
+                'description': 'Starting at 9th level, you can unfailingly create false identities for yourself. You must spend seven days and 25 gp to establish the history, profession, and affiliations for an identity.'
+            },
+        ],
+        13: [
+            {
+                'name': 'Impostor',
+                'description': 'At 13th level, you gain the ability to unerringly mimic another person\'s speech, writing, and behavior. You must spend at least three hours studying these three components of the person\'s behavior.'
+            },
+        ],
+        17: [
+            {
+                'name': 'Death Strike',
+                'description': 'Starting at 17th level, you become a master of instant death. When you attack and hit a creature that is surprised, it must make a Constitution saving throw (DC 8 + your Dexterity modifier + your proficiency bonus). On a failed save, double the damage of your attack against the creature.'
             },
         ],
     },

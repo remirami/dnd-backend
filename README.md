@@ -1,8 +1,46 @@
-# 🎲 D&D 5e Combat Simulator Backend
+# 🎲 D&D 5e Roguelike Gauntlet Backend
 
-A comprehensive Django REST API backend for D&D 5e combat simulation, featuring a complete bestiary system with full monster stat blocks, import capabilities, and combat mechanics.
+A comprehensive Django REST API backend for D&D 5e featuring a roguelike gauntlet campaign system, complete character progression, advanced combat mechanics, and full bestiary integration.
 
 ## 🚀 Features
+
+### 🎮 Roguelike Gauntlet Campaign System
+- **Campaign Management**: Create gauntlet-style campaigns with sequential encounters
+- **Starting Level Selection**: Begin campaigns at any level (1-20)
+- **XP Tracking**: Automatic experience point calculation and level-up
+- **Treasure Rooms**: Procedurally generated loot with real D&D items
+- **Rest Management**: Limited short and long rests for strategic resource management
+- **Party Status**: Real-time HP, hit dice, and resource tracking
+- **Encounter Progression**: Sequential encounter completion with rewards
+
+### 👤 Complete Character System
+- **Character Creation**: Full D&D 5e character creation with all classes and races
+- **Level Progression**: Automatic level-up with class features (levels 1-20)
+- **Multiclassing**: Full multiclass support with spell slot calculation
+- **Ability Score Increases**: ASI selection at appropriate levels
+- **Subclass Selection**: All major subclasses with features
+- **Racial Features**: Complete racial trait implementation
+- **Background Features**: Background-specific abilities
+- **Feat System**: 40+ feats with prerequisites
+
+### 🎯 Advanced Combat System (Phases 1-3)
+- **Phase 1 - Core Combat**: Initiative, attacks, damage, turn management
+- **Phase 2 - Spellcasting**: Full spell system with saving throws and conditions
+- **Phase 3 - Advanced Mechanics**:
+  - Concentration checks and management
+  - Opportunity attacks and reactions
+  - Death saving throws
+  - Legendary actions
+  - Environmental effects (terrain, cover, lighting, weather)
+  - Hazards and position tracking
+- **Combat Logging**: Detailed combat logs with analytics and export (JSON/CSV)
+
+### � Spell Management
+- **Prepared Casters**: Cleric, Druid, Paladin, Wizard spell preparation
+- **Known Casters**: Bard, Ranger, Sorcerer, Warlock spell learning
+- **Wizard Spellbook**: Spellbook management and spell copying
+- **Ritual Casting**: Ritual spell mechanics
+- **Spell Slots**: Automatic calculation including multiclass casters
 
 ### 📚 Complete Bestiary System
 - **Full D&D 5e Stat Blocks**: All ability scores, skills, saving throws, and combat stats
@@ -22,6 +60,13 @@ A comprehensive Django REST API backend for D&D 5e combat simulation, featuring 
 - **Validation**: Comprehensive error handling
 - **Smart Integration**: Imported content automatically available in treasure and encounters
 
+### 🔐 User Authentication
+- **JWT Authentication**: Secure token-based authentication
+- **User Registration**: Email-based registration system
+- **Token Refresh**: Automatic token refresh mechanism
+- **Data Isolation**: Users can only access their own characters and campaigns
+- **Public Endpoints**: Bestiary and items accessible without authentication
+
 ### 🎯 API Endpoints
 - **RESTful API**: Complete CRUD operations for all entities
 - **Nested Serialization**: Full monster data with related objects
@@ -38,8 +83,9 @@ A comprehensive Django REST API backend for D&D 5e combat simulation, featuring 
 ## 📁 Project Structure
 
 ```
-dnd_backend/
+dnd-backend/
 ├── dnd_backend/          # Core Django settings
+├── authentication/       # User authentication (JWT)
 ├── bestiary/             # Monster and creature data
 │   ├── models.py        # Complete D&D 5e models
 │   ├── serializers.py   # API serialization
@@ -47,9 +93,35 @@ dnd_backend/
 │   ├── admin.py         # Admin interface
 │   └── management/      # Import commands
 ├── characters/           # Player characters
-├── combat/              # Combat mechanics
+│   ├── models.py        # Character, stats, features
+│   ├── multiclassing.py # Multiclass mechanics
+│   ├── spell_management.py # Spell system
+│   ├── feat_models.py   # Feat system
+│   └── inventory_management.py # Equipment
+├── campaigns/            # Campaign and gauntlet system
+│   ├── models.py        # Campaign, XP, treasure
+│   ├── views.py         # Campaign endpoints
+│   ├── utils.py         # Treasure/encounter generation
+│   ├── class_features_data.py # All class features
+│   ├── racial_features_data.py # Racial traits
+│   └── background_features_data.py # Backgrounds
+├── combat/              # Combat mechanics (Phases 1-3)
+│   ├── models.py        # Combat sessions, participants
+│   ├── views.py         # Combat endpoints
+│   ├── environmental_effects.py # Environmental system
+│   └── condition_effects.py # Condition mechanics
+├── encounters/          # Encounter management
 ├── items/               # Equipment and items
-├── logs/                # Combat logs (planned)
+├── logs/                # Combat logs and analytics
+├── tests/               # Organized test suite
+│   ├── test_authentication.py
+│   ├── test_api_integration.py
+│   ├── test_combat.py
+│   ├── test_campaign_gauntlet.py
+│   ├── test_subclass_and_racial_features.py
+│   ├── test_multiclassing.py
+│   ├── test_spell_management.py
+│   └── ... (15 test files total)
 ├── templates/           # Web interface templates
 └── docs/                # Documentation
 ```
@@ -247,21 +319,45 @@ curl -X POST http://127.0.0.1:8000/api/enemies/ \
 
 ### Testing
 ```bash
-# Run tests
+# Run all Django tests
 python manage.py test
+
+# Run specific test file from tests/ directory
+python tests/test_authentication.py
+python tests/test_combat.py
+python tests/test_campaign_gauntlet.py
+python tests/test_multiclassing.py
+python tests/test_spell_management.py
 
 # Check for issues
 python manage.py check
 ```
 
+**Available Test Suites:**
+- `test_authentication.py` - User authentication and JWT tokens
+- `test_api_integration.py` - API integration tests
+- `test_combat.py` - Combat system (Phases 1-3)
+- `test_campaign_gauntlet.py` - Roguelike campaign system
+- `test_subclass_and_racial_features.py` - Character features
+- `test_multiclassing.py` - Multiclass mechanics
+- `test_spell_management.py` - Spell system
+- `test_level_up_features.py` - Level progression
+- `test_asi_and_subclass.py` - ASI and subclass selection
+- `test_background_feats_reactions.py` - Backgrounds, feats, reactions
+- `test_environmental_effects.py` - Environmental combat mechanics
+- `test_combat_logging.py` - Combat log analytics
+- And more...
+
 ## 📚 Documentation
 
 - [Architecture Overview](docs/architecture.md)
-- [Monster Import Guide](docs/monster_import_guide.md)
-- **[API Import Guide](docs/api_import_guide.md)** - Import from Open5e API
-- [Campaign Gauntlet Design](docs/campaign_gauntlet_design.md)
-- [Combat System Guide](docs/combat_phase3_guide.md)
+- [Campaign Gauntlet Guide](docs/campaign_gauntlet_guide.md)
+- [Combat System Phase 2](docs/combat_phase2_guide.md)
+- [Combat System Phase 3](docs/combat_phase3_guide.md)
 - [User Authentication Guide](docs/user_authentication_guide.md)
+- [Character Tracking Guide](docs/CHARACTER_TRACKING_GUIDE.md)
+- [Frontend Ready Summary](docs/FRONTEND_READY_SUMMARY.md)
+- [Implementation Status](docs/IMPLEMENTATION_STATUS.md)
 
 ## 🤝 Contributing
 
@@ -277,16 +373,50 @@ This project is licensed under the MIT License - see the LICENSE file for detail
 
 ## 🎯 Roadmap
 
-- [x] Complete bestiary system
-- [x] Import/export functionality
-- [x] Web interface
-- [x] Character management system
-- [x] Combat mechanics (Phase 1, 2, 3)
-- [x] Item/equipment system
-- [x] Combat logging
-- [x] Campaign management (Roguelike Gauntlet)
-- [ ] Frontend interface
-- [ ] User authentication
+### ✅ Completed Features
+- [x] Complete bestiary system with 200+ monsters
+- [x] Import/export functionality (JSON, CSV, Open5e API)
+- [x] Web interface for imports
+- [x] Full character management system
+  - [x] Character creation with all classes and races
+  - [x] Level progression (1-20) with automatic features
+  - [x] Multiclassing with spell slot calculation
+  - [x] Subclass selection and features
+  - [x] Racial and background features
+  - [x] Feat system (40+ feats)
+  - [x] Ability Score Increases (ASI)
+- [x] Advanced combat mechanics (Phases 1-3)
+  - [x] Core combat (initiative, attacks, damage)
+  - [x] Spellcasting system
+  - [x] Concentration and reactions
+  - [x] Opportunity attacks
+  - [x] Death saving throws
+  - [x] Legendary actions
+  - [x] Environmental effects
+- [x] Item/equipment system with 100+ items
+- [x] Combat logging with analytics and export
+- [x] Roguelike gauntlet campaign system
+  - [x] Campaign management
+  - [x] XP tracking and automatic level-up
+  - [x] Treasure room generation
+  - [x] Rest management (short/long rests)
+  - [x] Party status tracking
+- [x] Spell management system
+  - [x] Prepared casters (Cleric, Druid, Paladin, Wizard)
+  - [x] Known casters (Bard, Ranger, Sorcerer, Warlock)
+  - [x] Wizard spellbook
+  - [x] Ritual casting
+- [x] User authentication (JWT)
+  - [x] Registration and login
+  - [x] Token refresh
+  - [x] Data isolation
+
+### 🔜 Upcoming Features
+- [ ] Frontend interface (React/Vue)
+- [ ] Real-time multiplayer support
+- [ ] Campaign sharing and templates
+- [ ] Custom content creation tools
+- [ ] Mobile app
 
 ## 🐛 Issues
 
