@@ -118,7 +118,23 @@ REST_FRAMEWORK = {
         'rest_framework.permissions.AllowAny',  # Default to AllowAny, require auth in viewsets
     ),
     'DEFAULT_PAGINATION_CLASS': 'rest_framework.pagination.PageNumberPagination',
-    'PAGE_SIZE': 20
+    'PAGE_SIZE': 20,
+    
+    # Rate Limiting (Throttling)  
+    'DEFAULT_THROTTLE_CLASSES': [
+        'rest_framework.throttling.AnonRateThrottle',
+        'rest_framework.throttling.UserRateThrottle',
+    ],
+    'DEFAULT_THROTTLE_RATES': {
+        'anon': '100/hour',          # Anonymous users: 100 requests per hour
+        'user': '1000/hour',         # Authenticated users: 1000 requests per hour
+        'burst': '60/minute',        # Burst protection: 60 requests per minute
+        'sustained': '1000/day',     # Daily limit: 1000 requests per day
+        'combat': '300/minute',      # Combat actions: 300 per minute (5/sec)
+        'spells': '200/hour',        # Spell lookups: 200 per hour
+        'character': '500/hour',     # Character operations: 500 per hour
+        'campaign': '200/hour',      # Campaign operations: 200 per hour
+    },
 }
 
 # JWT Settings

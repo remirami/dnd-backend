@@ -5,6 +5,8 @@ from django.views.decorators.cache import cache_page
 from django.utils.decorators import method_decorator
 from django.conf import settings
 
+from core.throttles import SpellLookupThrottle
+
 from .models import Spell, SpellDamage
 from .serializers import SpellSerializer, SpellListSerializer
 
@@ -16,6 +18,7 @@ class SpellViewSet(viewsets.ModelViewSet):
     Provides filtering by level, school, concentration, ritual, and classes.
     Search by name or description.
     Read operations are cached for 1 hour.
+    Rate limited to 200 requests per hour.
     """
     queryset = Spell.objects.all().prefetch_related('classes', 'damage_progression')
     serializer_class = SpellSerializer
@@ -23,6 +26,9 @@ class SpellViewSet(viewsets.ModelViewSet):
     search_fields = ['name', 'description']
     ordering_fields = ['level', 'name', 'school']
     ordering = ['level', 'name']
+    
+    # Rate limiting: 200 requests per hour for spell lookups
+    throttle_classes = [SpellLookupThrottle]
     
     def get_queryset(self):
         """Filter queryset based on query parameters"""

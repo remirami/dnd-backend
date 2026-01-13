@@ -4,6 +4,8 @@ from rest_framework.response import Response
 from django.utils import timezone
 import logging
 
+from core.throttles import CombatActionThrottle
+
 from .models import CombatSession, CombatParticipant, CombatAction, CombatLog, ConditionApplication, EnvironmentalEffect, ParticipantPosition
 from .condition_effects import auto_apply_condition_from_spell, get_condition_for_spell
 from .environmental_effects import (
@@ -41,6 +43,9 @@ class CombatSessionViewSet(viewsets.ModelViewSet):
         'participants__encounter_enemy__enemy__stats'
     ).order_by('-started_at')
     serializer_class = CombatSessionSerializer
+    
+    # Rate limiting: 300 requests per minute for combat
+    throttle_classes = [CombatActionThrottle]
     
     def perform_create(self, serializer):
         """Handle creation with optional encounter"""
