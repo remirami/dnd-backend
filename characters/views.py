@@ -202,7 +202,8 @@ class CharacterViewSet(viewsets.ModelViewSet):
                     die_size = 8
                 
                 roll = random.randint(1, die_size)
-                con_mod = (character.stats.constitution - 10) // 2
+                from core.dnd_utils import calculate_ability_modifier
+                con_mod = calculate_ability_modifier(character.stats.constitution)
                 hp_gain = max(1, roll + con_mod)
                 
                 character.stats.max_hit_points += hp_gain
@@ -299,7 +300,8 @@ class CharacterViewSet(viewsets.ModelViewSet):
                 die_size = 8
             
             roll = random.randint(1, die_size)
-            con_mod = (character.stats.constitution - 10) // 2
+            from core.dnd_utils import calculate_ability_modifier
+            con_mod = calculate_ability_modifier(character.stats.constitution)
             hp_gain = max(1, roll + con_mod)
             
             character.stats.max_hit_points += hp_gain

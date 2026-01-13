@@ -167,6 +167,7 @@ class Character(models.Model):
     @property
     def proficiency_bonus(self):
         """Calculate proficiency bonus based on total level"""
+        from core.dnd_utils import calculate_proficiency_bonus
         total_level = self.level
         # Check for multiclass
         try:
@@ -177,7 +178,7 @@ class Character(models.Model):
                 total_level = multiclass_level
         except:
             pass
-        return ((total_level - 1) // 4) + 2
+        return calculate_proficiency_bonus(total_level)
 
 
 class CharacterStats(models.Model):
@@ -221,27 +222,33 @@ class CharacterStats(models.Model):
     
     @property
     def strength_modifier(self):
-        return (self.strength - 10) // 2
+        from core.dnd_utils import calculate_ability_modifier
+        return calculate_ability_modifier(self.strength)
     
     @property
     def dexterity_modifier(self):
-        return (self.dexterity - 10) // 2
+        from core.dnd_utils import calculate_ability_modifier
+        return calculate_ability_modifier(self.dexterity)
     
     @property
     def constitution_modifier(self):
-        return (self.constitution - 10) // 2
+        from core.dnd_utils import calculate_ability_modifier
+        return calculate_ability_modifier(self.constitution)
     
     @property
     def intelligence_modifier(self):
-        return (self.intelligence - 10) // 2
+        from core.dnd_utils import calculate_ability_modifier
+        return calculate_ability_modifier(self.intelligence)
     
     @property
     def wisdom_modifier(self):
-        return (self.wisdom - 10) // 2
+        from core.dnd_utils import calculate_ability_modifier
+        return calculate_ability_modifier(self.wisdom)
     
     @property
     def charisma_modifier(self):
-        return (self.charisma - 10) // 2
+        from core.dnd_utils import calculate_ability_modifier
+        return calculate_ability_modifier(self.charisma)
 
 
 class CharacterProficiency(models.Model):

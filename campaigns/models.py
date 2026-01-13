@@ -291,7 +291,8 @@ class CampaignCharacter(models.Model):
         # Get CON modifier from character stats
         if hasattr(self.character, 'stats'):
             con_score = self.character.stats.constitution
-            con_mod = (con_score - 10) // 2
+            from core.dnd_utils import calculate_ability_modifier
+            con_mod = calculate_ability_modifier(con_score)
             healing = roll + con_mod
         else:
             healing = roll
@@ -492,7 +493,8 @@ class CharacterXP(models.Model):
                     
                     # Add CON modifier
                     if hasattr(stats, 'constitution'):
-                        con_mod = (stats.constitution - 10) // 2
+                        from core.dnd_utils import calculate_ability_modifier
+                        con_mod = calculate_ability_modifier(stats.constitution)
                         hp_gain = roll + con_mod
                     else:
                         hp_gain = roll

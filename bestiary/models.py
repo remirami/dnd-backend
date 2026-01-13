@@ -123,27 +123,33 @@ class EnemyStats(models.Model):
     
     @property
     def strength_modifier(self):
-        return (self.strength - 10) // 2
+        from core.dnd_utils import calculate_ability_modifier
+        return calculate_ability_modifier(self.strength)
     
     @property
     def dexterity_modifier(self):
-        return (self.dexterity - 10) // 2
+        from core.dnd_utils import calculate_ability_modifier
+        return calculate_ability_modifier(self.dexterity)
     
     @property
     def constitution_modifier(self):
-        return (self.constitution - 10) // 2
+        from core.dnd_utils import calculate_ability_modifier
+        return calculate_ability_modifier(self.constitution)
     
     @property
     def intelligence_modifier(self):
-        return (self.intelligence - 10) // 2
+        from core.dnd_utils import calculate_ability_modifier
+        return calculate_ability_modifier(self.intelligence)
     
     @property
     def wisdom_modifier(self):
-        return (self.wisdom - 10) // 2
+        from core.dnd_utils import calculate_ability_modifier
+        return calculate_ability_modifier(self.wisdom)
     
     @property
     def charisma_modifier(self):
-        return (self.charisma - 10) // 2
+        from core.dnd_utils import calculate_ability_modifier
+        return calculate_ability_modifier(self.charisma)
 
 
 class DamageType(models.Model):

@@ -652,7 +652,8 @@ class RecruitmentGenerator:
         
         # Create CharacterStats with proper HP calculation
         con_score = stats_data.get('constitution', 10)
-        con_mod = (con_score - 10) // 2
+        from core.dnd_utils import calculate_ability_modifier
+        con_mod = calculate_ability_modifier(con_score)
         
         # Calculate HP based on level and hit dice type
         # Get hit dice type (e.g., "d8" or "1d8")
@@ -670,7 +671,8 @@ class RecruitmentGenerator:
         
         # Calculate AC (10 + DEX mod, simplified - no armor)
         dex_score = stats_data.get('dexterity', 10)
-        dex_mod = (dex_score - 10) // 2
+        from core.dnd_utils import calculate_ability_modifier
+        dex_mod = calculate_ability_modifier(dex_score)
         base_ac = 10 + dex_mod
         
         stats = CharacterStats.objects.create(

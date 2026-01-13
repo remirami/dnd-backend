@@ -191,7 +191,8 @@ def get_multiclass_spellcasting_ability(character):
         
         if ability:
             ability_value = getattr(stats, ability, 10)
-            ability_modifier = (ability_value - 10) // 2
+            from core.dnd_utils import calculate_ability_modifier
+            ability_modifier = calculate_ability_modifier(ability_value)
             spellcasting_abilities.append((ability, ability_modifier))
     
     if not spellcasting_abilities:
