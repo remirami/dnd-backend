@@ -177,6 +177,9 @@ class CampaignCharacter(models.Model):
     # Spell slots tracking (stored as JSON: {"1": 3, "2": 2} means 3 level-1, 2 level-2 slots)
     spell_slots = models.JSONField(default=dict)
     
+    # Gold tracking for merchant purchases
+    gold = models.IntegerField(default=0, validators=[MinValueValidator(0)], help_text="Gold pieces (GP)")
+    
     # Permadeath
     is_alive = models.BooleanField(default=True)
     died_in_encounter = models.IntegerField(blank=True, null=True)
@@ -694,6 +697,11 @@ class TreasureRoomReward(models.Model):
         self.claimed_by = campaign_character
         self.claimed_at = timezone.now()
         self.save()
+        
+        # Award gold to character
+        if self.gold_amount > 0:
+            campaign_character.gold += self.gold_amount
+            campaign_character.save()
         
         return {
             'reward_id': self.id,

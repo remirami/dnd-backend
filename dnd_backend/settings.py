@@ -47,6 +47,8 @@ INSTALLED_APPS = [
     'combat',
     'campaigns',
     'logs',
+    'spells',  # NEW: Spell library
+    'merchants',  # NEW: Merchant/shop system
 
 ]
 

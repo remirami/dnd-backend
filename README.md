@@ -8,10 +8,20 @@ A comprehensive Django REST API backend for D&D 5e featuring a roguelike gauntle
 - **Campaign Management**: Create gauntlet-style campaigns with sequential encounters
 - **Starting Level Selection**: Begin campaigns at any level (1-20)
 - **XP Tracking**: Automatic experience point calculation and level-up
-- **Treasure Rooms**: Procedurally generated loot with real D&D items
+- **Treasure Rooms**: Procedurally generated loot with real D&D items and gold rewards
+- **Merchant System**: Random merchant encounters with rarity-based item selection tied to gauntlet progress
+- **Gold Economy**: Earn gold from treasure and encounters, spend at merchants
 - **Rest Management**: Limited short and long rests for strategic resource management
-- **Party Status**: Real-time HP, hit dice, and resource tracking
+- **Party Status**: Real-time HP, hit dice, resource, and gold tracking
 - **Encounter Progression**: Sequential encounter completion with rewards
+
+### 📖 Spell Library System
+- **1,400+ Spells**: Comprehensive D&D 5e spell database imported from Open5e
+- **Advanced Filtering**: Search by level, school, concentration, ritual, class availability
+- **Complete Spell Data**: Casting time, range, components, duration, damage progression
+- **API Endpoints**: RESTful API for spell queries and management
+- **Open5e Integration**: Auto-import spells with management command
+
 
 ### 👤 Complete Character System
 - **Character Creation**: Full D&D 5e character creation with all classes and races
@@ -110,6 +120,16 @@ dnd-backend/
 │   ├── views.py         # Combat endpoints
 │   ├── environmental_effects.py # Environmental system
 │   └── condition_effects.py # Condition mechanics
+├── spells/               # Spell library system
+│   ├── models.py        # Spell and SpellDamage models
+│   ├── views.py         # Spell API endpoints
+│   ├── serializers.py   # Spell serialization
+│   └── management/commands/import_spells_from_api.py # Open5e import
+├── merchants/            # Merchant/shop system
+│   ├── models.py        # Merchant, inventory, transactions
+│   ├── views.py         # Merchant API endpoints
+│   ├── serializers.py   # Merchant serialization
+│   └── rarity_weights.py # Rarity algorithm for item selection
 ├── encounters/          # Encounter management
 ├── items/               # Equipment and items
 ├── logs/                # Combat logs and analytics
@@ -118,10 +138,11 @@ dnd-backend/
 │   ├── test_api_integration.py
 │   ├── test_combat.py
 │   ├── test_campaign_gauntlet.py
+│   ├── test_spell_and_merchant.py # Tests for new systems
 │   ├── test_subclass_and_racial_features.py
 │   ├── test_multiclassing.py
 │   ├── test_spell_management.py
-│   └── ... (15 test files total)
+│   └── ... (15+ test files total)
 ├── templates/           # Web interface templates
 └── docs/                # Documentation
 ```
@@ -157,13 +178,16 @@ dnd-backend/
    python manage.py populate_conditions_environments
    ```
 
-5. **Import monsters and items from Open5e API** (Optional but recommended)
+5. **Import monsters, items, and spells from Open5e API** (Optional but recommended)
    ```bash
    # Import real D&D 5e monsters (200+)
    python manage.py import_monsters_from_api --source open5e
    
    # Import real D&D 5e items (100+)
    python manage.py import_items_from_api --source open5e
+   
+   # Import real D&D 5e spells (1,400+)  🆕
+   python manage.py import_spells_from_api --source open5e
    ```
    
    See [API Import Guide](docs/api_import_guide.md) for detailed instructions.
@@ -413,7 +437,6 @@ This project is licensed under the MIT License - see the LICENSE file for detail
 
 ### 🔜 Upcoming Features
 - [ ] Frontend interface (React/Vue)
-- [ ] Real-time multiplayer support
 - [ ] Campaign sharing and templates
 - [ ] Custom content creation tools
 - [ ] Mobile app

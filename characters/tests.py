@@ -107,6 +107,10 @@ class CharacterAPITests(TestCase):
     def setUp(self):
         self.client = APIClient()
         
+        # Create and authenticate user
+        self.user = User.objects.create_user(username='testuser', password='testpass123')
+        self.client.force_authenticate(user=self.user)
+        
         # Create reference data
         self.character_class = CharacterClass.objects.create(
             name='fighter',
@@ -122,6 +126,7 @@ class CharacterAPITests(TestCase):
         
         # Create character with stats
         self.character = Character.objects.create(
+            user=self.user,  # Link character to user
             name='Test Fighter',
             level=1,
             character_class=self.character_class,

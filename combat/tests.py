@@ -182,12 +182,12 @@ class CombatAPITests(TestCase):
     def setUp(self):
         self.client = APIClient()
         
-        # Create reference data
+        # Create reference data - wizard for spell casting
         self.character_class = CharacterClass.objects.create(
-            name='fighter',
-            hit_dice='d10',
-            primary_ability='STR',
-            saving_throw_proficiencies='STR,CON'
+            name='wizard',
+            hit_dice='d6',
+            primary_ability='INT',
+            saving_throw_proficiencies='INT,WIS'
         )
         self.race = CharacterRace.objects.create(
             name='human',
@@ -321,6 +321,16 @@ class CombatAPITests(TestCase):
     
     def test_cast_spell(self):
         """Test casting a spell"""
+        # Add Fireball spell to character
+        from characters.models import CharacterSpell
+        CharacterSpell.objects.create(
+            character=self.character,
+            name='Fireball',
+            level=3,
+            school='evocation',
+            is_prepared=True
+        )
+        
         # Add participants and start combat
         participant1 = CombatParticipant.objects.create(
             combat_session=self.combat_session,

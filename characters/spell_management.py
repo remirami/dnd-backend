@@ -8,24 +8,31 @@ from .models import Character, CharacterSpell
 
 
 # Spellcasting types
-PREPARED_CASTERS = ['Cleric', 'Druid', 'Paladin', 'Wizard']
-KNOWN_CASTERS = ['Bard', 'Ranger', 'Sorcerer', 'Warlock']
-RITUAL_CASTERS = ['Cleric', 'Druid', 'Wizard']  # Can cast ritual spells without preparing
+PREPARED_CASTERS = ['cleric', 'druid', 'paladin', 'wizard']
+KNOWN_CASTERS = ['bard', 'ranger', 'sorcerer', 'warlock']
+RITUAL_CASTERS = ['cleric', 'druid', 'wizard']  # Can cast ritual spells without preparing
+
+
+def _normalize_class_name(character):
+    """Normalize character class name to lowercase for case-insensitive comparison."""
+    if not character or not character.character_class:
+        return ''
+    return character.character_class.name.lower()
 
 
 def is_prepared_caster(character):
-    """Check if character is a prepared caster"""
-    return character.character_class.name in PREPARED_CASTERS
+    """Check if character is a prepared caster (case-insensitive)"""
+    return _normalize_class_name(character) in PREPARED_CASTERS
 
 
 def is_known_caster(character):
-    """Check if character is a known caster"""
-    return character.character_class.name in KNOWN_CASTERS
+    """Check if character is a known caster (case-insensitive)"""
+    return _normalize_class_name(character) in KNOWN_CASTERS
 
 
 def can_cast_rituals(character):
-    """Check if character can cast ritual spells"""
-    return character.character_class.name in RITUAL_CASTERS
+    """Check if character can cast ritual spells (case-insensitive)"""
+    return _normalize_class_name(character) in RITUAL_CASTERS
 
 
 def get_spellcasting_ability(character):
@@ -33,13 +40,13 @@ def get_spellcasting_ability(character):
     if not character.stats:
         return 0
     
-    class_name = character.character_class.name
+    class_name = _normalize_class_name(character)
     
-    if class_name in ['Wizard', 'Eldritch Knight', 'Arcane Trickster']:
+    if class_name in ['wizard', 'eldritch knight', 'arcane trickster']:
         return character.stats.intelligence_modifier
-    elif class_name in ['Cleric', 'Druid', 'Ranger']:
+    elif class_name in ['cleric', 'druid', 'ranger']:
         return character.stats.wisdom_modifier
-    elif class_name in ['Bard', 'Paladin', 'Sorcerer', 'Warlock']:
+    elif class_name in ['bard', 'paladin', 'sorcerer', 'warlock']:
         return character.stats.charisma_modifier
     
     return 0
@@ -70,27 +77,27 @@ def calculate_spells_known(character):
     if not is_known_caster(character):
         return {}
     
-    class_name = character.character_class.name
+    class_name = _normalize_class_name(character)
     level = character.level
     
     # Spells known by class and level
     spells_known = {
-        'Bard': {
+        'bard': {
             1: 4, 2: 5, 3: 6, 4: 7, 5: 8, 6: 9, 7: 10, 8: 11, 9: 12,
             10: 14, 11: 15, 12: 15, 13: 16, 14: 18, 15: 19, 16: 19,
             17: 20, 18: 22, 19: 22, 20: 22
         },
-        'Ranger': {
+        'ranger': {
             1: 0, 2: 2, 3: 3, 4: 3, 5: 4, 6: 4, 7: 5, 8: 5, 9: 6,
             10: 6, 11: 7, 12: 7, 13: 8, 14: 8, 15: 9, 16: 9,
             17: 10, 18: 10, 19: 11, 20: 11
         },
-        'Sorcerer': {
+        'sorcerer': {
             1: 2, 2: 3, 3: 4, 4: 5, 5: 6, 6: 7, 7: 8, 8: 9, 9: 10,
             10: 11, 11: 12, 12: 12, 13: 13, 14: 13, 15: 14, 16: 14,
             17: 15, 18: 15, 19: 15, 20: 15
         },
-        'Warlock': {
+        'warlock': {
             1: 2, 2: 3, 3: 4, 4: 5, 5: 6, 6: 7, 7: 8, 8: 9, 9: 10,
             10: 10, 11: 11, 12: 11, 13: 12, 14: 12, 15: 13, 16: 13,
             17: 14, 18: 14, 19: 15, 20: 15
@@ -105,7 +112,7 @@ def get_wizard_spellbook_size(character):
     Calculate Wizard spellbook size.
     Wizards start with 6 spells at level 1, and gain 2 per level.
     """
-    if character.character_class.name != 'Wizard':
+    if _normalize_class_name(character) != 'wizard':
         return 0
     
     # Level 1: 6 spells, then +2 per level
@@ -145,7 +152,7 @@ def can_add_to_spellbook(character, spell_level):
     """
     Check if a Wizard can add a spell to their spellbook.
     """
-    if character.character_class.name != 'Wizard':
+    if _normalize_class_name(character) != 'wizard':
         return False
     
     spellbook_size = get_wizard_spellbook_size(character)
@@ -178,7 +185,7 @@ def get_known_spells(character):
 
 def get_spellbook_spells(character):
     """Get all spells in a Wizard's spellbook"""
-    if character.character_class.name != 'Wizard':
+    if _normalize_class_name(character) != 'wizard':
         return CharacterSpell.objects.none()
     
     return CharacterSpell.objects.filter(

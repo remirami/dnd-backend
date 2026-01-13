@@ -144,7 +144,10 @@ class Character(models.Model):
         # Check for multiclass
         try:
             from .multiclassing import get_total_level
-            total_level = get_total_level(self)
+            multiclass_level = get_total_level(self)
+            # Only use multiclass level if it's greater than 0
+            if multiclass_level > 0:
+                total_level = multiclass_level
         except:
             pass
         return ((total_level - 1) // 4) + 2

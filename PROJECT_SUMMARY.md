@@ -13,9 +13,11 @@ This is a **comprehensive Django REST API backend** for D&D 5e that implements a
 - ✅ Sequential encounter progression
 - ✅ Starting level selection (1-20)
 - ✅ Automatic XP tracking and level-up
-- ✅ Procedural treasure room generation
+- ✅ Procedural treasure room generation with gold rewards
+- ✅ **Merchant System**: Random merchants with rarity-based item selection
+- ✅ **Gold Economy**: Earn gold from treasures, spend at merchants
 - ✅ Limited rest system (short/long rests)
-- ✅ Real-time party status tracking
+- ✅ Real-time party status, HP, and gold tracking
 - ✅ Encounter rewards and progression
 
 #### 2. **Complete Character System**
@@ -56,21 +58,27 @@ This is a **comprehensive Django REST API backend** for D&D 5e that implements a
 - ✅ Combat logging with analytics
 - ✅ Export to JSON/CSV
 
-#### 4. **Spell Management System**
+#### 4. **Spell Library & Management System**
+- ✅ **1,400+ Spells**: Complete D&D 5e spell database from Open5e
+- ✅ **Advanced Filtering**: Search by level, school, concentration, ritual, class
+- ✅ **Complete Spell Data**: Casting time, range, components, duration, damage
 - ✅ Prepared casters (Cleric, Druid, Paladin, Wizard)
 - ✅ Known casters (Bard, Ranger, Sorcerer, Warlock)
 - ✅ Wizard spellbook management
 - ✅ Spell preparation limits
 - ✅ Ritual casting
 - ✅ Multiclass spell slot calculation
+- ✅ Open5e API import command
 
 #### 5. **Content & Data**
+- ✅ **1,400+ spells** from Open5e API 🆕
 - ✅ 200+ monsters from Open5e API
 - ✅ 100+ items (weapons, armor, magic items)
 - ✅ Complete stat blocks for all creatures
-- ✅ Import system (JSON, CSV, API)
-- ✅ Treasure generation system
+- ✅ Import system (JSON, CSV, Open5e API)
+- ✅ Treasure generation with gold rewards
 - ✅ Encounter generation
+- ✅ Merchant inventory generation with rarity progression 🆕
 
 #### 6. **User Authentication**
 - ✅ JWT token authentication
@@ -97,16 +105,25 @@ dnd-backend/
 ├── combat/             # Advanced combat (Phases 1-3)
 │   ├── environmental_effects.py
 │   └── condition_effects.py
+├── spells/             # 1,400+ spell library 🆕
+│   ├── models.py
+│   ├── views.py
+│   └── management/commands/import_spells_from_api.py
+├── merchants/          # Merchant/shop system 🆕
+│   ├── models.py (Merchant, Inventory, Transactions)
+│   ├── views.py (Purchase API)
+│   └── rarity_weights.py (Depth-based progression)
 ├── encounters/         # Encounter management
 ├── items/              # 100+ items
 ├── logs/               # Combat logging & analytics
-└── tests/              # 15 comprehensive test files
+└── tests/              # 15+ comprehensive test files
     ├── test_authentication.py
     ├── test_combat.py
     ├── test_campaign_gauntlet.py
+    ├── test_spell_and_merchant.py 🆕
     ├── test_multiclassing.py
     ├── test_spell_management.py
-    └── ... (10 more test files)
+    └── ... (10+ more test files)
 ```
 
 ## 🎯 Key Features Implemented
@@ -129,19 +146,23 @@ dnd-backend/
 ### Campaign Features
 - **Roguelike Progression**: Sequential encounters with increasing difficulty
 - **XP System**: Automatic XP calculation and level-up
-- **Treasure System**: Procedural loot generation with real D&D items
+- **Treasure System**: Procedural loot generation with real D&D items and gold
+- **Merchant System**: Random merchants with rarity-based item selection tied to gauntlet depth 🆕
+- **Gold Economy**: Earn gold from treasures and encounters, spend at merchants 🆕
 - **Resource Management**: Limited rests force strategic decisions
-- **Party Management**: Track multiple characters through a campaign
+- **Party Management**: Track multiple characters with HP, resources, and gold through a campaign
 
 ## 📊 Statistics
 
-- **Lines of Code**: 50,000+ lines
-- **Models**: 50+ Django models
-- **API Endpoints**: 100+ RESTful endpoints
-- **Test Files**: 15 comprehensive test suites
-- **Documentation**: 9 detailed guides
+- **Lines of Code**: 55,000+ lines
+- **Models**: 55+ Django models
+- **API Endpoints**: 120+ RESTful endpoints
+- **Test Files**: 15+ comprehensive test suites
+- **Documentation**: 10+ detailed guides
+- **Spells**: **1,400+ with complete D&D 5e data** 🆕
 - **Monsters**: 200+ with complete stat blocks
 - **Items**: 100+ weapons, armor, and magic items
+- **Merchants**: Rarity-based inventory system tied to progression 🆕
 - **Class Features**: 1000+ features across all classes and levels
 - **Feats**: 40+ with prerequisites
 
@@ -152,6 +173,8 @@ All major systems have comprehensive test coverage:
 - ✅ Character creation and progression
 - ✅ Combat mechanics (all phases)
 - ✅ Campaign and gauntlet system
+- ✅ **Spell Library System** (filtering, import, API) 🆕
+- ✅ **Merchant System** (discovery, purchase, gold economy, rarity) 🆕
 - ✅ Multiclassing
 - ✅ Spell management
 - ✅ Environmental effects
@@ -182,7 +205,9 @@ Complete documentation available in `/docs`:
 We've built a **production-ready D&D 5e backend** that includes:
 - ✅ Complete character system with progression
 - ✅ Full combat system with advanced mechanics
-- ✅ Roguelike campaign system
+- ✅ Roguelike campaign system with gold economy
+- ✅ **1,400+ spell library with Open5e integration** 🆕
+- ✅ **Merchant system with rarity-based progression** 🆕
 - ✅ Spell and multiclass support
 - ✅ 200+ monsters and 100+ items
 - ✅ User authentication
@@ -193,5 +218,5 @@ This is a **fully-featured D&D 5e game engine** ready for any frontend or game c
 
 ---
 
-**Last Updated**: December 31, 2025
+**Last Updated**: January 12, 2026
 **Status**: Production Ready ✅

@@ -1309,6 +1309,57 @@ class CampaignViewSet(viewsets.ModelViewSet):
                 {"error": f"Failed to select subclass: {str(e)}"},
                 status=status.HTTP_500_INTERNAL_SERVER_ERROR
             )
+    
+    @action(detail=True, methods=['post'])
+    def discover_merchant(self, request, pk=None):
+        """
+        Discover a merchant encounter.
+        Generates random inventory based on current encounter depth.
+        """
+        campaign = self.get_object()
+        
+        if campaign.status != 'active':
+            return Response(
+                {"error": "Campaign must be active to discover merchants"},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+        
+        # Get current encounter depth
+        encounter_depth = campaign.current_encounter_index + 1
+        
+        # Check if merchant already exists for this encounter
+        from merchants.models import MerchantEncounter
+        existing_merchant = MerchantEncounter.objects.filter(
+            campaign=campaign,
+            encounter_number=encounter_depth
+        ).first()
+        
+        if existing_merchant:
+            return Response(
+                {"error": f"Merchant already exists for encounter {encounter_depth}"},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+        
+        # Create merchant
+        from merchants.rarity_weights import generate_merchant_name
+        from merchants.serializers import MerchantEncounterSerializer
+        
+        merchant = MerchantEncounter.objects.create(
+            campaign=campaign,
+            encounter_number=encounter_depth,
+            merchant_name=generate_merchant_name()
+        )
+        
+        # Generate inventory (5 items by default)
+        item_count = request.data.get('item_count', 5)
+        merchant.generate_inventory(count=int(item_count))
+        
+        serializer = MerchantEncounterSerializer(merchant)
+        return Response({
+            "message": f"Merchant discovered: {merchant.merchant_name}",
+            "merchant": serializer.data
+        }, status=status.HTTP_201_CREATED)
+
 
 
 class CampaignCharacterViewSet(viewsets.ModelViewSet):

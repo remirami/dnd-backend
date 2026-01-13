@@ -30,6 +30,9 @@ from items.views import (
     MagicItemViewSet, ItemCategoryViewSet, ItemPropertyViewSet
 )
 from campaigns.views import CampaignViewSet, CampaignCharacterViewSet, CampaignEncounterViewSet
+from spells.views import SpellViewSet
+from merchants.views import MerchantViewSet
+
 
 router = DefaultRouter()
 # Bestiary routes
@@ -64,6 +67,11 @@ router.register(r'item-properties', ItemPropertyViewSet, basename='item-property
 router.register(r'campaigns', CampaignViewSet, basename='campaign')
 router.register(r'campaign-characters', CampaignCharacterViewSet, basename='campaign-character')
 router.register(r'campaign-encounters', CampaignEncounterViewSet, basename='campaign-encounter')
+# Spell library routes
+router.register(r'spells', SpellViewSet, basename='spell')
+# Merchant/shop system routes
+router.register(r'merchants', MerchantViewSet, basename='merchant')
+
 
 urlpatterns = [
     path('admin/', admin.site.urls),
