@@ -23,6 +23,13 @@ class CombatSession(models.Model):
     ended_at = models.DateTimeField(blank=True, null=True)
     notes = models.TextField(blank=True)
     
+    class Meta:
+        indexes = [
+            models.Index(fields=['encounter', 'status'], name='combat_enc_status_idx'),
+            models.Index(fields=['status'], name='combat_status_idx'),
+            models.Index(fields=['-started_at'], name='combat_started_idx'),
+        ]
+    
     def __str__(self):
         if self.encounter:
             return f"Combat: {self.encounter.name} (Round {self.current_round})"

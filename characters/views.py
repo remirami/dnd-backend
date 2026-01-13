@@ -37,8 +37,16 @@ class CharacterViewSet(viewsets.ModelViewSet):
     permission_classes = [permissions.IsAuthenticated]
     
     def get_queryset(self):
-        """Filter characters to only show those owned by the current user"""
-        return Character.objects.filter(user=self.request.user).order_by('-created_at')
+        """Filter characters to only show those owned by the current user with optimized queries"""
+        return Character.objects.filter(user=self.request.user).select_related(
+            'character_class',
+            'race',
+            'background',
+            'stats'
+        ).prefetch_related(
+            'features',
+            'proficiencies'
+        ).order_by('-created_at')
     
     def perform_create(self, serializer):
         """Automatically set the user when creating a character and apply racial and background features"""

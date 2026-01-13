@@ -134,6 +134,15 @@ class Character(models.Model):
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
     
+    class Meta:
+        indexes = [
+            models.Index(fields=['user'], name='char_user_idx'),
+            models.Index(fields=['level'], name='char_level_idx'),
+            models.Index(fields=['character_class'], name='char_class_idx'),
+            models.Index(fields=['race'], name='char_race_idx'),
+            models.Index(fields=['-created_at'], name='char_created_idx'),
+        ]
+    
     def __str__(self):
         return f"{self.name} (Level {self.level} {self.character_class.get_name_display()})"
     

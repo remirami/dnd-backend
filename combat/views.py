@@ -2,6 +2,7 @@ from rest_framework import viewsets, status
 from rest_framework.decorators import action
 from rest_framework.response import Response
 from django.utils import timezone
+import logging
 
 from .models import CombatSession, CombatParticipant, CombatAction, CombatLog, ConditionApplication, EnvironmentalEffect, ParticipantPosition
 from .condition_effects import auto_apply_condition_from_spell, get_condition_for_spell
@@ -23,10 +24,22 @@ from encounters.models import Encounter, EncounterEnemy
 from characters.models import Character
 from bestiary.models import EnemyAttack, DamageType
 
+# Combat logging
+logger = logging.getLogger('combat')
+
 
 class CombatSessionViewSet(viewsets.ModelViewSet):
     """API endpoint for managing combat sessions"""
-    queryset = CombatSession.objects.all().order_by('-started_at')
+    queryset = CombatSession.objects.all().select_related(
+        'encounter'
+    ).prefetch_related(
+        'participants',
+        'participants__character',
+        'participants__character__stats',
+        'participants__encounter_enemy',
+        'participants__encounter_enemy__enemy',
+        'participants__encounter_enemy__enemy__stats'
+    ).order_by('-started_at')
     serializer_class = CombatSessionSerializer
     
     def perform_create(self, serializer):
@@ -50,7 +63,10 @@ class CombatSessionViewSet(viewsets.ModelViewSet):
     def start(self, request, pk=None):
         """Start a combat session"""
         session = self.get_object()
+        logger.info(f"Combat start requested for session {pk} by user {request.user}")
+        
         if session.status != 'preparing':
+            logger.warning(f"Cannot start combat {pk}: status is '{session.status}', not 'preparing'")
             return Response(
                 {"error": "Combat must be in 'preparing' status to start"},
                 status=status.HTTP_400_BAD_REQUEST
@@ -58,6 +74,7 @@ class CombatSessionViewSet(viewsets.ModelViewSet):
         
         participants = session.participants.filter(is_active=True)
         if not participants.exists():
+            logger.warning(f"Cannot start combat {pk}: no participants")
             return Response(
                 {"error": "Cannot start combat without participants"},
                 status=status.HTTP_400_BAD_REQUEST
@@ -68,6 +85,8 @@ class CombatSessionViewSet(viewsets.ModelViewSet):
         session.current_turn_index = 0
         session.started_at = timezone.now()
         session.save()
+        
+        logger.info(f"Combat {pk} started with {participants.count()} participants")
         
         serializer = self.get_serializer(session)
         return Response({

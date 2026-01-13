@@ -61,6 +61,13 @@ class Campaign(models.Model):
     
     notes = models.TextField(blank=True, null=True)
     
+    class Meta:
+        indexes = [
+            models.Index(fields=['owner', 'status'], name='camp_user_status_idx'),
+            models.Index(fields=['status'], name='camp_status_idx'),
+            models.Index(fields=['-created_at'], name='camp_created_idx'),
+        ]
+    
     def __str__(self):
         return f"{self.name} ({self.get_status_display()})"
     

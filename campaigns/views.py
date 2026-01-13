@@ -3,6 +3,7 @@ from rest_framework.decorators import action
 from rest_framework.response import Response
 from django.utils import timezone
 from django.db import transaction
+import logging
 
 from .models import Campaign, CampaignCharacter, CampaignEncounter, CharacterXP, TreasureRoom, TreasureRoomReward, RecruitableCharacter, RecruitmentRoom
 from .serializers import (
@@ -15,6 +16,9 @@ from encounters.models import Encounter
 from characters.models import Character
 from combat.models import CombatSession
 
+# Campaign logging
+logger = logging.getLogger('campaign')
+
 
 class CampaignViewSet(viewsets.ModelViewSet):
     """API endpoint for managing campaigns"""
@@ -22,8 +26,15 @@ class CampaignViewSet(viewsets.ModelViewSet):
     permission_classes = [permissions.IsAuthenticated]
     
     def get_queryset(self):
-        """Filter campaigns to only show those owned by the current user"""
-        return Campaign.objects.filter(owner=self.request.user).order_by('-created_at')
+        """Filter campaigns to only show those owned by the current user with optimized queries"""
+        return Campaign.objects.filter(owner=self.request.user).select_related(
+            'owner'
+        ).prefetch_related(
+            'campaign_characters',
+            'campaign_characters__character',
+            'campaign_characters__character__stats',
+            'campaign_encounters'
+        ).order_by('-created_at')
     
     def perform_create(self, serializer):
         """Automatically set the owner when creating a campaign"""

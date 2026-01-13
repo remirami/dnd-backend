@@ -51,6 +51,13 @@ class Enemy(models.Model):
     creature_type = models.CharField(max_length=20, choices=CREATURE_TYPE_CHOICES, default='humanoid')
     alignment = models.CharField(max_length=2, choices=ALIGNMENT_CHOICES, default='N')
 
+    class Meta:
+        indexes = [
+            models.Index(fields=['challenge_rating'], name='enemy_cr_idx'),
+            models.Index(fields=['creature_type'], name='enemy_type_idx'),
+            models.Index(fields=['name'], name='enemy_name_idx'),
+        ]
+
     def __str__(self):
         return self.name
 
