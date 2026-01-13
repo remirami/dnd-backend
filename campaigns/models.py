@@ -197,6 +197,28 @@ class CampaignCharacter(models.Model):
         status = "Alive" if self.is_alive else "Dead"
         return f"{self.character.name} in {self.campaign.name} ({status})"
     
+    def clean(self):
+        """Validate campaign character data"""
+        from django.core.exceptions import ValidationError
+        errors = {}
+        
+        # Validate HP
+        if self.current_hp < 0:
+            errors['current_hp'] = 'Current HP cannot be negative'
+        
+        if self.max_hp < 1:
+            errors['max_hp'] = 'Max HP must be at least 1'
+        
+        if self.current_hp > self.max_hp:
+            errors['current_hp'] = f'Current HP ({self.current_hp}) cannot exceed max HP ({self.max_hp})'
+        
+        # Validate gold
+        if self.gold < 0:
+            errors['gold'] = 'Gold cannot be negative'
+        
+        if errors:
+            raise ValidationError(errors)
+    
     def initialize_from_character(self):
         """Initialize campaign character from base character"""
         if not hasattr(self.character, 'stats'):

@@ -415,6 +415,38 @@ class CombatParticipant(models.Model):
         name = self.get_name()
         return f"{name} (Initiative: {self.initiative})"
     
+    def clean(self):
+        """Validate combat participant data"""
+        from django.core.exceptions import ValidationError
+        errors = {}
+        
+        # Validate HP
+        if hasattr(self, 'current_hp') and self.current_hp < 0:
+            errors['current_hp'] = 'Current HP cannot be negative'
+        
+        if hasattr(self, 'max_hp') and self.max_hp < 1:
+            errors['max_hp'] = 'Max HP must be at least 1'
+        
+        if hasattr(self, 'current_hp') and hasattr(self, 'max_hp') and self.current_hp > self.max_hp:
+            errors['current_hp'] = f'Current HP ({self.current_hp}) cannot exceed max HP ({self.max_hp})'
+        
+        # Validate participant type has corresponding entity
+        if self.participant_type == 'character' and not self.character:
+            errors['character'] = 'Character must be specified for character participant type'
+        
+        if self.participant_type == 'enemy' and not self.encounter_enemy:
+            errors['encounter_enemy'] = 'Enemy must be specified for enemy participant type'
+        
+        # Validate death saves are in range
+        if hasattr(self, 'death_save_successes') and not (0 <= self.death_save_successes <= 3):
+            errors['death_save_successes'] = 'Death save successes must be between 0 and 3'
+        
+        if hasattr(self, 'death_save_failures') and not (0 <= self.death_save_failures <= 3):
+            errors['death_save_failures'] = 'Death save failures must be between 0 and 3'
+        
+        if errors:
+            raise ValidationError(errors)
+    
     def get_name(self):
         """Get the name of the participant"""
         if self.character:

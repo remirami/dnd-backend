@@ -107,7 +107,7 @@ class Character(models.Model):
     
     user = models.ForeignKey(User, on_delete=models.CASCADE, related_name='characters', null=True, blank=True)
     name = models.CharField(max_length=100)
-    level = models.IntegerField(default=1)
+    level = models.IntegerField(default=1, validators=[MinValueValidator(1), MaxValueValidator(20)])
     character_class = models.ForeignKey(CharacterClass, on_delete=models.PROTECT, related_name='characters')
     race = models.ForeignKey(CharacterRace, on_delete=models.PROTECT, related_name='characters')
     background = models.ForeignKey(CharacterBackground, on_delete=models.PROTECT, related_name='characters', blank=True, null=True)
@@ -120,7 +120,7 @@ class Character(models.Model):
     alignment = models.CharField(max_length=2, choices=ALIGNMENT_CHOICES, default='N')
     
     # Experience points
-    experience_points = models.IntegerField(default=0)
+    experience_points = models.IntegerField(default=0, validators=[MinValueValidator(0)])
     
     # Pending choices (for standalone character tracking)
     pending_asi_levels = models.JSONField(default=list, blank=True, help_text="List of levels where ASI/Feat is pending player choice (e.g., [4, 8])")
@@ -136,6 +136,33 @@ class Character(models.Model):
     
     def __str__(self):
         return f"{self.name} (Level {self.level} {self.character_class.get_name_display()})"
+    
+    def clean(self):
+        """Validate character data"""
+        from django.core.exceptions import ValidationError
+        errors = {}
+        
+        # Validate level range
+        if not (1 <= self.level <= 20):
+            errors['level'] = 'Level must be between 1 and 20'
+        
+        # Validate XP is non-negative
+        if self.experience_points < 0:
+            errors['experience_points'] = 'Experience points cannot be negative'
+        
+        # Validate XP matches level (minimum XP for that level)
+        xp_table = {
+            1: 0, 2: 300, 3: 900, 4: 2700, 5: 6500,
+            6: 14000, 7: 23000, 8: 34000, 9: 48000, 10: 64000,
+            11: 85000, 12: 100000, 13: 120000, 14: 140000, 15: 165000,
+            16: 195000, 17: 225000, 18: 265000, 19: 305000, 20: 355000,
+        }
+        min_xp = xp_table.get(self.level, 0)
+        if self.level > 1 and self.experience_points < min_xp:
+            errors['experience_points'] = f'XP ({self.experience_points}) is too low for level {self.level}. Minimum XP required: {min_xp}'
+        
+        if errors:
+            raise ValidationError(errors)
     
     @property
     def proficiency_bonus(self):
