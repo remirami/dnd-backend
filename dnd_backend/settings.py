@@ -82,6 +82,23 @@ TEMPLATES = [
 
 WSGI_APPLICATION = 'dnd_backend.wsgi.application'
 
+# ASGI Application (for WebSocket support)
+ASGI_APPLICATION = 'dnd_backend.asgi.application'
+
+# Channel Layers (for WebSocket routing)
+CHANNEL_LAYERS = {
+    'default': {
+        # In-memory channel layer (development/testing)
+        'BACKEND': 'channels.layers.InMemoryChannelLayer',
+        
+        # For production with Redis (uncomment when Redis is available):
+        # 'BACKEND': 'channels_redis.core.RedisChannelLayer',
+        # 'CONFIG': {
+        #     'hosts': [('127.0.0.1', 6379)],
+        # },
+    },
+}
+
 
 # Database
 # https://docs.djangoproject.com/en/5.0/ref/settings/#databases
