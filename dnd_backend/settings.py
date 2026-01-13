@@ -157,6 +157,43 @@ USE_TZ = True
 
 STATIC_URL = 'static/'
 
+# Caching Configuration
+# Use local memory cache for testing/development without Redis
+# For production with Redis, change BACKEND to 'django_redis.cache.RedisCache'
+CACHES = {
+    'default': {
+        # For testing/development without Redis
+        'BACKEND': 'django.core.cache.backends.locmem.LocMemCache',
+        'LOCATION': 'unique-snowflake',
+        'TIMEOUT': 300,  # 5 minutes default
+        
+        # For production with Redis (uncomment and install Redis):
+        # 'BACKEND': 'django_redis.cache.RedisCache',
+        # 'LOCATION': 'redis://127.0.0.1:6379/1',
+        # 'OPTIONS': {
+        #     'CLIENT_CLASS': 'django_redis.client.DefaultClient',
+        #     'PARSER_CLASS': 'redis.connection.HiredisParser',
+        #     'CONNECTION_POOL_CLASS_KWARGS': {
+        #         'max_connections': 50,
+        #         'retry_on_timeout': True,
+        #     },
+        #     'SOCKET_CONNECT_TIMEOUT': 5,
+        #     'SOCKET_TIMEOUT': 5,
+        # },
+        # 'KEY_PREFIX': 'dnd_backend',
+    }
+}
+
+# Cache timeout settings for different data types (in seconds)
+CACHE_TTL = {
+    'spell': 3600,          # 1 hour - spells rarely change
+    'enemy': 3600,          # 1 hour - enemies rarely change  
+    'class_features': 3600, # 1 hour - class features static
+    'character': 300,       # 5 minutes - characters change moderately
+    'campaign': 60,         # 1 minute - campaigns change frequently
+    'combat': 30,           # 30 seconds - combat is real-time
+}
+
 # Logging Configuration
 LOGGING = {
     'version': 1,

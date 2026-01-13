@@ -1,6 +1,10 @@
 from rest_framework import viewsets, filters, status
 from rest_framework.decorators import action
 from rest_framework.response import Response
+from django.views.decorators.cache import cache_page
+from django.utils.decorators import method_decorator
+from django.conf import settings
+
 from .models import Spell, SpellDamage
 from .serializers import SpellSerializer, SpellListSerializer
 
@@ -11,6 +15,7 @@ class SpellViewSet(viewsets.ModelViewSet):
     
     Provides filtering by level, school, concentration, ritual, and classes.
     Search by name or description.
+    Read operations are cached for 1 hour.
     """
     queryset = Spell.objects.all().prefetch_related('classes', 'damage_progression')
     serializer_class = SpellSerializer
@@ -56,11 +61,14 @@ class SpellViewSet(viewsets.ModelViewSet):
             return SpellListSerializer
         return SpellSerializer
     
+    
+    @method_decorator(cache_page(settings.CACHE_TTL.get('spell', 3600), key_prefix='spells_by_class'))
     @action(detail=False, methods=['get'])
     def by_class(self, request):
         """
         Get spells available to a specific class.
         Query param: class_name (e.g., 'wizard', 'cleric')
+        Cached for 1 hour.
         """
         class_name = request.query_params.get('class_name', '').lower()
         if not class_name:
@@ -73,23 +81,26 @@ class SpellViewSet(viewsets.ModelViewSet):
         serializer = self.get_serializer(spells, many=True)
         return Response(serializer.data)
     
+    @method_decorator(cache_page(settings.CACHE_TTL.get('spell', 3600), key_prefix='spells_cantrips'))
     @action(detail=False, methods=['get'])
     def cantrips(self, request):
-        """Get all cantrips (level 0 spells)"""
+        """Get all cantrips (level 0 spells). Cached for 1 hour."""
         cantrips = self.queryset.filter(level=0)
         serializer = self.get_serializer(cantrips, many=True)
         return Response(serializer.data)
     
+    @method_decorator(cache_page(settings.CACHE_TTL.get('spell', 3600), key_prefix='spells_rituals'))
     @action(detail=False, methods=['get'])
     def rituals(self, request):
-        """Get all ritual spells"""
+        """Get all ritual spells. Cached for 1 hour."""
         rituals = self.queryset.filter(ritual=True)
         serializer = self.get_serializer(rituals, many=True)
         return Response(serializer.data)
     
+    @method_decorator(cache_page(settings.CACHE_TTL.get('spell', 3600), key_prefix='spells_concentration'))
     @action(detail=False, methods=['get'])
     def concentration(self, request):
-        """Get all concentration spells"""
+        """Get all concentration spells. Cached for 1 hour."""
         concentration_spells = self.queryset.filter(concentration=True)
         serializer = self.get_serializer(concentration_spells, many=True)
         return Response(serializer.data)

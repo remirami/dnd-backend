@@ -7,3 +7,5 @@ psycopg2-binary==2.9.7
 django-cors-headers==4.3.1
 django-filter==23.3
 djangorestframework-simplejwt==5.3.0
+redis==5.0.1
+django-redis==5.4.0
