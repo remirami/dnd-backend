@@ -336,6 +336,7 @@ FEATURE_TYPES = [
 | `concentration_spell` | CharField | Spell being concentrated on |
 | `has_reaction` | BooleanField | Reaction available |
 | `conditions` | ManyToManyField | Active conditions |
+| `spell_uses_remaining` | JSONField | Enemy spell slot tracking |
 
 **Methods:**
 - `take_damage(amount, damage_type, check_concentration)` → (new_hp, concentration_broken)
@@ -343,6 +344,19 @@ FEATURE_TYPES = [
 - `get_name()` → str
 - `get_ability_modifier(ability)` → int
 - `check_concentration(damage)` → (success, roll, dc, modifier)
+- `can_cast_enemy_spell(spell_name)` → bool - Check if enemy can cast spell
+- `use_enemy_spell(spell_name)` - Decrement enemy spell uses
+- `reset_enemy_spell_slots()` - Reset enemy spell slots (long rest)
+
+**Enemy Spell Slot System:**
+
+The `spell_uses_remaining` field tracks runtime spell usage for enemy spellcasters:
+
+```python
+# Format: {"Fireball": 2, "Power Word Kill": 0}
+# Initialized from EnemySpellSlot on first cast
+# Prevents infinite spell spam in combat
+```
 
 **Ordering**: `['-initiative', 'id']`
 
@@ -392,7 +406,9 @@ FEATURE_TYPES = [
 
 **Relationships:**
 - One-to-One: `EnemyStats`
-- One-to-Many: `EnemyResistance`, `EnemyLanguage`, `EnemyAttack`
+- One-to-Many: `EnemyResistance`, `EnemyLanguage`, `EnemyAttack`, `EnemySpell`
+
+**Data Source**: Automatically imported from Open5e API with complete spell data
 
 ---
 
@@ -414,6 +430,43 @@ FEATURE_TYPES = [
 | `proficiency_bonus` | IntegerField | Proficiency bonus |
 
 **Methods**: Same as CharacterStats (modifier calculators)
+
+---
+
+### EnemySpell
+
+**Description**: Spells that enemies can cast.
+
+**Fields:**
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `enemy` | ForeignKey | Enemy that knows the spell |
+| `name` | CharField | Spell name |
+| `save_dc` | IntegerField | Spell save DC (nullable) |
+
+**Note**: Automatically imported from Open5e spellcasting descriptions
+
+---
+
+### EnemySpellSlot
+
+**Description**: Tracks spell usage limits for enemy spellcasters.
+
+**Fields:**
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `spell` | ForeignKey | Related EnemySpell |
+| `level` | IntegerField | Spell level (0 for X/day spells) |
+| `uses` | IntegerField | Maximum uses (per day or combat) |
+
+**Usage Examples:**
+- At-will spells: No EnemySpellSlot record (unlimited)
+- 3/day Fireball: `level=0, uses=3`
+- 1st level (4 slots): `level=1, uses=4`
+
+**Enforcement**: Tracked in combat via `CombatParticipant.spell_uses_remaining`
 
 ---
 

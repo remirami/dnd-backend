@@ -53,6 +53,7 @@ This is a **comprehensive Django REST API backend** for D&D 5e that implements a
 - ✅ Reaction system
 - ✅ Death saving throws
 - ✅ Legendary actions
+- ✅ **Enemy spell slot enforcement**: Prevents infinite spell spam 🆕
 - ✅ Environmental effects (terrain, cover, lighting, weather)
 - ✅ Hazards and position tracking
 - ✅ Combat logging with analytics
@@ -71,8 +72,10 @@ This is a **comprehensive Django REST API backend** for D&D 5e that implements a
 - ✅ Open5e API import command
 
 #### 5. **Content & Data**
-- ✅ **1,400+ spells** from Open5e API 🆕
-- ✅ 200+ monsters from Open5e API
+- ✅ **1,400+ spells** from Open5e API
+- ✅ **3,200+ monsters** from Open5e API with full spell data 🆕
+- ✅ **Automatic spell import**: Enemy spellcasters with complete spell lists 🆕
+- ✅ **Spell slot enforcement**: Enemies limited by stat blocks (no infinite spam) 🆕
 - ✅ 100+ items (weapons, armor, magic items)
 - ✅ Complete stat blocks for all creatures
 - ✅ Import system (JSON, CSV, Open5e API)

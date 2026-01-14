@@ -41,6 +41,7 @@ A comprehensive Django REST API backend for D&D 5e featuring a roguelike gauntle
   - Opportunity attacks and reactions
   - Death saving throws
   - Legendary actions
+  - **Enemy spell slot enforcement** (prevents infinite spell spam)
   - Environmental effects (terrain, cover, lighting, weather)
   - Hazards and position tracking
 - **Combat Logging**: Detailed combat logs with analytics and export (JSON/CSV)
@@ -53,19 +54,23 @@ A comprehensive Django REST API backend for D&D 5e featuring a roguelike gauntle
 - **Spell Slots**: Automatic calculation including multiclass casters
 
 ### 📚 Complete Bestiary System
+- **3,200+ Monsters**: Full creature database from Open5e with automatic spell import
 - **Full D&D 5e Stat Blocks**: All ability scores, skills, saving throws, and combat stats
+- **Spellcaster Support**: Automatic spell parsing from Open5e with usage limits
 - **Creature Properties**: Size, type, alignment, challenge rating
 - **Combat Mechanics**: Attacks, abilities, spells, legendary actions
 - **Resistances & Immunities**: Damage types and condition immunities
+- **Spell Slot Enforcement**: Enemies limited by stat blocks - no infinite spam
 - **Senses**: Darkvision, blindsight, tremorsense, truesight
 - **Environments**: Where creatures can be found
 - **Treasure**: Loot tables and treasure information
 
 ### 🔄 Import System
 - **Multiple Sources**: JSON, CSV, D&D Beyond API, official SRD, **Open5e API**
-- **Auto-Population**: Import 200+ monsters and 100+ items from free APIs
+- **Auto-Population**: Import 3,200+ monsters with complete spell lists from Open5e
+- **Automatic Spell Parsing**: Spellcasting abilities parsed into structured spell data
 - **Web Interface**: User-friendly file upload interface
-- **Command Line**: Bulk import capabilities
+- **Command Line**: Bulk import capabilities (`python manage.py import_monsters_from_api`)
 - **Templates**: Pre-formatted import templates
 - **Validation**: Comprehensive error handling
 - **Smart Integration**: Imported content automatically available in treasure and encounters
