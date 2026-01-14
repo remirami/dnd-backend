@@ -915,7 +915,7 @@ class CombatAction(models.Model):
     critical = models.BooleanField(default=False)
     
     # Saving throw
-    save_type = models.CharField(max_length=3, blank=True)  # STR, DEX, CON, etc.
+    save_type = models.CharField(max_length=3, blank=True, null=True)  # DEX, CON, WIS, etc.
     save_dc = models.IntegerField(blank=True, null=True)
     save_roll = models.IntegerField(blank=True, null=True)
     save_success = models.BooleanField(blank=True, null=True)
