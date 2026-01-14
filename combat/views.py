@@ -586,7 +586,7 @@ class CombatSessionViewSet(viewsets.ModelViewSet):
                 status=status.HTTP_400_BAD_REQUEST
             )
         
-        # Validate spell can be cast (if character is a spellcaster)
+        # Validate spell slots for player characters
         if caster.character:
             from characters.spell_management import can_cast_spell
             is_ritual = request.data.get('is_ritual', False)
@@ -609,6 +609,14 @@ class CombatSessionViewSet(viewsets.ModelViewSet):
                         {"error": f"{caster.get_name()} does not know {spell_name}"},
                         status=status.HTTP_400_BAD_REQUEST
                     )
+        
+        # Validate spell slots for enemies
+        if caster.encounter_enemy:
+            if not caster.can_cast_enemy_spell(spell_name):
+                return Response(
+                    {"error": f"{caster.get_name()} has no spell slots remaining for {spell_name}"},
+                    status=status.HTTP_400_BAD_REQUEST
+                )
         
         target = None
         if target_id:
@@ -689,6 +697,10 @@ class CombatSessionViewSet(viewsets.ModelViewSet):
         # Mark action as used
         caster.action_used = True
         caster.save()
+        
+        # Decrement enemy spell slots
+        if caster.encounter_enemy:
+            caster.use_enemy_spell(spell_name)
         
         return Response({
             "message": f"{caster.get_name()} casts {spell_name}",

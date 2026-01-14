@@ -412,6 +412,13 @@ class CombatParticipant(models.Model):
     legendary_actions_remaining = models.IntegerField(default=0)  # Legendary actions available this round
     legendary_actions_max = models.IntegerField(default=0)  # Maximum legendary actions per round
     
+    # Spell slot tracking for enemies (JSONField to track remaining uses)
+    spell_uses_remaining = models.JSONField(
+        default=dict,
+        blank=True,
+        help_text="Tracks spell uses for enemy spellcasters. Format: {'Fireball': 3, 'Power Word Kill': 1}"
+    )
+    
     notes = models.TextField(blank=True)
     
     class Meta:
@@ -545,6 +552,64 @@ class CombatParticipant(models.Model):
             return character_item.item.armor
         except CharacterItem.DoesNotExist:
             return None
+    
+    def can_cast_enemy_spell(self, spell_name):
+        """
+        Check if an enemy has spell uses remaining for the given spell.
+        
+        Args:
+            spell_name: Name of the spell to check
+        
+        Returns:
+            bool: True if spell can be cast, False otherwise
+        """
+        if not self.encounter_enemy:
+            # Not an enemy - no restrictions
+            return True
+        
+        # Get enemy's spell from stat block
+        enemy = self.encounter_enemy.enemy
+        enemy_spell = enemy.spells.filter(name__iexact=spell_name).first()
+        
+        if not enemy_spell:
+            # Spell not in enemy's list
+            return False
+        
+        # Check if we've tracked uses for this spell yet
+        if spell_name not in self.spell_uses_remaining:
+            # First time casting - initialize from stat block
+            spell_slot = enemy_spell.slots.first()
+            if spell_slot:
+                self.spell_uses_remaining[spell_name] = spell_slot.uses
+                self.save()
+                return spell_slot.uses > 0
+            else:
+                # No slot information means "at will" - always available
+                return True
+        
+        # Check remaining uses
+        return self.spell_uses_remaining.get(spell_name, 0) > 0
+    
+    def use_enemy_spell(self, spell_name):
+        """
+        Decrement spell uses for an enemy after casting.
+        
+        Args:
+            spell_name: Name of the spell that was cast
+        """
+        if not self.encounter_enemy:
+            return  # Not an enemy
+        
+        if spell_name in self.spell_uses_remaining:
+            if self.spell_uses_remaining[spell_name] > 0:
+                self.spell_uses_remaining[spell_name] -= 1
+                self.save()
+    
+    def reset_enemy_spell_slots(self):
+        """Reset all enemy spell uses (for long rest or new day)"""
+        if self.encounter_enemy:
+            self.spell_uses_remaining = {}
+            self.save()
     
     def get_magic_item_bonuses(self):
         """Get bonuses from equipped magic items"""
