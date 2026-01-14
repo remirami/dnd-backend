@@ -876,7 +876,7 @@ class CombatSessionViewSet(viewsets.ModelViewSet):
         """Check concentration"""
         session = self.get_object()
         participant_id = request.data.get('participant_id')
-        damage_amount = request.data.get('damage_amount', 0)
+        damage_amount = int(request.data.get('damage_amount', 0))
         
         if not participant_id:
             return Response(
