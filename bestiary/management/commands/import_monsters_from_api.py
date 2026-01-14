@@ -245,6 +245,9 @@ class Command(BaseCommand):
         
         # Create languages
         self.create_languages(monster, data)
+        
+        # Create spells from spellcasting abilities
+        self.create_spells(monster, data)
 
         return monster, monster is not None
 
@@ -434,3 +437,113 @@ class Command(BaseCommand):
                     language=language
                 )
 
+    
+    def create_spells(self, monster, data):
+        """Parse and create enemy spells from spellcasting abilities"""
+        # Clear existing spells and spell slots
+        EnemySpell.objects.filter(enemy=monster).delete()
+        
+        # Look for spellcasting in special abilities
+        for ability in data.get('special_abilities', []):
+            ability_name = ability.get('name', '').lower()
+            if 'spellcasting' in ability_name or 'innate spellcasting' in ability_name:
+                self._parse_spellcasting(monster, ability)
+    
+    def _parse_spellcasting(self, monster, ability):
+        """Parse a spellcasting ability description"""
+        import re
+        
+        desc = ability.get('desc', '')
+        
+        # Extract spell save DC
+        save_dc_match = re.search(r'spell save DC (\d+)', desc)
+        save_dc = int(save_dc_match.group(1)) if save_dc_match else None
+        
+        # Parse at-will spells (including cantrips)
+        at_will_patterns = [
+            r'at will:([^\n]+)',
+            r'Cantrips \(at will\):([^\n]+)',
+        ]
+        
+        for pattern in at_will_patterns:
+            match = re.search(pattern, desc, re.IGNORECASE)
+            if match:
+                self._create_at_will_spells(monster, match.group(1), save_dc)
+        
+        # Parse X/day spells
+        day_pattern = r'(\d+)/day(?:\s+each)?:([^\n]+)'
+        for match in re.finditer(day_pattern, desc):
+            uses = int(match.group(1))
+            spell_list = match.group(2)
+            self._create_daily_spells(monster, spell_list, uses, save_dc)
+        
+        # Parse slotted spells by level
+        level_pattern = r'(\d+)(?:st|nd|rd|th) level \((\d+) slots?\):([^\n]+)'
+        for match in re.finditer(level_pattern, desc):
+            level = int(match.group(1))
+            slots = int(match.group(2))
+            spell_list = match.group(3)
+            self._create_slotted_spells(monster, spell_list, level, slots, save_dc)
+    
+    def _create_at_will_spells(self, monster, spell_text, save_dc):
+        """Create at-will spells (no usage limit)"""
+        spell_names = self._parse_spell_names(spell_text)
+        for name in spell_names:
+            EnemySpell.objects.create(
+                enemy=monster,
+                name=name,
+                save_dc=save_dc
+            )
+            # No EnemySpellSlot = unlimited uses
+    
+    def _create_daily_spells(self, monster, spell_text, uses, save_dc):
+        """Create X/day spells"""
+        spell_names = self._parse_spell_names(spell_text)
+        for name in spell_names:
+            spell = EnemySpell.objects.create(
+                enemy=monster,
+                name=name,
+                save_dc=save_dc
+            )
+            EnemySpellSlot.objects.create(
+                spell=spell,
+                level=0,  # Daily spells don't have a specific level
+                uses=uses
+            )
+    
+    def _create_slotted_spells(self, monster, spell_text, level, slots, save_dc):
+        """Create spells with spell slots by level"""
+        spell_names = self._parse_spell_names(spell_text)
+        for name in spell_names:
+            spell = EnemySpell.objects.create(
+                enemy=monster,
+                name=name,
+                save_dc=save_dc
+            )
+            EnemySpellSlot.objects.create(
+                spell=spell,
+                level=level,
+                uses=slots
+            )
+    
+    def _parse_spell_names(self, spell_text):
+        """Extract spell names from comma-separated text"""
+        import re
+        
+        # Remove asterisks and parentheticals
+        cleaned = re.sub(r'\*', '', spell_text)
+        cleaned = re.sub(r'\([^)]+\)', '', cleaned)
+        
+        # Split by comma or "and"
+        cleaned = cleaned.replace(' and ', ', ')
+        spells = [s.strip() for s in cleaned.split(',')]
+        
+        # Filter out empty strings and clean
+        spell_names = []
+        for s in spells:
+            s = s.strip()
+            if s and len(s) > 1:
+                # Title case for consistency
+                spell_names.append(s.title())
+        
+        return spell_names
