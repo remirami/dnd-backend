@@ -99,6 +99,17 @@ class CombatSession(models.Model):
                     elif app.duration_type == 'round' and app.expires_at_round and self.current_round > app.expires_at_round:
                         app.remove('duration_expired')
 
+    
+    def get_or_create_log(self):
+        """Get or create combat log for this session"""
+        log, created = CombatLog.objects.get_or_create(combat_session=self)
+        return log
+    
+    def generate_log(self):
+        """Generate/update combat log statistics"""
+        log = self.get_or_create_log()
+        return log.calculate_statistics()
+
 
 class EnvironmentalEffect(models.Model):
     """Environmental effects applied to a combat session"""
@@ -273,16 +284,7 @@ class ParticipantPosition(models.Model):
             'message': f"{attacker.get_name()} makes an opportunity attack against {target.get_name()}"
         }
     
-    def get_or_create_log(self):
-        """Get or create combat log for this session"""
-        log, created = CombatLog.objects.get_or_create(combat_session=self)
-        return log
-    
-    def generate_log(self):
-        """Generate/update combat log statistics"""
-        log = self.get_or_create_log()
-        return log.calculate_statistics()
-    
+
     def get_combat_report(self):
         """Generate a comprehensive combat report"""
         log = self.get_or_create_log()
@@ -806,6 +808,9 @@ class CombatParticipant(models.Model):
     
     def use_legendary_action(self, action_cost=1):
         """Use a legendary action"""
+        if action_cost < 1:
+            return False, "Legendary action cost must be at least 1"
+        
         if self.legendary_actions_remaining < action_cost:
             return False, "Not enough legendary actions remaining"
         

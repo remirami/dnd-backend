@@ -740,6 +740,8 @@ class CombatSessionViewSet(viewsets.ModelViewSet):
                 status=status.HTTP_400_BAD_REQUEST
             )
         
+        save_dc = int(save_dc)
+        
         try:
             participant = session.participants.get(pk=participant_id)
         except CombatParticipant.DoesNotExist:
@@ -1173,7 +1175,7 @@ class CombatSessionViewSet(viewsets.ModelViewSet):
             )
         
         participant_id = request.data.get('participant_id')
-        action_cost = request.data.get('action_cost', 1)
+        action_cost = int(request.data.get('action_cost', 1))
         action_name = request.data.get('action_name', 'Legendary Action')
         
         if not participant_id:
