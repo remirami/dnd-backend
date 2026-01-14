@@ -444,7 +444,8 @@ class Command(BaseCommand):
         EnemySpell.objects.filter(enemy=monster).delete()
         
         # Look for spellcasting in special abilities
-        for ability in data.get('special_abilities', []):
+        special_abilities = data.get('special_abilities', []) or []  # Handle None
+        for ability in special_abilities:
             ability_name = ability.get('name', '').lower()
             if 'spellcasting' in ability_name or 'innate spellcasting' in ability_name:
                 self._parse_spellcasting(monster, ability)
