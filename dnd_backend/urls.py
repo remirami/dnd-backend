@@ -18,7 +18,7 @@ from django.contrib import admin
 from django.urls import path, include
 from rest_framework.routers import DefaultRouter
 from bestiary.views import EnemyViewSet, import_monsters_view
-from encounters.views import EncounterViewSet, EncounterEnemyViewSet
+from encounters.views import EncounterViewSet, EncounterEnemyViewSet, EncounterThemeViewSet
 from characters.views import (
     CharacterViewSet, CharacterClassViewSet, CharacterRaceViewSet,
     CharacterBackgroundViewSet, CharacterStatsViewSet, CharacterProficiencyViewSet,
@@ -40,6 +40,7 @@ router.register(r'enemies', EnemyViewSet, basename='enemy')
 # Encounter system routes
 router.register(r'encounters', EncounterViewSet, basename='encounter')
 router.register(r'encounter-enemies', EncounterEnemyViewSet, basename='encounter-enemy')
+router.register(r'encounter-themes', EncounterThemeViewSet, basename='encounter-theme')
 # Character management routes
 router.register(r'characters', CharacterViewSet, basename='character')
 router.register(r'character-classes', CharacterClassViewSet, basename='character-class')
