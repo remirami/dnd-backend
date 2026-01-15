@@ -2,6 +2,7 @@ from django.db import models
 from django.core.validators import MinValueValidator, MaxValueValidator
 from django.contrib.auth.models import User
 from bestiary.models import Language, DamageType
+from .builder_models import CharacterBuilderSession  # Import builder session
 
 
 class CharacterClass(models.Model):

@@ -527,8 +527,7 @@ class CharacterViewSet(viewsets.ModelViewSet):
                     new_value = min(20, current_value + 1)  # Cap at 20
                     setattr(stats, ability_field, new_value)
                     stats.save()
-            
-            # Remove this level from pending ASI
+        # Remove this level from pending ASI
             character.pending_asi_levels.remove(level)
             character.save()
             
@@ -737,6 +736,22 @@ class CharacterViewSet(viewsets.ModelViewSet):
             "message": f"{character.name} took {damage} damage. HP: {stats.hit_points}/{stats.max_hit_points}",
             "stats": serializer.data
         })
+    
+    @action(detail=True, methods=['get'])
+    def sheet(self, request, pk=None):
+        """
+        Get comprehensive character sheet data for display.
+        
+        GET /api/characters/{id}/sheet/
+        
+        Returns everything needed to display a complete character sheet.
+        """
+        from .character_sheet_serializer import CharacterSheetSerializer
+        
+        character = self.get_object()
+        serializer = CharacterSheetSerializer(character)
+        
+        return Response(serializer.data)
     
     @action(detail=True, methods=['post'])
     def heal(self, request, pk=None):

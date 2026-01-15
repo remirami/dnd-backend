@@ -65,34 +65,37 @@ def can_multiclass_into(character, target_class_name):
     if CharacterClassLevel.objects.filter(character=character, character_class__name=target_class_name).exists():
         return False, f"Already has levels in {target_class_name}"
     
+    # Normalize class name to title case for lookup (models store lowercase, dict uses Title Case)
+    normalized_class_name = target_class_name.title()
+    
     # Get prerequisites
-    prerequisites = MULTICLASS_PREREQUISITES.get(target_class_name, {})
+    prerequisites = MULTICLASS_PREREQUISITES.get(normalized_class_name, {})
     
     if not prerequisites:
-        return False, f"No prerequisites defined for {target_class_name}"
+        return False, f"No prerequisites defined for {normalized_class_name}"
     
     # Check ability score requirements
     stats = character.stats
     missing_requirements = []
     
     # Fighter can use STR or DEX
-    if target_class_name == 'Fighter':
+    if normalized_class_name == 'Fighter':
         if stats.strength < 13 and stats.dexterity < 13:
             missing_requirements.append("STR 13 or DEX 13")
     # Monk needs DEX and WIS
-    elif target_class_name == 'Monk':
+    elif normalized_class_name == 'Monk':
         if stats.dexterity < 13:
             missing_requirements.append("DEX 13")
         if stats.wisdom < 13:
             missing_requirements.append("WIS 13")
     # Paladin needs STR and CHA
-    elif target_class_name == 'Paladin':
+    elif normalized_class_name == 'Paladin':
         if stats.strength < 13:
             missing_requirements.append("STR 13")
         if stats.charisma < 13:
             missing_requirements.append("CHA 13")
     # Ranger needs DEX and WIS
-    elif target_class_name == 'Ranger':
+    elif normalized_class_name == 'Ranger':
         if stats.dexterity < 13:
             missing_requirements.append("DEX 13")
         if stats.wisdom < 13:

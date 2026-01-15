@@ -21,9 +21,10 @@ from bestiary.views import EnemyViewSet, import_monsters_view
 from encounters.views import EncounterViewSet, EncounterEnemyViewSet, EncounterThemeViewSet
 from characters.views import (
     CharacterViewSet, CharacterClassViewSet, CharacterRaceViewSet,
-    CharacterBackgroundViewSet, CharacterStatsViewSet, CharacterProficiencyViewSet,
+    CharacterBackgroundViewSet, CharacterProficiencyViewSet,
     CharacterFeatureViewSet, CharacterSpellViewSet, CharacterResistanceViewSet
 )
+from characters.builder_views import CharacterBuilderViewSet
 from combat.views import CombatSessionViewSet, CombatParticipantViewSet, CombatActionViewSet, CombatLogViewSet
 from items.views import (
     ItemViewSet, WeaponViewSet, ArmorViewSet, ConsumableViewSet,
@@ -43,10 +44,10 @@ router.register(r'encounter-enemies', EncounterEnemyViewSet, basename='encounter
 router.register(r'encounter-themes', EncounterThemeViewSet, basename='encounter-theme')
 # Character management routes
 router.register(r'characters', CharacterViewSet, basename='character')
+router.register(r'characters/builder', CharacterBuilderViewSet, basename='character-builder')
 router.register(r'character-classes', CharacterClassViewSet, basename='character-class')
 router.register(r'character-races', CharacterRaceViewSet, basename='character-race')
 router.register(r'character-backgrounds', CharacterBackgroundViewSet, basename='character-background')
-router.register(r'character-stats', CharacterStatsViewSet, basename='character-stats')
 router.register(r'character-proficiencies', CharacterProficiencyViewSet, basename='character-proficiency')
 router.register(r'character-features', CharacterFeatureViewSet, basename='character-feature')
 router.register(r'character-spells', CharacterSpellViewSet, basename='character-spell')
