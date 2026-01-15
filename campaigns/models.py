@@ -33,6 +33,17 @@ class Campaign(models.Model):
         ('party', 'Party - Start with selected characters'),
     ]
     
+    BIOME_CHOICES = [
+        ('forest', 'Forest'),
+        ('desert', 'Desert'),
+        ('mountain', 'Mountain'),
+        ('swamp', 'Swamp'),
+        ('plains', 'Plains'),
+        ('underdark', 'Underdark'),
+        ('urban', 'Urban'),
+        ('arctic', 'Arctic'),
+    ]
+    
     start_mode = models.CharField(
         max_length=10,
         choices=START_MODE_CHOICES,
@@ -43,6 +54,19 @@ class Campaign(models.Model):
         default=1,
         validators=[MinValueValidator(1), MaxValueValidator(4)],
         help_text="Starting party size (1-4 characters). In solo mode, this is set to 1. In party mode, this is the number of characters added."
+    )
+    
+    # Gauntlet configuration
+    biome = models.CharField(
+        max_length=20,
+        choices=BIOME_CHOICES,
+        blank=True,
+        help_text="Primary biome for this gauntlet"
+    )
+    default_encounter_count = models.IntegerField(
+        default=5,
+        validators=[MinValueValidator(1), MaxValueValidator(15)],
+        help_text="Number of regular encounters before boss (default 5)"
     )
     
     # Encounter tracking
@@ -341,6 +365,14 @@ class CampaignEncounter(models.Model):
     encounter_number = models.IntegerField(validators=[MinValueValidator(1)])
     
     status = models.CharField(max_length=20, choices=STATUS_CHOICES, default='pending')
+    
+    # Boss encounter support
+    is_boss = models.BooleanField(default=False, help_text="True if this is a boss encounter")
+    boss_loot_table = models.JSONField(
+        default=dict,
+        blank=True,
+        help_text="Special boss loot (guaranteed items, gold bonus, XP multiplier)"
+    )
     
     # Link to combat session if combat occurred
     combat_session = models.ForeignKey(CombatSession, on_delete=models.SET_NULL, blank=True, null=True, related_name='campaign_encounters')

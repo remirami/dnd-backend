@@ -40,6 +40,117 @@ class CampaignViewSet(viewsets.ModelViewSet):
         """Automatically set the owner when creating a campaign"""
         serializer.save(owner=self.request.user)
     
+    @action(detail=False, methods=['post'], url_path='generate-gauntlet')
+    def generate_gauntlet(self, request):
+        """
+        Generate a complete gauntlet campaign with boss encounter
+        
+        POST /api/campaigns/generate-gauntlet/
+        {
+            "biome": "desert",
+            "party_level": 5,
+            "party_size": 4,
+            "encounter_count": 5,  // Optional, default 5
+            "name": "My Gauntlet"    // Optional
+        }
+        """
+        from campaigns.services.campaign_generator import CampaignGenerator
+        
+        # Extract parameters
+        biome = request.data.get('biome')
+        party_level = request.data.get('party_level')
+        party_size = request.data.get('party_size')
+        encounter_count = request.data.get('encounter_count', 5)
+        name = request.data.get('name')
+        
+        # Validate required fields
+        if not biome:
+            return Response(
+                {"error": "biome is required"},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+        
+        if not party_level:
+            return Response(
+                {"error": "party_level is required"},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+        
+        if not party_size:
+            return Response(
+                {"error": "party_size is required"},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+        
+        # Validate values
+        try:
+            party_level = int(party_level)
+            party_size = int(party_size)
+            encounter_count = int(encounter_count)
+        except (ValueError, TypeError):
+            return Response(
+                {"error": "party_level, party_size, and encounter_count must be integers"},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+        
+        # Validate ranges
+        if party_level < 1 or party_level > 20:
+            return Response(
+                {"error": "party_level must be between 1 and 20"},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+        
+        if party_size < 1 or party_size > 4:
+            return Response(
+                {"error": "party_size must be between 1 and 4"},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+        
+        if encounter_count < 1 or encounter_count > 15:
+            return Response(
+                {"error": "encounter_count must be between 1 and 15"},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+        
+        # Validate biome
+        valid_biomes = [choice[0] for choice in Campaign.BIOME_CHOICES]
+        if biome not in valid_biomes:
+            return Response(
+                {"error": f"Invalid biome. Must be one of: {', '.join(valid_biomes)}"},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+        
+        # Generate campaign
+        try:
+            generator = CampaignGenerator()
+            campaign = generator.generate_gauntlet(
+                biome=biome,
+                party_level=party_level,
+                party_size=party_size,
+                encounter_count=encounter_count,
+                owner=request.user,
+                name=name
+            )
+            
+            # Get boss info
+            boss_encounter = campaign.campaign_encounters.filter(is_boss=True).first()
+            
+            serializer = self.get_serializer(campaign)
+            return Response({
+                "message": "Gauntlet campaign generated successfully!",
+                "campaign": serializer.data,
+                "encounters": campaign.campaign_encounters.count(),
+                "boss_encounter": boss_encounter.encounter.name if boss_encounter else None,
+                "boss_loot": boss_encounter.boss_loot_table if boss_encounter else {}
+            }, status=status.HTTP_201_CREATED)
+            
+        except Exception as e:
+            logger.error(f"Error generating gauntlet: {e}")
+            return Response(
+                {"error": f"Failed to generate gauntlet: {str(e)}"},
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR
+            )
+    
     @action(detail=True, methods=['post'])
     def populate(self, request, pk=None):
         """Auto-populate campaign with random encounters and treasures"""
