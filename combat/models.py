@@ -421,6 +421,35 @@ class CombatParticipant(models.Model):
         help_text="Tracks spell uses for enemy spellcasters. Format: {'Fireball': 3, 'Power Word Kill': 1}"
     )
     
+    # Phase 1: Position tracking for AOE targeting
+    position_x = models.IntegerField(default=0, help_text="X coordinate on battlefield grid (in feet)")
+    position_y = models.IntegerField(default=0, help_text="Y coordinate on battlefield grid (in feet)")
+    
+    # Phase 2: Grappling mechanics
+    is_grappling = models.BooleanField(default=False, help_text="True if this participant is grappling someone")
+    grappled_by = models.ForeignKey(
+        'self',
+        null=True,
+        blank=True,
+        on_delete=models.SET_NULL,
+        related_name='grappling_targets',
+        help_text="Participant who has grappled this one"
+    )
+    
+    # Phase 3: Cover system
+    COVER_CHOICES = [
+        ('none', 'No Cover'),
+        ('half', 'Half Cover'),
+        ('three_quarters', 'Three-Quarters Cover'),
+        ('full', 'Full Cover'),
+    ]
+    cover_type = models.CharField(
+        max_length=20,
+        choices=COVER_CHOICES,
+        default='none',
+        help_text="Type of cover this participant has"
+    )
+    
     notes = models.TextField(blank=True)
     
     class Meta:

@@ -1246,6 +1246,30 @@ class CombatSessionViewSet(viewsets.ModelViewSet):
             "log_id": log.id
         })
     
+    @action(detail=True, methods=['post'])
+    def cast_aoe_spell(self, request, pk=None):
+        """Cast an area of effect spell hitting multiple targets."""
+        from .tactical_endpoints import cast_aoe_spell_endpoint
+        return cast_aoe_spell_endpoint(self, request, pk)
+    
+    @action(detail=True, methods=['post'])
+    def grapple(self, request, pk=None):
+        """Initiate a grapple."""
+        from .tactical_endpoints import grapple_endpoint
+        return grapple_endpoint(self, request, pk)
+    
+    @action(detail=True, methods=['post'])
+    def escape_grapple(self, request, pk=None):
+        """Attempt to escape a grapple."""
+        from .tactical_endpoints import escape_grapple_endpoint
+        return escape_grapple_endpoint(self, request, pk)
+    
+    @action(detail=True, methods=['post'])
+    def set_cover(self, request, pk=None):
+        """Set cover type for a participant."""
+        from .tactical_endpoints import set_cover_endpoint
+        return set_cover_endpoint(self, request, pk)
+    
     @action(detail=True, methods=['get'])
     def stats(self, request, pk=None):
         """Get combat statistics"""

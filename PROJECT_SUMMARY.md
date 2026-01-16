@@ -59,6 +59,16 @@ This is a **comprehensive Django REST API backend** for D&D 5e that implements a
 - ✅ Combat logging with analytics
 - ✅ Export to JSON/CSV
 
+**Phase 4 - Tactical Combat:** ✨ NEW
+- ✅ **AOE Targeting System**: 4 shapes (sphere, cone, line, cube)
+- ✅ **Position-based battlefield**: X/Y coordinates for all participants
+- ✅ **Multi-target spells**: Fireball, Lightning Bolt, Cone of Cold, etc.
+- ✅ **Saving throws with cover**: Cover bonuses applied to DEX saves
+- ✅ **Grappling mechanics**: Full D&D 5e contested checks
+- ✅ **Escape grapple**: Athletics vs Athletics/Acrobatics
+- ✅ **Cover system**: Half (+2), Three-Quarters (+5), Full (untargetable)
+- ✅ **8/8 tests passing**: Comprehensive test coverage
+
 #### 4. **Spell Library & Management System**
 - ✅ **1,400+ Spells**: Complete D&D 5e spell database from Open5e
 - ✅ **Advanced Filtering**: Search by level, school, concentration, ritual, class

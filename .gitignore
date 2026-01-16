@@ -107,3 +107,11 @@ sample_monsters.csv
 
 # Documentation (internal)
 docs/user_authentication_guide.md
+
+# Status documentation (generated/temporary)
+*_STATUS.md
+CHARACTER_SYSTEM_STATUS.md
+ENCOUNTERS_SYSTEM_STATUS.md
+CAMPAIGNS_SYSTEM_STATUS.md
+COMBAT_SYSTEM_STATUS.md
+BESTIARY_ITEMS_STATUS.md
