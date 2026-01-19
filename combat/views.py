@@ -173,6 +173,7 @@ class CombatSessionViewSet(viewsets.ModelViewSet):
                 participant = CombatParticipant.objects.create(
                     combat_session=session,
                     participant_type='enemy',
+                    name=enemy_name,  # Set the enemy name for practice mode
                     encounter_enemy=None,  # No EncounterEnemy for practice mode
                     initiative=0,
                     current_hp=enemy_hp,
@@ -1621,6 +1622,8 @@ class CombatParticipantViewSet(viewsets.ModelViewSet):
         """Apply damage to a participant"""
         participant = self.get_object()
         amount = int(request.data.get('amount', 0))
+        source_id = request.data.get('source_id')
+        damage_type = request.data.get('damage_type')
         
         if amount <= 0:
             return Response(
@@ -1629,6 +1632,30 @@ class CombatParticipantViewSet(viewsets.ModelViewSet):
             )
         
         new_hp, concentration_broken = participant.take_damage(amount)
+        
+        # Create combat action log
+        session = participant.combat_session
+        actor = None
+        if source_id:
+            try:
+                actor = session.participants.get(pk=source_id)
+            except CombatParticipant.DoesNotExist:
+                pass
+        
+        CombatAction.objects.create(
+            combat_session=session,
+            actor=actor,
+            target=participant,
+            action_type='attack',  # Use 'attack' type for damage visualization
+            attack_name='Manual Damage',
+            damage_amount=amount,
+            damage_type=None,  # Need to handle damage type object lookup if provided
+            hit=True,
+            round_number=session.current_round,
+            turn_number=session.current_turn_index,
+            description=f"Manual damage applied: {amount} damage"
+        )
+        
         serializer = self.get_serializer(participant)
         response_data = {
             "message": f"{participant.get_name()} took {amount} damage",
@@ -1645,6 +1672,7 @@ class CombatParticipantViewSet(viewsets.ModelViewSet):
         """Heal a participant"""
         participant = self.get_object()
         amount = int(request.data.get('amount', 0))
+        source_id = request.data.get('source_id')
         
         if amount <= 0:
             return Response(
@@ -1653,6 +1681,30 @@ class CombatParticipantViewSet(viewsets.ModelViewSet):
             )
         
         new_hp = participant.heal(amount)
+        
+         # Create combat action log
+        session = participant.combat_session
+        actor = None
+        if source_id:
+            try:
+                actor = session.participants.get(pk=source_id)
+            except CombatParticipant.DoesNotExist:
+                pass
+                
+        CombatAction.objects.create(
+            combat_session=session,
+            actor=actor,
+            target=participant,
+            action_type='other',  # Healing isn't a standard type yet, use 'other'
+            attack_name='Manual Healing',
+            damage_amount=amount, # Store healing amount in damage_amount positive? Or maybe negative?
+            # Usually healing is separate, but for simple log we can put it in description
+            hit=True,
+            round_number=session.current_round,
+            turn_number=session.current_turn_index,
+            description=f"Manual healing applied: {amount} HP"
+        )
+
         serializer = self.get_serializer(participant)
         return Response({
             "message": f"{participant.get_name()} healed {amount} HP",

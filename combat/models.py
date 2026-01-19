@@ -386,6 +386,9 @@ class CombatParticipant(models.Model):
     character = models.ForeignKey(Character, on_delete=models.CASCADE, blank=True, null=True, related_name='combat_participations')
     encounter_enemy = models.ForeignKey(EncounterEnemy, on_delete=models.CASCADE, blank=True, null=True, related_name='combat_participations')
     
+    # Optional name override (used for practice mode enemies without EncounterEnemy)
+    name = models.CharField(max_length=100, blank=True, help_text="Optional name override for practice mode")
+    
     # Combat state
     initiative = models.IntegerField(default=0)
     current_hp = models.IntegerField()
@@ -494,6 +497,10 @@ class CombatParticipant(models.Model):
     
     def get_name(self):
         """Get the name of the participant"""
+        # Check for explicit name override first (practice mode)
+        if self.name:
+            return self.name
+        # Then check for linked entities
         if self.character:
             return self.character.name
         elif self.encounter_enemy:
@@ -929,7 +936,7 @@ class CombatAction(models.Model):
     ]
     
     combat_session = models.ForeignKey(CombatSession, on_delete=models.CASCADE, related_name='actions')
-    actor = models.ForeignKey(CombatParticipant, on_delete=models.CASCADE, related_name='actions_taken')
+    actor = models.ForeignKey(CombatParticipant, on_delete=models.SET_NULL, related_name='actions_taken', null=True, blank=True)
     action_type = models.CharField(max_length=20, choices=ACTION_TYPES)
     
     # Target (optional, for attacks/spells)

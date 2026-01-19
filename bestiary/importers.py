@@ -186,6 +186,93 @@ class DnDBeyondAPI:
         return None
 
 
+class Open5eAPI:
+    """Integration with Open5e API for monster data"""
+    
+    BASE_URL = "https://api.open5e.com/monsters/"
+    
+    def __init__(self):
+        if not REQUESTS_AVAILABLE:
+            raise ImportError('Requests library not available. Install with: pip install requests')
+        self.session = requests.Session()
+    
+    def get_all_monsters(self, limit: int = 50) -> List[Dict]:
+        """Fetch all monsters from Open5e API, handling pagination"""
+        monsters = []
+        next_url = f"{self.BASE_URL}?limit={limit}"
+        
+        while next_url:
+            try:
+                print(f"Fetching {next_url}...")
+                response = self.session.get(next_url, timeout=30)
+                response.raise_for_status()
+                data = response.json()
+                
+                monsters.extend(data.get('results', []))
+                next_url = data.get('next')
+                
+            except requests.RequestException as e:
+                print(f"Open5e API error: {e}")
+                break
+                
+        return monsters
+
+    def parse_monster_data(self, data: Dict) -> Dict:
+        """Convert Open5e format to our internal format"""
+        # Mapping Open5e fields to our model
+        monster = {
+            'name': data.get('name', 'Unknown'),
+            'hit_points': data.get('hit_points', 1),
+            'armor_class': data.get('armor_class', 10),
+            'challenge_rating': str(data.get('challenge_rating', '')),
+            'speed': self._format_speed(data.get('speed', {})),
+            'strength': data.get('strength', 10),
+            'dexterity': data.get('dexterity', 10),
+            'constitution': data.get('constitution', 10),
+            'intelligence': data.get('intelligence', 10),
+            'wisdom': data.get('wisdom', 10),
+            'charisma': data.get('charisma', 10),
+            'str_save': data.get('strength_save'),
+            'dex_save': data.get('dexterity_save'),
+            'con_save': data.get('constitution_save'),
+            'int_save': data.get('intelligence_save'),
+            'wis_save': data.get('wisdom_save'),
+            'cha_save': data.get('charisma_save'),
+            'perception': data.get('skills', {}).get('perception'), # Simplified skill extraction
+            'stealth': data.get('skills', {}).get('stealth'),
+            # ... other skills would need more robust parsing if needed
+            'darkvision': data.get('senses', '').split(',')[0] if 'darkvision' in data.get('senses', '') else None,
+            'passive_perception': data.get('perception'), # Open5e has explicit field often
+            'languages': data.get('languages', '').split(', '),
+        }
+        
+        # Attacks
+        attacks = []
+        for action in (data.get('actions') or []):
+            if 'attack_bonus' in action:
+                 attacks.append({
+                    'name': action.get('name'),
+                    'bonus': action.get('attack_bonus', 0),
+                    'damage': action.get('damage_dice', '1d4') # Simplification, logic is complex
+                })
+        monster['attacks'] = attacks
+
+        # Abilities (Special Abilities)
+        abilities = []
+        for ability in (data.get('special_abilities') or []):
+            abilities.append({
+                'name': ability.get('name'),
+                'description': ability.get('desc')
+            })
+        monster['abilities'] = abilities
+        
+        return monster
+
+    def _format_speed(self, speed_data):
+        if isinstance(speed_data, dict):
+            return ', '.join([f"{k} {v}" for k, v in speed_data.items()])
+        return str(speed_data)
+
 class SRDMonsterData:
     """Official D&D 5e SRD monster data"""
     

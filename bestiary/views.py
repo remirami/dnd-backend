@@ -2,6 +2,7 @@ from rest_framework import viewsets, status
 from rest_framework.decorators import action
 from rest_framework.response import Response
 from rest_framework.parsers import MultiPartParser, FormParser
+from django.db.models import Q
 from django.core.files.storage import default_storage
 from django.core.files.base import ContentFile
 from django.shortcuts import render
@@ -15,9 +16,18 @@ from .management.commands.import_monsters import Command as ImportCommand
 
 
 class EnemyViewSet(viewsets.ModelViewSet):
-    queryset = Enemy.objects.all()
     serializer_class = EnemySerializer
     parser_classes = [MultiPartParser, FormParser]
+
+    def get_queryset(self):
+        queryset = Enemy.objects.all().order_by('name')
+        search_query = self.request.query_params.get('search', None)
+        if search_query:
+            queryset = queryset.filter(
+                Q(name__icontains=search_query) | 
+                Q(challenge_rating__icontains=search_query)
+            )
+        return queryset
 
     @action(detail=False, methods=['post'])
     def import_json(self, request):

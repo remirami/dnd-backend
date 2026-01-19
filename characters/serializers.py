@@ -111,6 +111,14 @@ class CharacterSerializer(serializers.ModelSerializer):
     background = CharacterBackgroundSerializer(read_only=True, allow_null=True)
     background_id = serializers.IntegerField(write_only=True, required=False, allow_null=True)
     
+    # Ability Scores (Write Only - used for creation)
+    strength = serializers.IntegerField(write_only=True, min_value=1, max_value=30, required=False)
+    dexterity = serializers.IntegerField(write_only=True, min_value=1, max_value=30, required=False)
+    constitution = serializers.IntegerField(write_only=True, min_value=1, max_value=30, required=False)
+    intelligence = serializers.IntegerField(write_only=True, min_value=1, max_value=30, required=False)
+    wisdom = serializers.IntegerField(write_only=True, min_value=1, max_value=30, required=False)
+    charisma = serializers.IntegerField(write_only=True, min_value=1, max_value=30, required=False)
+    
     # Display choices as readable text
     size_display = serializers.CharField(source='get_size_display', read_only=True)
     alignment_display = serializers.CharField(source='get_alignment_display', read_only=True)
@@ -171,21 +179,66 @@ class CharacterSerializer(serializers.ModelSerializer):
         return value
     
     def create(self, validated_data):
-        """Create a character with proper foreign key handling"""
+        """Create a character with proper foreign key handling and auto-create stats"""
         # Extract the _id fields and convert them to the actual foreign key fields
         character_class_id = validated_data.pop('character_class_id', None)
         race_id = validated_data.pop('race_id', None)
         background_id = validated_data.pop('background_id', None)
         
+        # Extract ability scores if provided (for create)
+        ability_scores = {
+            'strength': validated_data.pop('strength', 10),
+            'dexterity': validated_data.pop('dexterity', 10),
+            'constitution': validated_data.pop('constitution', 10),
+            'intelligence': validated_data.pop('intelligence', 10),
+            'wisdom': validated_data.pop('wisdom', 10),
+            'charisma': validated_data.pop('charisma', 10),
+        }
+        
         # Get the actual objects
+        character_class = None
+        race = None
         if character_class_id:
-            validated_data['character_class'] = CharacterClass.objects.get(pk=character_class_id)
+            character_class = CharacterClass.objects.get(pk=character_class_id)
+            validated_data['character_class'] = character_class
         if race_id:
-            validated_data['race'] = CharacterRace.objects.get(pk=race_id)
+            race = CharacterRace.objects.get(pk=race_id)
+            validated_data['race'] = race
         if background_id:
             validated_data['background'] = CharacterBackground.objects.get(pk=background_id)
         
-        return super().create(validated_data)
+        # Create the character
+        character = super().create(validated_data)
+        
+        # Auto-create CharacterStats
+        con_mod = (ability_scores['constitution'] - 10) // 2
+        dex_mod = (ability_scores['dexterity'] - 10) // 2
+        
+        # Calculate HP based on class hit dice
+        hit_dice_map = {'d6': 6, 'd8': 8, 'd10': 10, 'd12': 12}
+        die_size = hit_dice_map.get(character_class.hit_dice if character_class else 'd8', 8)
+        max_hp = max(1, die_size + con_mod)  # Level 1: max die + CON mod
+        
+        # Calculate AC (base 10 + DEX mod)
+        armor_class = 10 + dex_mod
+        
+        # Get race speed if available
+        speed = race.speed if race else 30
+        
+        CharacterStats.objects.create(
+            character=character,
+            **ability_scores,
+            hit_points=max_hp,
+            max_hit_points=max_hp,
+            armor_class=armor_class,
+            speed=speed,
+            initiative=dex_mod,
+            passive_perception=10 + ((ability_scores['wisdom'] - 10) // 2),
+            passive_investigation=10 + ((ability_scores['intelligence'] - 10) // 2),
+            passive_insight=10 + ((ability_scores['wisdom'] - 10) // 2),
+        )
+        
+        return character
     
     class Meta:
         model = Character

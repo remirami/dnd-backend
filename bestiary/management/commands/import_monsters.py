@@ -21,7 +21,7 @@ class Command(BaseCommand):
         parser.add_argument(
             '--source',
             type=str,
-            choices=['json', 'csv', 'dndbeyond', 'srd'],
+            choices=['json', 'csv', 'dndbeyond', 'srd', 'open5e'],
             required=True,
             help='Source type for import'
         )
@@ -60,6 +60,8 @@ class Command(BaseCommand):
                 self.import_from_dndbeyond(options['url'], dry_run, update_existing)
             elif source == 'srd':
                 self.import_srd_monsters(dry_run, update_existing)
+            elif source == 'open5e':
+                self.import_from_open5e(dry_run, update_existing)
         except Exception as e:
             raise CommandError(f'Import failed: {str(e)}')
 
@@ -114,6 +116,24 @@ class Command(BaseCommand):
         from bestiary.importers import SRDMonsterData
         srd_monsters = SRDMonsterData.get_srd_monsters()
         self.process_monsters(srd_monsters, dry_run, update_existing)
+
+    def import_from_open5e(self, dry_run, update_existing):
+        """Import monsters from Open5e API"""
+        from bestiary.importers import Open5eAPI
+        
+        self.stdout.write('Fetching monsters from Open5e API...')
+        api = Open5eAPI()
+        
+        # Fetch data
+        raw_monsters = api.get_all_monsters()
+        self.stdout.write(f'Fetched {len(raw_monsters)} monsters. Processing...')
+        
+        # Parse and process
+        monsters = []
+        for raw_monster in raw_monsters:
+            monsters.append(api.parse_monster_data(raw_monster))
+            
+        self.process_monsters(monsters, dry_run, update_existing)
 
     def process_monsters(self, monsters, dry_run, update_existing):
         """Process and import monster data"""
