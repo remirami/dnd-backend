@@ -349,9 +349,10 @@ class CharacterBuilderService:
                 final_scores = session.data['final_scores']
                 
                 # Calculate HP first (max at level 1)
-                hit_dice = char_class.hit_dice  # e.g., "d8"
-                die_size = int(hit_dice.replace('d', '').replace('1', ''))
-                con_mod = (final_scores['constitution'] - 10) / 2
+                hit_dice = char_class.hit_dice  # e.g., "d8", "1d10"
+                # Extract die size (handle both "d8" and "1d8" formats)
+                die_size = int(hit_dice.split('d')[-1])
+                con_mod = (final_scores['constitution'] - 10) // 2
                 max_hp = die_size + con_mod
                 max_hp = max(1, int(max_hp))  # Minimum 1 HP
                 

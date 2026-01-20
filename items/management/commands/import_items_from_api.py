@@ -215,7 +215,7 @@ class Command(BaseCommand):
             'category': category,
             'rarity': rarity,
             'is_magical': is_magical,
-            'requires_attunement': data.get('requires_attunement', False),
+            'requires_attunement': self._parse_bool(data.get('requires_attunement', False)),
         }
         
         # Try to parse weight and value
@@ -260,12 +260,30 @@ class Command(BaseCommand):
             name=damage_type_name
         )
         
+        # Parse range
+        range_str = data.get('range', '5')
+        range_normal = 0
+        range_long = 0
+        
+        if range_str == 'Reach':
+            range_normal = 10
+        else:
+            try:
+                # Handle "20/60" format
+                parts = str(range_str).split('/')
+                range_normal = int(self._parse_int(parts[0]))
+                if len(parts) > 1:
+                    range_long = int(self._parse_int(parts[1]))
+            except:
+                range_normal = 5
+        
         weapon_data = {
             **item_data,
             'damage_dice': damage_dice,
             'damage_type': damage_type,
             'weapon_type': data.get('category', 'simple'),
-            'range_normal': data.get('range', '5'),
+            'range_normal': range_normal,
+            'range_long': range_long,
         }
         
         try:
@@ -289,13 +307,20 @@ class Command(BaseCommand):
         name = item_data['name']
         
         # Parse AC
-        ac_base = self._parse_ac(data.get('armor_class', {}).get('base', 11))
+        ac_data = data.get('armor_class', {})
+        if isinstance(ac_data, dict):
+            ac_base = self._parse_ac(ac_data.get('base', 11))
+        else:
+            ac_base = self._parse_ac(ac_data or 11)
+            
+        str_req = data.get('strength_requirement')
+        min_strength = self._parse_int(str_req) if str_req else 0
         
         armor_data = {
             **item_data,
-            'armor_class': ac_base,
+            'base_ac': ac_base,
             'armor_type': data.get('armor_category', 'light'),
-            'strength_requirement': data.get('strength_requirement'),
+            'min_strength': min_strength,
             'stealth_disadvantage': data.get('stealth_disadvantage', False),
         }
         
@@ -317,7 +342,7 @@ class Command(BaseCommand):
         
         magic_data = {
             **item_data,
-            'attunement_required': data.get('requires_attunement', False),
+            'attunement_required': self._parse_bool(data.get('requires_attunement', False)),
         }
         
         # Try to parse magical properties from description
@@ -464,6 +489,31 @@ class Command(BaseCommand):
             pass
         
         return 10
+
+    def _parse_bool(self, value):
+        """Parse boolean value safely"""
+        if isinstance(value, bool):
+            return value
+        if not value or value == "" or value == "0":
+            return False
+        if isinstance(value, str):
+            return value.lower() in ['true', 'yes', '1', 'y']
+        return bool(value)
+
+    def _parse_int(self, value):
+        """Parse integer safely"""
+        if not value:
+            return 0
+        if isinstance(value, int):
+            return value
+        try:
+            import re
+            match = re.search(r'(\d+)', str(value))
+            if match:
+                return int(match.group(1))
+        except:
+            pass
+        return 0
 
     def _estimate_value_from_rarity(self, rarity):
         """Estimate item value based on rarity"""

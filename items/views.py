@@ -27,10 +27,13 @@ class ItemViewSet(viewsets.ModelViewSet):
     
     def get_queryset(self):
         queryset = Item.objects.all()
+        search = self.request.query_params.get('search', None)
         category = self.request.query_params.get('category', None)
         rarity = self.request.query_params.get('rarity', None)
         is_magical = self.request.query_params.get('is_magical', None)
         
+        if search:
+            queryset = queryset.filter(name__icontains=search)
         if category:
             queryset = queryset.filter(category__name__icontains=category)
         if rarity:
@@ -38,7 +41,7 @@ class ItemViewSet(viewsets.ModelViewSet):
         if is_magical is not None:
             queryset = queryset.filter(is_magical=is_magical.lower() == 'true')
         
-        return queryset
+        return queryset.order_by('name')
 
 
 class WeaponViewSet(viewsets.ModelViewSet):

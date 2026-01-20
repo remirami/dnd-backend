@@ -51,12 +51,73 @@ class CharacterFeatureSerializer(serializers.ModelSerializer):
         fields = "__all__"
 
 
+from items.serializers import ItemSerializer
+
 class CharacterSpellSerializer(serializers.ModelSerializer):
     level_display = serializers.CharField(source='get_level_display', read_only=True)
+    spell_details = serializers.SerializerMethodField()
+    spell_id = serializers.IntegerField(write_only=True, required=False, allow_null=True)
     
     class Meta:
         model = CharacterSpell
         fields = "__all__"
+        extra_kwargs = {
+            'name': {'required': False},
+            'level': {'required': False},
+            'school': {'required': False},
+            'spell': {'required': False},
+        }
+
+    def get_spell_details(self, obj):
+        if not obj.spell:
+            return None
+        from spells.serializers import SpellListSerializer
+        return SpellListSerializer(obj.spell).data
+    
+    def validate(self, data):
+        # If spell_id is provided, populate name, level, school from it
+        if 'spell_id' in data:
+            from spells.models import Spell
+            try:
+                spell = Spell.objects.get(pk=data['spell_id'])
+                data['spell'] = spell
+                # Auto-populate legacy fields if they are missing
+                if 'name' not in data:
+                    data['name'] = spell.name
+                if 'level' not in data:
+                    data['level'] = spell.level
+                if 'school' not in data:
+                    data['school'] = spell.school
+            except Spell.DoesNotExist:
+                raise serializers.ValidationError({"spell_id": "Spell not found"})
+        return data
+
+
+class CharacterItemSerializer(serializers.ModelSerializer):
+    item_details = serializers.SerializerMethodField()
+    item_id = serializers.IntegerField(write_only=True)
+
+    class Meta:
+        model = CharacterItem
+        fields = "__all__"
+        read_only_fields = ('character',)
+
+    def get_item_details(self, obj):
+        if not obj.item:
+            return None
+        
+        item = obj.item
+        if hasattr(item, 'weapon'):
+            from items.serializers import WeaponSerializer
+            return WeaponSerializer(item.weapon).data
+        elif hasattr(item, 'armor'):
+            from items.serializers import ArmorSerializer
+            return ArmorSerializer(item.armor).data
+        elif hasattr(item, 'consumable'):
+            from items.serializers import ConsumableSerializer
+            return ConsumableSerializer(item.consumable).data
+        
+        return ItemSerializer(item).data
 
 
 class CharacterResistanceSerializer(serializers.ModelSerializer):
@@ -67,6 +128,7 @@ class CharacterResistanceSerializer(serializers.ModelSerializer):
     class Meta:
         model = CharacterResistance
         fields = "__all__"
+        read_only_fields = ('character',)
 
 
 class CharacterStatsSerializer(serializers.ModelSerializer):
@@ -98,6 +160,7 @@ class CharacterSerializer(serializers.ModelSerializer):
     proficiencies = CharacterProficiencySerializer(many=True, read_only=True)
     features = CharacterFeatureSerializer(many=True, read_only=True)
     spells = CharacterSpellSerializer(many=True, read_only=True)
+    character_items = CharacterItemSerializer(many=True, read_only=True)
     resistances = CharacterResistanceSerializer(many=True, read_only=True)
     class_levels = CharacterClassLevelSerializer(many=True, read_only=True)
     

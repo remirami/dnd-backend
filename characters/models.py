@@ -349,6 +349,7 @@ class CharacterSpell(models.Model):
     ]
     
     character = models.ForeignKey(Character, on_delete=models.CASCADE, related_name="spells")
+    spell = models.ForeignKey('spells.Spell', on_delete=models.SET_NULL, null=True, blank=True, related_name='known_by')
     name = models.CharField(max_length=100)
     level = models.IntegerField(choices=SPELL_LEVELS)
     school = models.CharField(max_length=50, blank=True)  # e.g. "Evocation", "Abjuration"
@@ -361,7 +362,7 @@ class CharacterSpell(models.Model):
         return f"{self.character.name} - {self.name} (Level {self.level})"
     
     class Meta:
-        unique_together = ['character', 'name']
+        unique_together = [['character', 'name']] # Keep unique by name for now, simpler migration
 
 
 class CharacterResistance(models.Model):

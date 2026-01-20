@@ -899,7 +899,15 @@ class CharacterViewSet(viewsets.ModelViewSet):
             )
         
         # Use inventory management utility
-        slot = equipment_slot or character_item.equipment_slot or 'main_hand'
+        # If equipment_slot is not provided in request, we check the item's current slot
+        # But if current slot is 'inventory', we default to 'main_hand' which triggers auto-detection
+        slot = equipment_slot
+        if not slot:
+            if character_item.equipment_slot and character_item.equipment_slot != 'inventory':
+                slot = character_item.equipment_slot
+            else:
+                slot = 'main_hand'
+                
         success, message, char_item = equip_item(character, character_item.item, slot)
         
         if not success:
@@ -979,6 +987,104 @@ class CharacterViewSet(viewsets.ModelViewSet):
             }
         })
     
+    @action(detail=True, methods=['post'], url_path='remove_item')
+    def remove_item(self, request, pk=None):
+        """Remove an item from character's inventory"""
+        character = self.get_object()
+        
+        character_item_id = request.data.get('character_item_id')
+        if not character_item_id:
+            return Response(
+                {"error": "Missing 'character_item_id'"},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+        
+        try:
+            character_item = CharacterItem.objects.get(pk=character_item_id, character=character)
+        except CharacterItem.DoesNotExist:
+            return Response(
+                {"error": "Item not found in character's inventory"},
+                status=status.HTTP_404_NOT_FOUND
+            )
+        
+        item_name = character_item.item.name
+        character_item.delete()
+        
+        # Get updated encumbrance info
+        total_weight = calculate_total_weight(character)
+        encumbrance = get_encumbrance_level(character)
+        encumbrance_effects = get_encumbrance_effects(character)
+        
+        return Response({
+            "message": f"Removed {item_name} from inventory",
+            "encumbrance": {
+                'level': encumbrance,
+                'total_weight': total_weight,
+                'effects': encumbrance_effects
+            }
+        })
+    @action(detail=True, methods=['post'], url_path='update_stats')
+    def update_stats(self, request, pk=None):
+        """Update character's ability scores"""
+        character = self.get_object()
+        
+        # Get the stats data
+        stats_data = request.data
+        
+        # Update the character's stats
+        if character.stats:
+            # Update existing stats
+            for stat_name in ['strength', 'dexterity', 'constitution', 'intelligence', 'wisdom', 'charisma']:
+                if stat_name in stats_data:
+                    value = int(stats_data[stat_name])
+                    # Validate range (1-30)
+                    if 1 <= value <= 30:
+                        setattr(character.stats, stat_name, value)
+            character.stats.save()
+            
+            # Recalculate max HP based on new Constitution
+            if character.character_class:
+                hit_dice = character.character_class.hit_dice  # e.g., "d8", "1d10"
+                # Extract die size (handle both "d8" and "1d8" formats)
+                die_size = int(hit_dice.split('d')[-1])
+                con_mod = (character.stats.constitution - 10) // 2
+                # HP = (die_size + con_mod) per level
+                new_max_hp = (die_size + con_mod) * character.level
+                new_max_hp = max(1, new_max_hp)  # Minimum 1 HP
+                
+                # Update max HP
+                old_max_hp = character.stats.max_hit_points
+                character.stats.max_hit_points = new_max_hp
+                
+                # Adjust current HP proportionally to maintain HP percentage
+                if old_max_hp > 0:
+                    hp_percentage = character.stats.hit_points / old_max_hp
+                    character.stats.hit_points = int(new_max_hp * hp_percentage)
+                else:
+                    character.stats.hit_points = new_max_hp
+                    
+                character.stats.save()
+        else:
+            # Create new stats if they don't exist
+            from .models import CharacterStats
+            stats = CharacterStats.objects.create(
+                strength=int(stats_data.get('strength', 10)),
+                dexterity=int(stats_data.get('dexterity', 10)),
+                constitution=int(stats_data.get('constitution', 10)),
+                intelligence=int(stats_data.get('intelligence', 10)),
+                wisdom=int(stats_data.get('wisdom', 10)),
+                charisma=int(stats_data.get('charisma', 10))
+            )
+            character.stats = stats
+            character.save()
+        
+        # Recalculate derived stats
+        from .inventory_management import recalculate_armor_class
+        recalculate_armor_class(character)
+        
+        # Return updated character
+        serializer = self.get_serializer(character)
+        return Response(serializer.data)
     @action(detail=True, methods=['get'])
     def combat_stats(self, request, pk=None):
         """Get character's lifetime combat statistics"""
@@ -1395,18 +1501,74 @@ class CharacterViewSet(viewsets.ModelViewSet):
         """
         character = self.get_object()
         
-        if not is_known_caster(character):
+        if not is_known_caster(character) and not is_prepared_caster(character):
             return Response(
-                {"error": f"{character.character_class.name} is not a known caster"},
+                {"error": f"{character.character_class.name} is not a known or prepared caster"},
                 status=status.HTTP_400_BAD_REQUEST
             )
         
+        spell_id = request.data.get('spell_id')
         spell_name = request.data.get('spell_name')
         spell_level = request.data.get('spell_level')
         
+        # If spell_id provided, fetch details from Spell model
+        spell_obj = None
+        if spell_id:
+            from spells.models import Spell
+            try:
+                spell_obj = Spell.objects.get(pk=spell_id)
+                spell_name = spell_obj.name
+                spell_level = spell_obj.level
+                # Use provided values as overrides if needed, otherwise defaults
+                school = request.data.get('school', spell_obj.school)
+                description = request.data.get('description', spell_obj.description)
+                is_ritual = request.data.get('is_ritual', spell_obj.ritual)
+            except Spell.DoesNotExist:
+                return Response(
+                    {"error": "Spell not found"},
+                    status=status.HTTP_404_NOT_FOUND
+                )
+        else:
+            school = request.data.get('school', '')
+            description = request.data.get('description', '')
+            is_ritual = request.data.get('is_ritual', False)
+
         if not spell_name or spell_level is None:
             return Response(
                 {"error": "spell_name and spell_level are required"},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+        
+        # Validate spell level based on character's spellcasting ability
+        from .multiclassing import get_total_level
+        total_level = get_total_level(character)
+        
+        # Determine max spell level based on character level
+        # This follows the standard D&D 5e spell slot progression
+        max_spell_level = 0
+        if total_level >= 17:
+            max_spell_level = 9
+        elif total_level >= 15:
+            max_spell_level = 8
+        elif total_level >= 13:
+            max_spell_level = 7
+        elif total_level >= 11:
+            max_spell_level = 6
+        elif total_level >= 9:
+            max_spell_level = 5
+        elif total_level >= 7:
+            max_spell_level = 4
+        elif total_level >= 5:
+            max_spell_level = 3
+        elif total_level >= 3:
+            max_spell_level = 2
+        elif total_level >= 1:
+            max_spell_level = 1
+        
+        # Cantrips (level 0) are always allowed
+        if spell_level > 0 and spell_level > max_spell_level:
+            return Response(
+                {"error": f"Character level {total_level} can only learn spells up to level {max_spell_level}"},
                 status=status.HTTP_400_BAD_REQUEST
             )
         
@@ -1417,22 +1579,24 @@ class CharacterViewSet(viewsets.ModelViewSet):
                 status=status.HTTP_400_BAD_REQUEST
             )
         
-        # Check limit
-        if not can_learn_spell(character, spell_level):
-            spells_known_limit = calculate_spells_known(character)
-            return Response(
-                {"error": f"Cannot learn more spells (limit: {spells_known_limit})"},
-                status=status.HTTP_400_BAD_REQUEST
-            )
+        # Check limit (only for Known Casters)
+        if is_known_caster(character):
+            if not can_learn_spell(character, spell_level):
+                spells_known_limit = calculate_spells_known(character)
+                return Response(
+                    {"error": f"Cannot learn more spells (limit: {spells_known_limit})"},
+                    status=status.HTTP_400_BAD_REQUEST
+                )
         
         # Create spell
         spell = CharacterSpell.objects.create(
             character=character,
+            spell=spell_obj,
             name=spell_name,
             level=spell_level,
-            school=request.data.get('school', ''),
-            description=request.data.get('description', ''),
-            is_ritual=request.data.get('is_ritual', False)
+            school=school,
+            description=description,
+            is_ritual=is_ritual
         )
         
         return Response({
@@ -1462,9 +1626,30 @@ class CharacterViewSet(viewsets.ModelViewSet):
                 status=status.HTTP_400_BAD_REQUEST
             )
         
+        spell_id = request.data.get('spell_id')
         spell_name = request.data.get('spell_name')
         spell_level = request.data.get('spell_level')
         
+        spell_obj = None
+        if spell_id:
+            from spells.models import Spell
+            try:
+                spell_obj = Spell.objects.get(pk=spell_id)
+                spell_name = spell_obj.name
+                spell_level = spell_obj.level
+                school = request.data.get('school', spell_obj.school)
+                description = request.data.get('description', spell_obj.description)
+                is_ritual = request.data.get('is_ritual', spell_obj.ritual)
+            except Spell.DoesNotExist:
+                return Response(
+                    {"error": "Spell not found"},
+                    status=status.HTTP_404_NOT_FOUND
+                )
+        else:
+            school = request.data.get('school', '')
+            description = request.data.get('description', '')
+            is_ritual = request.data.get('is_ritual', False)
+
         if not spell_name or spell_level is None:
             return Response(
                 {"error": "spell_name and spell_level are required"},
@@ -1491,16 +1676,19 @@ class CharacterViewSet(viewsets.ModelViewSet):
             character=character,
             name=spell_name,
             defaults={
+                'spell': spell_obj,
                 'level': spell_level,
-                'school': request.data.get('school', ''),
-                'description': request.data.get('description', ''),
-                'is_ritual': request.data.get('is_ritual', False),
+                'school': school,
+                'description': description,
+                'is_ritual': is_ritual,
                 'in_spellbook': True
             }
         )
         
         if not created:
             spell.in_spellbook = True
+            if spell_obj and not spell.spell:
+                spell.spell = spell_obj
             spell.save()
         
         return Response({
