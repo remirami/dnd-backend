@@ -282,9 +282,10 @@ class CharacterBuilderViewSet(viewsets.GenericViewSet):
             )
         
         alignment = request.data.get('alignment', 'N')
+        hp_method = request.data.get('hp_method', 'fixed')
         
         success, error, character = CharacterBuilderService.finalize_character(
-            session, name, alignment
+            session, name, alignment, hp_method
         )
         
         if not success:

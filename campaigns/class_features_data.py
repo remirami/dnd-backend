@@ -1076,6 +1076,212 @@ CLASS_FEATURES = {
                 'description': 'You can draw on your inner reserve of mystical power while entreating your patron to regain expended spell slots. You can spend 1 minute entreating your patron for aid to regain all your expended spell slots from your Pact Magic feature. Once you regain spell slots with this feature, you must finish a long rest before you can do so again.'
             }
         ]
+    },
+    'barbarian': {
+        1: [
+            {
+                'name': 'Rage',
+                'description': 'In battle, you fight with primal ferocity. On your turn, you can enter a rage as a bonus action. While raging, you gain the following benefits if you aren\'t wearing heavy armor: You have advantage on Strength checks and Strength saving throws. When you make a melee weapon attack using Strength, you gain a bonus to the damage roll. You have resistance to bludgeoning, piercing, and slashing damage. You can\'t cast spells or concentrate on them while raging. Your rage lasts for 1 minute. It ends early if you are knocked unconscious or if your turn ends and you haven\'t attacked a hostile creature since your last turn or taken damage since then. You can also end your rage on your turn as a bonus action. You use this feature twice per long rest at 1st level.'
+            },
+            {
+                'name': 'Unarmored Defense',
+                'description': 'While you are not wearing any armor, your Armor Class equals 10 + your Dexterity modifier + your Constitution modifier. You can use a shield and still gain this benefit.'
+            }
+        ],
+        2: [
+            {
+                'name': 'Reckless Attack',
+                'description': 'Starting at 2nd level, you can throw aside all concern for defense to attack with fierce desperation. When you make your first attack on your turn, you can decide to attack recklessly. Doing so gives you advantage on melee weapon attack rolls using Strength during this turn, but attack rolls against you have advantage until your next turn.'
+            },
+            {
+                'name': 'Danger Sense',
+                'description': 'At 2nd level, you gain an uncanny sense of when things nearby aren\'t as they should be, giving you an edge when you dodge away from danger. You have advantage on Dexterity saving throws against effects that you can see, such as traps and spells. To gain this benefit, you can\'t be blinded, deafened, or incapacitated.'
+            }
+        ],
+        3: [
+            {
+                'name': 'Primal Path',
+                'description': 'You choose a path that shapes the nature of your rage (Path of the Berserker). Your choice grants you features at 3rd level and again at 6th, 10th, and 14th level.'
+            }
+        ],
+        4: [], # ASI
+        5: [
+            {
+                'name': 'Extra Attack',
+                'description': 'Beginning at 5th level, you can attack twice, instead of once, whenever you take the Attack action on your turn.'
+            },
+            {
+                'name': 'Fast Movement',
+                'description': 'Starting at 5th level, your speed increases by 10 feet while you aren\'t wearing heavy armor.'
+            }
+        ],
+        6: [], # Primal Path
+        7: [
+            {
+                'name': 'Feral Instinct',
+                'description': 'By 7th level, your instincts are so honed that you have advantage on initiative rolls. Additionally, if you are surprised at the beginning of combat and aren\'t incapacitated, you can act normally on your first turn, but only if you enter your rage before doing anything else on that turn.'
+            }
+        ],
+        8: [], # ASI
+        9: [
+            {
+                'name': 'Brutal Critical (1 die)',
+                'description': 'Beginning at 9th level, you can roll one additional weapon damage die when determining the extra damage for a critical hit with a melee attack.'
+            }
+        ],
+        10: [], # Primal Path
+        11: [
+            {
+                'name': 'Relentless Rage',
+                'description': 'Starting at 11th level, your rage can keep you fighting despite grievous wounds. If you drop to 0 hit points while you\'re raging and don\'t die outright, you can make a DC 10 Constitution saving throw. If you succeed, you drop to 1 hit point instead. Each time you use this feature after the first, the DC increases by 5. When you finish a short or long rest, the DC resets to 10.'
+            }
+        ],
+        12: [], # ASI
+        13: [
+            {
+                'name': 'Brutal Critical (2 dice)',
+                'description': 'You can roll two additional weapon damage dice when determining the extra damage for a critical hit with a melee attack.'
+            }
+        ],
+        14: [], # Primal Path
+        15: [
+            {
+                'name': 'Persistent Rage',
+                'description': 'Beginning at 15th level, your rage is so fierce that it ends early only if you fall unconscious or if you choose to end it.'
+            }
+        ],
+        16: [], # ASI
+        17: [
+            {
+                'name': 'Brutal Critical (3 dice)',
+                'description': 'You can roll three additional weapon damage dice when determining the extra damage for a critical hit with a melee attack.'
+            }
+        ],
+        18: [
+            {
+                'name': 'Indomitable Might',
+                'description': 'Beginning at 18th level, if your total for a Strength check is less than your Strength score, you can use that score in place of the total.'
+            }
+        ],
+        19: [], # ASI
+        20: [
+            {
+                'name': 'Primal Champion',
+                'description': 'At 20th level, you embody the power of the wilds. Your Strength and Constitution scores increase by 4. Your maximum for those scores is now 24.'
+            }
+        ]
+    },
+    'monk': {
+        1: [
+            {
+                'name': 'Unarmored Defense',
+                'description': 'Beginning at 1st level, while you are wearing no armor and not wielding a shield, your AC equals 10 + your Dexterity modifier + your Wisdom modifier.'
+            },
+            {
+                'name': 'Martial Arts',
+                'description': 'At 1st level, your practice of martial arts gives you mastery of combat styles that use unarmed strikes and monk weapons. You gain the following benefits while you are unarmed or wielding only monk weapons and you aren\'t wearing armor or wielding a shield: You can use Dexterity instead of Strength for attack and damage rolls. You can roll a d4 in place of the normal damage. When you use the Attack action with an unarmed strike or a monk weapon on your turn, you can make one unarmed strike as a bonus action.'
+            }
+        ],
+        2: [
+            {
+                'name': 'Ki',
+                'description': 'Starting at 2nd level, your training allows you to harness the mystic energy of ki. You have 2 ki points, and you gain more as you reach higher levels. You can spend these points to fuel various ki features. You start with three features: Flurry of Blows, Patient Defense, and Step of the Wind.'
+            },
+             {
+                'name': 'Unarmored Movement',
+                'description': 'Starting at 2nd level, your speed increases by 10 feet while you are not wearing armor or wielding a shield. This bonus increases when you reach certain monk levels.'
+            }
+        ],
+        3: [
+            {
+                'name': 'Monastic Tradition',
+                'description': 'You commit yourself to a monastic tradition (Way of the Open Hand). Your tradition grants you features at 3rd level and again at 6th, 11th, and 17th level.'
+            },
+            {
+                'name': 'Deflect Missiles',
+                'description': 'Starting at 3rd level, you can use your reaction to deflect or catch the missile when you are hit by a ranged weapon attack. When you do so, the damage you take from the attack is reduced by 1d10 + your Dexterity modifier + your monk level.'
+            }
+        ],
+        4: [
+            {
+                'name': 'Slow Fall',
+                'description': 'Beginning at 4th level, you can use your reaction when you fall to reduce any falling damage you take by an amount equal to five times your monk level.'
+            }
+        ], 
+        5: [
+            {
+                'name': 'Extra Attack',
+                'description': 'Beginning at 5th level, you can attack twice, instead of once, whenever you take the Attack action on your turn.'
+            },
+            {
+                'name': 'Stunning Strike',
+                'description': 'Starting at 5th level, you can interfere with the flow of ki in an opponent\'s body. When you hit another creature with a melee weapon attack, you can spend 1 ki point to attempt to stunning strike. The target must succeed on a Constitution saving throw or be stunned until the end of your next turn.'
+            }
+        ],
+        6: [
+            {
+                'name': 'Ki-Empowered Strikes',
+                'description': 'Starting at 6th level, your unarmed strikes count as magical for the purpose of overcoming resistance and immunity to nonmagical attacks and damage.'
+            }
+        ],
+        7: [
+            {
+                'name': 'Evasion',
+                'description': 'At 7th level, your instinctive agility lets you dodge out of the way of certain area effects, such as a blue dragon\'s lightning breath or a fireball spell. When you are subjected to an effect that allows you to make a Dexterity saving throw to take only half damage, you instead take no damage if you succeed on the saving throw, and only half damage if you fail.'
+            },
+            {
+                'name': 'Stillness of Mind',
+                'description': 'Starting at 7th level, you can use your action to end one effect on yourself that is causing you to be charmed or frightened.'
+            }
+        ],
+        8: [], # ASI
+        9: [
+            {
+                'name': 'Unarmored Movement Improvement',
+                'description': 'At 9th level, you gain the ability to move along vertical surfaces and across liquids on your turn without falling during the move.'
+            }
+        ],
+        10: [
+            {
+                'name': 'Purity of Body',
+                'description': 'At 10th level, your mastery of the ki flowing through you makes you immune to disease and poison.'
+            }
+        ],
+        11: [], # Tradition
+        12: [], # ASI
+        13: [
+            {
+                'name': 'Tongue of the Sun and Moon',
+                'description': 'Starting at 13th level, you learn to touch the ki of other minds so that you understand all spoken languages. Moreover, any creature that can understand a language can understand what you say.'
+            }
+        ],
+        14: [
+            {
+                'name': 'Diamond Soul',
+                'description': 'Beginning at 14th level, your mastery of ki grants you proficiency in all saving throws. Additionally, whenever you make a saving throw and fail, you can spend 1 ki point to reroll it and take the second result.'
+            }
+        ],
+        15: [
+            {
+                'name': 'Timeless Body',
+                'description': 'At 15th level, your ki sustains you so that you suffer none of the frailty of old age, and you can\'t be aged magically. You can still die of old age, however. In addition, you no longer need food or water.'
+            }
+        ],
+        16: [], # ASI
+        17: [], # Tradition
+        18: [
+            {
+                'name': 'Empty Body',
+                'description': 'Beginning at 18th level, you can use your action to spend 4 ki points to become invisible for 1 minute. During that time, you also have resistance to all damage but force damage. Additionally, you can spend 8 ki points to cast the astral projection spell, without needing material components. When you do so, you can\'t take any other creatures with you.'
+            }
+        ],
+        19: [], # ASI
+        20: [
+            {
+                'name': 'Perfect Self',
+                'description': 'At 20th level, when you roll for initiative and have no ki points remaining, you regain 4 ki points.'
+            }
+        ]
     }
 }
 
@@ -1092,7 +1298,14 @@ def get_class_features(class_name, level):
         List of feature dictionaries with 'name' and 'description' keys
     """
     if class_name not in CLASS_FEATURES:
-        return []
+        # Try lowercase as fallback
+        if class_name.lower() in CLASS_FEATURES:
+            class_name = class_name.lower()
+        # Try title case as fallback
+        elif class_name.title() in CLASS_FEATURES:
+            class_name = class_name.title()
+        else:
+            return []
     
     if level not in CLASS_FEATURES[class_name]:
         return []
@@ -1123,6 +1336,23 @@ def get_all_features_up_to_level(class_name, level):
                 features_by_level[lvl] = features
     
     return features_by_level
+
+
+# Available subclasses by class
+AVAILABLE_SUBCLASSES = {
+    'Fighter': ['Champion', 'Battle Master'],
+    'Rogue': ['Thief', 'Assassin'],
+    'Wizard': ['School of Evocation'],
+    'Cleric': ['Life Domain'],
+    'Druid': ['Circle of the Land'],
+    'Monk': ['Way of the Open Hand'],
+    'Paladin': ['Oath of Devotion'],
+    'Ranger': ['Hunter'],
+    'Sorcerer': ['Draconic Bloodline'],
+    'Warlock': ['The Fiend'],
+    'Barbarian': ['Path of the Berserker'],
+    'Bard': ['College of Lore'],
+}
 
 
 # Subclass features by subclass name and level

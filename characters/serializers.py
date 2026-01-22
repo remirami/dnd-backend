@@ -273,6 +273,30 @@ class CharacterSerializer(serializers.ModelSerializer):
         # Create the character
         character = super().create(validated_data)
         
+        # Apply racial bonuses to stats
+        if race:
+            from .services.validators import RacialBonusCalculator
+            # Map full names to short names for calculator
+            short_scores = {
+                'str': ability_scores['strength'],
+                'dex': ability_scores['dexterity'],
+                'con': ability_scores['constitution'],
+                'int': ability_scores['intelligence'],
+                'wis': ability_scores['wisdom'],
+                'cha': ability_scores['charisma'],
+            }
+            
+            # Apply bonuses
+            final_scores_short = RacialBonusCalculator.apply_bonuses(short_scores, race)
+            
+            # Update ability_scores with results
+            ability_scores['strength'] = final_scores_short['str']
+            ability_scores['dexterity'] = final_scores_short['dex']
+            ability_scores['constitution'] = final_scores_short['con']
+            ability_scores['intelligence'] = final_scores_short['int']
+            ability_scores['wisdom'] = final_scores_short['wis']
+            ability_scores['charisma'] = final_scores_short['cha']
+        
         # Auto-create CharacterStats
         con_mod = (ability_scores['constitution'] - 10) // 2
         dex_mod = (ability_scores['dexterity'] - 10) // 2
@@ -301,9 +325,217 @@ class CharacterSerializer(serializers.ModelSerializer):
             passive_insight=10 + ((ability_scores['wisdom'] - 10) // 2),
         )
         
+        # Apply racial skills and traits
+        if race:
+            # Parse skill proficiencies (comma-separated)
+            if race.skill_proficiencies:
+                skill_names = [s.strip() for s in race.skill_proficiencies.split(',') if s.strip()]
+                for skill_name in skill_names:
+                    CharacterProficiency.objects.create(
+                        character=character,
+                        proficiency_type='skill',
+                        skill_name=skill_name,
+                        source='Race'
+                    )
+            
+            # Parse traits (JSON list)
+            if race.traits:
+                for trait in race.traits:
+                    CharacterFeature.objects.create(
+                        character=character,
+                        name=trait.get('name', 'Unknown Trait'),
+                        feature_type='racial',
+                        description=trait.get('description', ''),
+                        source='Race'
+                    )
+            
+            # Add Ability Score Increases as a feature
+            if race.ability_score_increases:
+                # Parse the increases (e.g., "+2 str, +1 con")
+                increases_str = race.ability_score_increases
+                # Format it nicely for display
+                ability_map = {
+                    'str': 'Strength',
+                    'dex': 'Dexterity', 
+                    'con': 'Constitution',
+                    'int': 'Intelligence',
+                    'wis': 'Wisdom',
+                    'cha': 'Charisma'
+                }
+                
+                # Parse and format the description
+                parts = []
+                for part in increases_str.split(','):
+                    part = part.strip()
+                    if part:
+                        # Extract bonus (e.g., "+2") and ability (e.g., "str")
+                        for abbr, full_name in ability_map.items():
+                            if abbr in part.lower():
+                                # Get the number
+                                import re
+                                match = re.search(r'[+-]?\d+', part)
+                                if match:
+                                    bonus = match.group()
+                                    parts.append(f"{bonus} {full_name}")
+                                break
+                
+                if parts:
+                    description = "Your ability scores increase by: " + ", ".join(parts) + "."
+                    CharacterFeature.objects.create(
+                        character=character,
+                        name='Ability Score Increase',
+                        feature_type='racial',
+                        description=description,
+                        source='Race'
+                    )
+        
+        # Apply background skills and features
+        background = validated_data.get('background')
+        if background:
+            # Skills
+            if background.skill_proficiencies:
+                skill_names = [s.strip() for s in background.skill_proficiencies.split(',') if s.strip()]
+                for skill_name in skill_names:
+                    # Check for duplicates or handle gracefully? 
+                    # For now just create, assuming unique_together handles or we ignore overlap
+                    if not CharacterProficiency.objects.filter(character=character, proficiency_type='skill', skill_name=skill_name).exists():
+                         CharacterProficiency.objects.create(
+                            character=character,
+                            proficiency_type='skill',
+                            skill_name=skill_name,
+                            source='Background'
+                        )
+
+            # Tools
+            if background.tool_proficiencies:
+                tool_names = [t.strip() for t in background.tool_proficiencies.split(',') if t.strip()]
+                for tool_name in tool_names:
+                     if not CharacterProficiency.objects.filter(character=character, proficiency_type='tool', item_name=tool_name).exists():
+                        CharacterProficiency.objects.create(
+                            character=character,
+                            proficiency_type='tool',
+                            item_name=tool_name,
+                            source='Background'
+                        )
+            
+            # Feature
+            if background.feature_name:
+                CharacterFeature.objects.create(
+                    character=character,
+                    name=background.feature_name,
+                    feature_type='background',
+                    description=background.feature_description or '',
+                    source='Background'
+                )
+
         return character
+
+    def update(self, instance, validated_data):
+        """Update character and check for ASI levels"""
+        old_level = instance.level
+        instance = super().update(instance, validated_data)
+        new_level = instance.level
+        
+        # Check for ASI levels if level increased
+        # Check for ASI levels if level increased
+        if new_level > old_level:
+            asi_levels = [4, 8, 12, 16, 19]
+            pending = instance.pending_asi_levels or []
+            
+            # Check all levels reached in this update
+            for level in range(old_level + 1, new_level + 1):
+                if level in asi_levels and level not in pending:
+                    pending.append(level)
+            
+            if pending != instance.pending_asi_levels:
+                instance.pending_asi_levels = pending
+                instance.save(update_fields=['pending_asi_levels'])
+            
+            # Check for Subclass Selection
+            if not instance.subclass:
+                subclass_levels = {
+                    'Cleric': 1,
+                    'Druid': 2,
+                    'Wizard': 2,
+                    'Sorcerer': 1,
+                    'Warlock': 1,
+                }
+                default_subclass_level = 3
+                # Get class name safely
+                class_name = instance.character_class.name if instance.character_class else None
+                if class_name:
+                    required_level = subclass_levels.get(class_name, default_subclass_level)
+                    if new_level >= required_level:
+                        instance.pending_subclass_selection = True
+                        instance.save(update_fields=['pending_subclass_selection'])
+            
+            # Apply Class Features for gained levels
+            if instance.character_class:
+                from campaigns.class_features_data import get_class_features
+                from .models import CharacterFeature
+                
+                # We need to apply features for ALL levels gained in this jump
+                for level in range(old_level + 1, new_level + 1):
+                    # Handle case-insensitive class name lookup
+                    features = get_class_features(instance.character_class.name.lower(), level)
+                    for feature_data in features:
+                        CharacterFeature.objects.get_or_create(
+                            character=instance,
+                            name=feature_data['name'],
+                            defaults={
+                                'feature_type': 'class',
+                                'description': feature_data['description'],
+                                'source': f"{instance.character_class.name} Level {level}"
+                            }
+                        )
+
+        
+        return instance
     
     class Meta:
         model = Character
         fields = "__all__"
 
+
+
+class FeatSerializer(serializers.ModelSerializer):
+    """Serializer for feats with optional eligibility checking"""
+    is_eligible = serializers.SerializerMethodField()
+    reason_if_not = serializers.SerializerMethodField()
+    
+    class Meta:
+        from .models import Feat
+        model = Feat
+        fields = '__all__'
+        extra_kwargs = {
+            'is_eligible': {'read_only': True},
+            'reason_if_not': {'read_only': True},
+        }
+    
+    def get_is_eligible(self, obj):
+        """Check if character (from context) is eligible for this feat"""
+        character = self.context.get('character')
+        if not character:
+            return None
+        is_eligible, _ = obj.check_prerequisites(character)
+        return is_eligible
+    
+    def get_reason_if_not(self, obj):
+        """Get reason why character is not eligible"""
+        character = self.context.get('character')
+        if not character:
+            return None
+        _, reason = obj.check_prerequisites(character)
+        return reason
+
+
+class CharacterFeatSerializer(serializers.ModelSerializer):
+    """Serializer for character feats with nested feat details"""
+    feat = FeatSerializer(read_only=True)
+    feat_id = serializers.IntegerField(write_only=True, required=False)
+    
+    class Meta:
+        from .models import CharacterFeat
+        model = CharacterFeat
+        fields = '__all__'
+        read_only_fields = ('character', 'taken_at')

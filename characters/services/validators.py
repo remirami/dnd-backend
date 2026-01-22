@@ -129,36 +129,53 @@ class AbilityScoreValidator:
 class RacialBonusCalculator:
     """Calculates final ability scores after racial bonuses"""
     
-    # Racial ability bonuses
-    RACIAL_BONUSES = {
-        'human': {'str': 1, 'dex': 1, 'con': 1, 'int': 1, 'wis': 1, 'cha': 1},
-        'elf': {'dex': 2},
-        'dwarf': {'con': 2},
-        'halfling': {'dex': 2},
-        'dragonborn': {'str': 2, 'cha': 1},
-        'gnome': {'int': 2},
-        'half-elf': {'cha': 2},  # Plus +1 to two others
-        'half-orc': {'str': 2, 'con': 1},
-        'tiefling': {'int': 1, 'cha': 2},
-    }
-    
     @classmethod
-    def apply_bonuses(cls, base_scores, race_name):
+    def parse_bonuses(cls, race):
+        """
+        Parse ability score increases from race model
+        
+        Args:
+            race: CharacterRace object
+            
+        Returns:
+            dict: {"str": 1, "dex": 2} etc
+        """
+        bonuses = {}
+        if not race or not race.ability_score_increases:
+             return bonuses
+             
+        # Format is "STR+1,DEX+1"
+        try:
+            parts = race.ability_score_increases.split(',')
+            for part in parts:
+                part = part.strip()
+                if not part:
+                    continue
+                    
+                # Extract ability and amount (e.g. STR+2 or STR-1)
+                ability_code = part[:3].lower()
+                amount = int(part[3:])
+                
+                if ability_code in ['str', 'dex', 'con', 'int', 'wis', 'cha']:
+                    bonuses[ability_code] = amount
+        except (ValueError, IndexError):
+            pass
+            
+        return bonuses
+
+    @classmethod
+    def apply_bonuses(cls, base_scores, race):
         """
         Apply racial bonuses to base scores
         
         Args:
             base_scores: dict like {"str": 15, "dex": 14, ...}
-            race_name: string race name (lowercase)
+            race: CharacterRace object
             
         Returns:
             dict: Final scores with bonuses applied
         """
-        if race_name not in cls.RACIAL_BONUSES:
-            # No bonuses for unknown race
-            return base_scores.copy()
-        
-        bonuses = cls.RACIAL_BONUSES[race_name]
+        bonuses = cls.parse_bonuses(race)
         final_scores = base_scores.copy()
         
         for ability, bonus in bonuses.items():
@@ -168,9 +185,9 @@ class RacialBonusCalculator:
         return final_scores
     
     @classmethod
-    def get_bonuses(cls, race_name):
+    def get_bonuses(cls, race):
         """Get racial bonuses for a race"""
-        return cls.RACIAL_BONUSES.get(race_name, {})
+        return cls.parse_bonuses(race)
 
 
 class MulticlassPrerequisiteChecker:

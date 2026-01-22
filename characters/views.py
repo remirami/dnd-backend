@@ -49,24 +49,9 @@ class CharacterViewSet(viewsets.ModelViewSet):
         ).order_by('-created_at')
     
     def perform_create(self, serializer):
-        """Automatically set the user when creating a character and apply racial and background features"""
+        """Automatically set the user when creating a character"""
         character = serializer.save(user=self.request.user)
-        
-        # Apply racial features automatically
-        from campaigns.racial_features_data import apply_racial_features_to_character
-        try:
-            apply_racial_features_to_character(character)
-        except Exception as e:
-            # Log error but don't fail character creation
-            print(f"Warning: Failed to apply racial features to {character.name}: {str(e)}")
-        
-        # Apply background features automatically
-        from campaigns.background_features_data import apply_background_features_to_character
-        try:
-            apply_background_features_to_character(character)
-        except Exception as e:
-            # Log error but don't fail character creation
-            print(f"Warning: Failed to apply background features to {character.name}: {str(e)}")
+        # Note: Racial and background features are already applied in CharacterSerializer.create
     
     @action(detail=True, methods=['post'])
     def apply_racial_features(self, request, pk=None):
@@ -157,32 +142,74 @@ class CharacterViewSet(viewsets.ModelViewSet):
         
         # If multiclassing, add level to that class
         if target_class:
-            # Check prerequisites if this is a new class
-            can_multiclass, reason = can_multiclass_into(character, target_class.name)
-            if not can_multiclass:
-                # Check if already has this class
-                try:
-                    class_level = CharacterClassLevel.objects.get(
-                        character=character,
-                        character_class=target_class
-                    )
-                    # Already has this class, just level it up
-                    if class_level.level >= 20:
-                        return Response(
-                            {"error": f"Cannot level up {target_class.get_name_display()} beyond level 20"},
-                            status=status.HTTP_400_BAD_REQUEST
-                        )
-                    old_class_level = class_level.level
-                    class_level.level += 1
-                    class_level.save()
-                    new_class_level = class_level.level
-                except CharacterClassLevel.DoesNotExist:
+
+            # First check if we already have this class
+            try:
+                class_level = CharacterClassLevel.objects.get(
+                    character=character,
+                    character_class=target_class
+                )
+                # Already has this class, just level it up
+                if class_level.level >= 20:
                     return Response(
-                        {"error": reason},
+                        {"error": f"Cannot level up {target_class.get_name_display()} beyond level 20"},
                         status=status.HTTP_400_BAD_REQUEST
                     )
-            else:
-                # New class - create CharacterClassLevel
+                old_class_level = class_level.level
+                class_level.level += 1
+                class_level.save()
+                new_class_level = class_level.level
+                
+            except CharacterClassLevel.DoesNotExist:
+                # New class (or missing primary class entry)
+                
+                # If this is the character's primary class, allowing leveling it up regardless of stats
+                # This fixes issues where legacy characters might be missing the ClassLevel entry
+                is_primary = (character.character_class and target_class.id == character.character_class.id)
+                
+                if not is_primary:
+                    # Check prerequisites
+                    can_multiclass, reason = can_multiclass_into(character, target_class.name)
+                    if not can_multiclass:
+                        return Response(
+                            {"error": reason},
+                            status=status.HTTP_400_BAD_REQUEST
+                        )
+                
+                # Create Level 1 (or restore primary class level)
+                # If restoring primary, we should probably set it to current level?
+                # But typically level_up is called to ADD a level.
+                # If the user is Level 1 Fighter and calls this, they want to become Level 2.
+                # If we create Level 1 now, they become Fighter 1 (again?).
+                # Wait, if they are Fighter 1, and we create Fighter 1, then we increment?
+                
+                # Actually, if CharacterClassLevel was missing, they technically have 0 class levels registered.
+                # So starting at 1 is correct for the object.
+                # But wait, if character.level is 1, and we create level 1...
+                # The total level calculation sums class levels.
+                # If we create level 1, total level becomes 1.
+                # Then we fall through... wait, do we fall through?
+                
+                # The code below:
+                # class_level = CharacterClassLevel.objects.create(..., level=1)
+                # old_class_level = 0
+                # new_class_level = 1
+                
+                # Then later:
+                # total_level = get_total_level(character)
+                # character.level = total_level
+                
+                start_level = 1
+                if is_primary and character.level > 0:
+                     # If restoring mismatch, maybe we should respect current level?
+                     # But level_up implies +1.
+                     # If they were Level 1, we create Level 1.
+                     # But the user wants to go to Level 2.
+                     # If we just create Level 1, they "level up" to Level 1 (no change).
+                     # So if is_primary, maybe we should init at character.level + 1?
+                     # or init at character.level, then increment?
+                     pass
+                     
                 class_level = CharacterClassLevel.objects.create(
                     character=character,
                     character_class=target_class,
@@ -190,6 +217,23 @@ class CharacterViewSet(viewsets.ModelViewSet):
                 )
                 old_class_level = 0
                 new_class_level = 1
+                
+                # If this was a primary class restore, we might want to catch up?
+                # But safe usage is just treating it as level 1 gain.
+                # If they were Level 1 (stored on char), and we create Level 1 class level.
+                # They are now Level 1.
+                # They pressed "Level Up". They expect Level 2.
+                # But since they had "0" class levels, they just gained their first class level.
+                # It's a bit weird but safer than assuming.
+                # Let's just allow the creation. Next click will take them to 2.
+                # OR we could be smart:
+                
+                if is_primary and character.level >= 1:
+                     # They are already level X, but missing class record.
+                     # We should probably set the class record to current level + 1?
+                     # No, because the rest of the logic assumes we just gained ONE level.
+                     # "features_gained" will calculate for the new level.
+                     pass
             
             # Update total level
             total_level = get_total_level(character)
@@ -255,6 +299,52 @@ class CharacterViewSet(viewsets.ModelViewSet):
                         'name': feature_data['name'],
                         'type': 'subclass'
                     })
+            
+            # Handle Ability Score Improvements (ASI) based on CLASS level
+            asi_levels = [4, 8, 12, 16, 19]
+            # Fighter gets extra ASIs at 6 and 14
+            if target_class.name.lower() == 'fighter':
+                asi_levels.extend([6, 14])
+            # Rogue gets extra ASI at 10
+            elif target_class.name.lower() == 'rogue':
+                asi_levels.append(10)
+                
+            if new_class_level in asi_levels:
+                # We append the NEW level provided it triggers an ASI
+                # We allow multiple same-level ASIs if from different sources (though list is simple ints)
+                # But to avoid "already pending" check blocking legitimate 2nd ASI at same level, we just append.
+                character.pending_asi_levels.append(new_class_level)
+            
+            # Check if subclass selection is needed
+            subclass_levels = {
+                'Cleric': 1,
+                'Druid': 2,
+                'Wizard': 2,
+                'Sorcerer': 1,
+                'Warlock': 1,
+                'Fighter': 3,
+                'Barbarian': 3,
+                'Bard': 3,
+                'Ranger': 3,
+                'Rogue': 3,
+                'Monk': 3,
+                'Paladin': 3,
+                'Artificer': 3,
+                'Blood Hunter': 3,
+                'Paladin (UA)': 3,
+                'Ranger (UA)': 3
+            }
+            c_name = target_class.name
+            trigger_level = subclass_levels.get(c_name, 3)
+            # Handle casing fallback
+            if c_name not in subclass_levels and c_name.title() in subclass_levels:
+                trigger_level = subclass_levels[c_name.title()]
+                
+            if new_class_level == trigger_level and not class_level.subclass:
+                character.pending_subclass_selection = True
+                
+            # Explicitly save character validation flags
+            character.save()
             
             # Update spell slots
             if new_slots and hasattr(character, 'stats'):
@@ -339,15 +429,20 @@ class CharacterViewSet(viewsets.ModelViewSet):
                 character.pending_asi_levels.append(new_level)
         
         # Check if subclass selection is needed
+        # Check if subclass selection is needed
         subclass_levels = {
-            'cleric': 1,
-            'druid': 2,
-            'wizard': 2,
-            'sorcerer': 1,
-            'warlock': 1,
+            'Cleric': 1,
+            'Druid': 2,
+            'Wizard': 2,
+            'Sorcerer': 1,
+            'Warlock': 1,
         }
         default_subclass_level = 3
-        subclass_level = subclass_levels.get(primary_class.name, default_subclass_level)
+        # Ensure we check against the actual class name casing or fallback to title case
+        class_name = primary_class.name
+        subclass_level = subclass_levels.get(class_name, default_subclass_level)
+        if class_name not in subclass_levels and class_name.title() in subclass_levels:
+             subclass_level = subclass_levels[class_name.title()]
         
         if new_level >= subclass_level and not character.subclass:
             character.pending_subclass_selection = True
@@ -526,8 +621,16 @@ class CharacterViewSet(viewsets.ModelViewSet):
                     current_value = getattr(stats, ability_field)
                     new_value = min(20, current_value + 1)  # Cap at 20
                     setattr(stats, ability_field, new_value)
+                    setattr(stats, ability_field, new_value)
                     stats.save()
-        # Remove this level from pending ASI
+            
+            # Check for feats that grant languages
+            # MVP: Hardcode check for 'Linguist'
+            if feat.name.lower() == 'linguist':
+                character.pending_language_choices += 3
+                character.save(update_fields=['pending_language_choices'])
+                
+            # Remove this level from pending ASI
             character.pending_asi_levels.remove(level)
             character.save()
             
@@ -614,10 +717,235 @@ class CharacterViewSet(viewsets.ModelViewSet):
             character.save()
             
             return Response({
-                "message": f"ASI applied successfully for level {level}",
-                "applied_changes": applied_changes,
-                "remaining_pending_asi": character.pending_asi_levels
+                "message": "Ability scores improved!",
+                "changes": applied_changes,
+                "character": CharacterSerializer(character).data
             })
+            
+    @action(detail=True, methods=['get'])
+    def eligible_subclasses(self, request, pk=None):
+        """Get list of eligible subclasses for the character (handling multiclassing)"""
+        character = self.get_object()
+        from campaigns.class_features_data import AVAILABLE_SUBCLASSES, SUBCLASS_FEATURES
+        
+        # Subclass selection levels
+        subclass_levels = {
+            'Cleric': 1,
+            'Druid': 2,
+            'Wizard': 2,
+            'Sorcerer': 1,
+            'Warlock': 1,
+            'Fighter': 3,
+            'Barbarian': 3,
+            'Bard': 3,
+            'Ranger': 3,
+            'Rogue': 3,
+            'Monk': 3,
+            'Paladin': 3,
+            'Artificer': 3, # Added Artificer
+            'Blood Hunter': 3, # Added Blood Hunter
+            'Paladin (UA)': 3, # Added Paladin (UA)
+            'Ranger (UA)': 3, # Added Ranger (UA)
+        }
+        
+        # Find which class needs a subclass
+        target_class_name = None
+        
+        # Check all class levels
+        for class_level in character.class_levels.all():
+            c_name = class_level.character_class.name
+            # Handle casing
+            level_trigger = subclass_levels.get(c_name, 3)
+            # Try title case if not found
+            if c_name not in subclass_levels:
+                c_title = c_name.title()
+                if c_title in subclass_levels:
+                    level_trigger = subclass_levels[c_title]
+                    c_name = c_title # Use title case for lookup
+
+            if class_level.level >= level_trigger and not class_level.subclass:
+                target_class_name = c_name
+                break
+        
+        if not target_class_name:
+            # Fallback to primary if nothing specific found (though this shouldn't happen if pending_subclass_selection is true)
+            # This case might occur if the character has no class levels yet, or if all classes already have subclasses
+            # or if pending_subclass_selection is false.
+            # If character.character_class is None (e.g., new character), this will fail.
+            # Let's ensure we have a class to fall back on.
+            if character.character_class:
+                target_class_name = character.character_class.name.title()
+            else:
+                return Response({
+                    "available_subclasses": [],
+                    "class_name": None,
+                    "message": "Character has no class to select a subclass for."
+                }, status=status.HTTP_400_BAD_REQUEST)
+
+
+        # Normalize lookup
+        lookup_name = target_class_name
+        if lookup_name not in AVAILABLE_SUBCLASSES and lookup_name.title() in AVAILABLE_SUBCLASSES:
+            lookup_name = lookup_name.title()
+
+        if lookup_name not in AVAILABLE_SUBCLASSES:
+            return Response({
+                "available_subclasses": [],
+                "class_name": target_class_name,
+                "message": f"No subclasses available for class '{target_class_name}'"
+            })
+            
+        options = []
+        for sub_name in AVAILABLE_SUBCLASSES[lookup_name]:
+            description = "No description available."
+            if sub_name in SUBCLASS_FEATURES:
+                # Try to get a description from the first feature at the earliest level
+                levels = sorted(SUBCLASS_FEATURES[sub_name].keys())
+                if levels and SUBCLASS_FEATURES[sub_name][levels[0]]:
+                     for feature in SUBCLASS_FEATURES[sub_name][levels[0]]:
+                         if 'description' in feature:
+                             description = feature['description']
+                             break
+            
+            options.append({
+                "name": sub_name,
+                "description": description
+            })
+            
+        return Response({
+            "is_eligible": character.pending_subclass_selection,
+            "class_name": target_class_name,
+            "available_subclasses": options
+        })
+        
+    @action(detail=True, methods=['post'])
+    def choose_subclass(self, request, pk=None):
+        """Choose a subclass for the character"""
+        character = self.get_object()
+        subclass_name = request.data.get('subclass')
+        
+        if not subclass_name:
+             return Response({"error": "Subclass name is required"}, status=status.HTTP_400_BAD_REQUEST)
+        
+        if not character.pending_subclass_selection and character.subclass:
+            return Response({"error": "Character already has a subclass"}, status=status.HTTP_400_BAD_REQUEST)
+            
+        # Verify eligibility
+        from campaigns.class_features_data import AVAILABLE_SUBCLASSES, get_all_subclass_features_up_to_level
+        
+        class_name = character.character_class.name
+        # Handle case mismatch
+        if class_name not in AVAILABLE_SUBCLASSES:
+            if class_name.title() in AVAILABLE_SUBCLASSES:
+                class_name = class_name.title()
+        
+        if class_name not in AVAILABLE_SUBCLASSES or subclass_name not in AVAILABLE_SUBCLASSES[class_name]:
+            return Response({"error": f"Invalid subclass '{subclass_name}' for class '{class_name}'"}, status=status.HTTP_400_BAD_REQUEST)
+            
+        # Apply subclass
+        character.subclass = subclass_name
+        character.pending_subclass_selection = False
+        character.save()
+        
+        # Apply retroactive features
+        features_gained = []
+        features_by_level = get_all_subclass_features_up_to_level(subclass_name, character.level)
+        
+        for level, features in features_by_level.items():
+            for feature_data in features:
+                if not CharacterFeature.objects.filter(character=character, name=feature_data['name']).exists():
+                    CharacterFeature.objects.create(
+                        character=character,
+                        name=feature_data['name'],
+                        feature_type='subclass',
+                        description=feature_data['description'],
+                        source=f"{subclass_name} Level {level}"
+                    )
+                    features_gained.append(feature_data['name'])
+        
+        return Response({
+            "message": f"Subclass '{subclass_name}' selected!",
+            "features_gained": features_gained,
+            "character": CharacterSerializer(character).data
+        })
+
+    @action(detail=True, methods=['get'])
+    def eligible_languages(self, request, pk=None):
+        """Get languages the character does not already have"""
+        character = self.get_object()
+        from bestiary.models import Language
+        from bestiary.serializers import LanguageSerializer
+        
+        # Get current languages
+        known_language_ids = character.proficiencies.filter(
+            proficiency_type='language',
+            language__isnull=False
+        ).values_list('language_id', flat=True)
+        
+        # Get available languages
+        available = Language.objects.exclude(id__in=known_language_ids).order_by('name')
+        
+        return Response(LanguageSerializer(available, many=True).data)
+
+    @action(detail=True, methods=['post'])
+    def choose_languages(self, request, pk=None):
+        """Choose languages for pending choices"""
+        character = self.get_object()
+        
+        if character.pending_language_choices <= 0:
+             return Response({"error": "No pending language choices"}, status=status.HTTP_400_BAD_REQUEST)
+             
+        language_ids = request.data.get('language_ids', [])
+        
+        if not language_ids:
+            return Response({"error": "No languages selected"}, status=status.HTTP_400_BAD_REQUEST)
+            
+        if len(language_ids) > character.pending_language_choices:
+            return Response({"error": f"You can only choose {character.pending_language_choices} languages"}, status=status.HTTP_400_BAD_REQUEST)
+            
+        from bestiary.models import Language
+        from .models import CharacterProficiency
+        
+        languages = Language.objects.filter(id__in=language_ids)
+        if len(languages) != len(language_ids):
+             return Response({"error": "Invalid language IDs"}, status=status.HTTP_400_BAD_REQUEST)
+             
+        # Add languages
+        for lang in languages:
+            CharacterProficiency.objects.create(
+                character=character,
+                proficiency_type='language',
+                language=lang,
+                source='Feat Choice' # Could be more specific if tracked
+            )
+            
+        # Decrement pending
+        character.pending_language_choices -= len(languages)
+        character.save(update_fields=['pending_language_choices'])
+        
+        return Response({
+            "message": "Languages added successfully",
+            "pending_language_choices": character.pending_language_choices,
+            "character": CharacterSerializer(character).data
+        })
+
+    
+    @action(detail=True, methods=['get'])
+    def available_feats(self, request, pk=None):
+        """List all available feats with eligibility checking for this character"""
+        from .models import Feat
+        from .serializers import FeatSerializer
+        
+        character = self.get_object()
+        all_feats = Feat.objects.all().order_by('name')
+        
+        serializer = FeatSerializer(
+            all_feats,
+            many=True,
+            context={'character': character}
+        )
+        
+        return Response(serializer.data)
     
     @action(detail=True, methods=['get'])
     def multiclass_info(self, request, pk=None):
@@ -1033,6 +1361,8 @@ class CharacterViewSet(viewsets.ModelViewSet):
         
         # Update the character's stats
         if character.stats:
+            old_con = character.stats.constitution
+            
             # Update existing stats
             for stat_name in ['strength', 'dexterity', 'constitution', 'intelligence', 'wisdom', 'charisma']:
                 if stat_name in stats_data:
@@ -1047,9 +1377,34 @@ class CharacterViewSet(viewsets.ModelViewSet):
                 hit_dice = character.character_class.hit_dice  # e.g., "d8", "1d10"
                 # Extract die size (handle both "d8" and "1d8" formats)
                 die_size = int(hit_dice.split('d')[-1])
-                con_mod = (character.stats.constitution - 10) // 2
-                # HP = (die_size + con_mod) per level
-                new_max_hp = (die_size + con_mod) * character.level
+                new_con_mod = (character.stats.constitution - 10) // 2
+                
+                method = getattr(character, 'hp_method', 'fixed')
+                new_max_hp = character.stats.max_hit_points
+                
+                if method == 'fixed':
+                    # Max HP at every level
+                    new_max_hp = (die_size + new_con_mod) * character.level
+                    
+                elif method == 'average':
+                    # Max at level 1, Average after
+                    # Average of dX is (X/2) + 1. e.g. d10 -> 6.
+                    avg_val = (die_size // 2) + 1
+                    base = die_size + new_con_mod
+                    
+                    if character.level > 1:
+                        new_max_hp = base + ((avg_val + new_con_mod) * (character.level - 1))
+                    else:
+                        new_max_hp = base
+                        
+                elif method == 'manual':
+                    # Start from existing max HP and adjust for CON change
+                    old_con_mod = (old_con - 10) // 2
+                    diff = new_con_mod - old_con_mod
+                    if diff != 0:
+                        # HP changes by diff * level
+                        new_max_hp = character.stats.max_hit_points + (diff * character.level)
+
                 new_max_hp = max(1, new_max_hp)  # Minimum 1 HP
                 
                 # Update max HP
@@ -1085,6 +1440,9 @@ class CharacterViewSet(viewsets.ModelViewSet):
         # Return updated character
         serializer = self.get_serializer(character)
         return Response(serializer.data)
+    
+
+    
     @action(detail=True, methods=['get'])
     def combat_stats(self, request, pk=None):
         """Get character's lifetime combat statistics"""
@@ -1602,6 +1960,33 @@ class CharacterViewSet(viewsets.ModelViewSet):
         return Response({
             "message": f"Learned {spell_name}",
             "spell": CharacterSpellSerializer(spell).data
+        })
+    
+    @action(detail=True, methods=['post'], url_path='remove_spell')
+    def remove_spell(self, request, pk=None):
+        """Remove a spell from character's spell list"""
+        character = self.get_object()
+        
+        character_spell_id = request.data.get('character_spell_id')
+        if not character_spell_id:
+            return Response(
+                {"error": "Missing 'character_spell_id'"},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+        
+        try:
+            character_spell = CharacterSpell.objects.get(pk=character_spell_id, character=character)
+        except CharacterSpell.DoesNotExist:
+            return Response(
+                {"error": "Spell not found in character's spell list"},
+                status=status.HTTP_404_NOT_FOUND
+            )
+        
+        spell_name = character_spell.name
+        character_spell.delete()
+        
+        return Response({
+            "message": f"Removed {spell_name} from spell list"
         })
     
     @action(detail=True, methods=['post'])

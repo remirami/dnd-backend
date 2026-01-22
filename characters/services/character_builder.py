@@ -178,7 +178,7 @@ class CharacterBuilderService:
         }
         
         # Apply racial bonuses
-        final_scores_short = RacialBonusCalculator.apply_bonuses(short_form, race.name)
+        final_scores_short = RacialBonusCalculator.apply_bonuses(short_form, race)
         
         # Convert back to long form
         final_scores = {
@@ -191,7 +191,7 @@ class CharacterBuilderService:
         }
         
         # Get bonuses
-        bonuses = RacialBonusCalculator.get_bonuses(race.name)
+        bonuses = RacialBonusCalculator.get_bonuses(race)
         
         # Save to session
         session.data['race_id'] = race_id
@@ -308,7 +308,7 @@ class CharacterBuilderService:
         }
     
     @staticmethod
-    def finalize_character(session, name, alignment='N'):
+    def finalize_character(session, name, alignment='N', hp_method='fixed'):
         """
         Finalize and create the character (Step 7)
         
@@ -316,6 +316,7 @@ class CharacterBuilderService:
             session: CharacterBuilderSession
             name: Character name
             alignment: Character alignment (default 'N')
+            hp_method: HP calculation method ('fixed', 'average', 'manual')
             
         Returns:
             (bool, str, Character): (success, error_message, character)
@@ -342,7 +343,8 @@ class CharacterBuilderService:
                     background=background,
                     level=1,
                     alignment=alignment,
-                    subclass=session.data.get('subclass', '')
+                    subclass=session.data.get('subclass', ''),
+                    hp_method=hp_method
                 )
                 
                 # Create stats
@@ -374,6 +376,32 @@ class CharacterBuilderService:
                 # Delete session
                 session.delete()
                 
+                # Apply Racial Skills
+                if race.skill_proficiencies:
+                    skills = [s.strip() for s in race.skill_proficiencies.split(',')]
+                    for skill in skills:
+                        # Find proficiency type based on skill name
+                        from characters.models import CharacterProficiency
+                        CharacterProficiency.objects.create(
+                            character=character,
+                            skill_name=skill,
+                            proficiency_type='skill',
+                            proficiency_level='proficient',
+                            source='race'
+                        )
+                
+                # Apply Racial Traits
+                if race.traits:
+                    from characters.models import CharacterFeature
+                    for trait in race.traits:
+                        CharacterFeature.objects.create(
+                            character=character,
+                            name=trait.get('name', 'Unknown Trait'),
+                            description=trait.get('description', ''),
+                            feature_type='racial',
+                            source='race',
+                        )
+
                 return True, "", character
                 
         except Exception as e:

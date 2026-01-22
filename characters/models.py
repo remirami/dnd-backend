@@ -53,6 +53,8 @@ class CharacterRace(models.Model):
     ], default='M')
     speed = models.IntegerField(default=30)  # Base speed in feet
     ability_score_increases = models.CharField(max_length=50, blank=True)  # e.g. "STR+1,DEX+1"
+    skill_proficiencies = models.CharField(max_length=100, blank=True, help_text="Comma-separated list of skills, e.g. 'Perception,Stealth'")
+    traits = models.JSONField(default=list, blank=True, help_text="List of racial traits")
     description = models.TextField(blank=True, null=True)
     
     def __str__(self):
@@ -80,6 +82,8 @@ class CharacterBackground(models.Model):
     skill_proficiencies = models.CharField(max_length=100, blank=True)  # e.g. "Insight,Religion"
     tool_proficiencies = models.CharField(max_length=100, blank=True)  # e.g. "Disguise Kit,Thieves' Tools"
     languages = models.IntegerField(default=0)  # Number of additional languages
+    feature_name = models.CharField(max_length=100, blank=True, null=True) # e.g. "Shelter of the Faithful"
+    feature_description = models.TextField(blank=True, null=True)
     description = models.TextField(blank=True, null=True)
     
     def __str__(self):
@@ -105,6 +109,12 @@ class Character(models.Model):
         ('CE', 'Chaotic Evil'),
         ('U', 'Unaligned'),
     ]
+
+    HP_METHOD_CHOICES = [
+        ('fixed', 'Fixed (Max Roll)'),
+        ('average', 'Average'),
+        ('manual', 'Manual / Dice Roll'),
+    ]
     
     user = models.ForeignKey(User, on_delete=models.CASCADE, related_name='characters', null=True, blank=True)
     name = models.CharField(max_length=100)
@@ -119,6 +129,7 @@ class Character(models.Model):
     # Basic properties
     size = models.CharField(max_length=1, choices=SIZE_CHOICES, default='M')
     alignment = models.CharField(max_length=2, choices=ALIGNMENT_CHOICES, default='N')
+    hp_method = models.CharField(max_length=10, choices=HP_METHOD_CHOICES, default='fixed', help_text="Method used for HP calculation")
     
     # Experience points
     experience_points = models.IntegerField(default=0, validators=[MinValueValidator(0)])
@@ -126,11 +137,17 @@ class Character(models.Model):
     # Pending choices (for standalone character tracking)
     pending_asi_levels = models.JSONField(default=list, blank=True, help_text="List of levels where ASI/Feat is pending player choice (e.g., [4, 8])")
     pending_subclass_selection = models.BooleanField(default=False, help_text="True if character needs to select subclass")
+    pending_language_choices = models.IntegerField(default=0, help_text="Number of languages the character can select (e.g. from Linguist feat)")
     
     # Character description
     player_name = models.CharField(max_length=100, blank=True)
     description = models.TextField(blank=True, null=True)
     backstory = models.TextField(blank=True, null=True)
+    
+    # Personality traits (from D&D 5e backgrounds)
+    bonds = models.TextField(blank=True, null=True, help_text="Character's bonds (connections to people, places, or ideals)")
+    flaws = models.TextField(blank=True, null=True, help_text="Character's flaws or weaknesses")
+    ideals = models.TextField(blank=True, null=True, help_text="Character's ideals or beliefs")
     
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
@@ -551,3 +568,120 @@ class CharacterClassLevel(models.Model):
     
     def __str__(self):
         return f"{self.character.name} - {self.character_class.get_name_display()} Level {self.level}"
+
+
+class Feat(models.Model):
+    """D&D 5e feats that can be taken instead of ASI"""
+    
+    name = models.CharField(max_length=100, unique=True)
+    description = models.TextField()
+    
+    # Prerequisites
+    strength_requirement = models.IntegerField(default=0, validators=[MinValueValidator(0), MaxValueValidator(20)])
+    dexterity_requirement = models.IntegerField(default=0, validators=[MinValueValidator(0), MaxValueValidator(20)])
+    constitution_requirement = models.IntegerField(default=0, validators=[MinValueValidator(0), MaxValueValidator(20)])
+    intelligence_requirement = models.IntegerField(default=0, validators=[MinValueValidator(0), MaxValueValidator(20)])
+    wisdom_requirement = models.IntegerField(default=0, validators=[MinValueValidator(0), MaxValueValidator(20)])
+    charisma_requirement = models.IntegerField(default=0, validators=[MinValueValidator(0), MaxValueValidator(20)])
+    
+    # Level requirements
+    minimum_level = models.IntegerField(default=4, validators=[MinValueValidator(1), MaxValueValidator(20)])
+    
+    # Proficiency requirements
+    proficiency_requirements = models.CharField(
+        max_length=200, 
+        blank=True,
+        help_text="Comma-separated list of required proficiencies (e.g., 'Heavy Armor,Martial Weapons')"
+    )
+    
+    # Ability score increases granted by this feat (some feats give +1 to a stat)
+    ability_score_increase = models.CharField(
+        max_length=3,
+        blank=True,
+        choices=[
+            ('STR', 'Strength'),
+            ('DEX', 'Dexterity'),
+            ('CON', 'Constitution'),
+            ('INT', 'Intelligence'),
+            ('WIS', 'Wisdom'),
+            ('CHA', 'Charisma'),
+        ],
+        help_text="If this feat grants +1 to an ability score, specify which one"
+    )
+    
+    # Source book
+    source = models.CharField(max_length=100, default='Player\'s Handbook')
+    
+    def __str__(self):
+        return self.name
+    
+    def check_prerequisites(self, character):
+        """
+        Check if a character meets the prerequisites for this feat.
+        
+        Args:
+            character: Character instance
+        
+        Returns:
+            tuple: (is_eligible, reason_if_not)
+        """
+        if not hasattr(character, 'stats'):
+            return False, "Character must have stats"
+        
+        stats = character.stats
+        
+        # Check level requirement
+        if character.level < self.minimum_level:
+            return False, f"Requires level {self.minimum_level}"
+        
+        # Check ability score requirements
+        if stats.strength < self.strength_requirement:
+            return False, f"Requires Strength {self.strength_requirement}"
+        if stats.dexterity < self.dexterity_requirement:
+            return False, f"Requires Dexterity {self.dexterity_requirement}"
+        if stats.constitution < self.constitution_requirement:
+            return False, f"Requires Constitution {self.constitution_requirement}"
+        if stats.intelligence < self.intelligence_requirement:
+            return False, f"Requires Intelligence {self.intelligence_requirement}"
+        if stats.wisdom < self.wisdom_requirement:
+            return False, f"Requires Wisdom {self.wisdom_requirement}"
+        if stats.charisma < self.charisma_requirement:
+            return False, f"Requires Charisma {self.charisma_requirement}"
+        
+        # Check proficiency requirements
+        if self.proficiency_requirements:
+            required_profs = [p.strip() for p in self.proficiency_requirements.split(',')]
+            character_profs = set(
+                character.proficiencies.values_list('skill_name', flat=True)
+            ) | set(
+                character.proficiencies.values_list('item_name', flat=True)
+            )
+            
+            for req_prof in required_profs:
+                if req_prof not in character_profs:
+                    return False, f"Requires proficiency in {req_prof}"
+        
+        return True, None
+    
+    class Meta:
+        ordering = ['name']
+
+
+class CharacterFeat(models.Model):
+    """Tracks which feats a character has taken"""
+    
+    character = models.ForeignKey('Character', on_delete=models.CASCADE, related_name='character_feats')
+    feat = models.ForeignKey(Feat, on_delete=models.CASCADE, related_name='character_feats')
+    level_taken = models.IntegerField(
+        validators=[MinValueValidator(1), MaxValueValidator(20)],
+        help_text="Level at which this feat was taken"
+    )
+    taken_at = models.DateTimeField(auto_now_add=True)
+    
+    class Meta:
+        unique_together = ['character', 'feat']
+        ordering = ['level_taken', 'feat__name']
+    
+    def __str__(self):
+        return f"{self.character.name} - {self.feat.name} (Level {self.level_taken})"
+
