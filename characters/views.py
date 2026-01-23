@@ -29,8 +29,16 @@ from .inventory_management import (
     calculate_total_weight, get_encumbrance_level, get_encumbrance_effects,
     get_equipped_weapon, get_equipped_armor, get_equipped_shield
 )
+from .equipment_endpoints import add_equipment_endpoints_to_viewset
+from .spell_selection_endpoints import add_spell_selection_endpoints
+from .spell_preparation_endpoints import add_spell_preparation_endpoints
+from .hp_endpoints import add_hp_endpoints
 
 
+@add_equipment_endpoints_to_viewset
+@add_spell_selection_endpoints
+@add_spell_preparation_endpoints
+@add_hp_endpoints
 class CharacterViewSet(viewsets.ModelViewSet):
     """API endpoint for managing player characters."""
     serializer_class = CharacterSerializer
@@ -92,6 +100,82 @@ class CharacterViewSet(viewsets.ModelViewSet):
                 status=status.HTTP_500_INTERNAL_SERVER_ERROR
             )
     
+    def _calculate_pending_spells(self, character, character_class, level, features_gained):
+        """Helper to calculate pending spell choices on level up"""
+        # Calculate pending spell choices
+        pending_choices = {}
+        if character_class.name.lower() == 'wizard':
+             # Find max spell level available
+             max_spell_level = 1
+             if hasattr(character, 'stats') and character.stats.spell_slots:
+                 for lvl, slots in character.stats.spell_slots.items():
+                     if slots > 0:
+                         max_spell_level = max(max_spell_level, int(lvl))
+             
+             pending_choices = {
+                 'count': 2,
+                 'max_level': max_spell_level,
+                 'source': 'level_up',
+                 'type': 'spellbook'
+             }
+        elif character_class.name.lower() in ['bard', 'sorcerer', 'warlock', 'ranger']:
+             from characters.spell_management import calculate_spells_known
+             spells_known_limit = calculate_spells_known(character)
+             # Use current class-specific known spells? 
+             # Currently system assumes global known list but filters by class usually.
+             # CharacterSpell has 'class' FK? No.
+             # But calculate_spells_known returns TOTAL known.
+             # Simplified check:
+             current_spells_count = CharacterSpell.objects.filter(
+                character=character,
+                level__gt=0
+             ).count()
+             
+             diff = spells_known_limit - current_spells_count
+             if diff > 0:
+                 max_spell_level = 1
+                 if hasattr(character, 'stats') and character.stats.spell_slots:
+                     for lvl, slots in character.stats.spell_slots.items():
+                         if slots > 0:
+                             max_spell_level = max(max_spell_level, int(lvl))
+                 
+                 pending_choices = {
+                     'count': diff,
+                     'max_level': max_spell_level,
+                     'source': 'level_up',
+                     'type': 'new_spell'
+                 }
+
+        
+        # If no leveled spell choices, check for Cantrips
+        if not pending_choices:
+            from characters.spell_management import calculate_cantrips_known
+            cantrips_known_limit = calculate_cantrips_known(character)
+            if cantrips_known_limit > 0:
+                current_cantrips_count = CharacterSpell.objects.filter(
+                    character=character,
+                    level=0
+                ).count()
+                
+                diff = cantrips_known_limit - current_cantrips_count
+                if diff > 0:
+                    pending_choices = {
+                        'count': diff,
+                        'max_level': 0,
+                        'source': 'level_up',
+                        'type': 'cantrip'
+                    }
+
+        if pending_choices:
+            # Merge with existing pending if strictly needed, but usually overwrite or append?
+            # Current logic overwrites.
+            character.pending_spell_choices = pending_choices
+            features_gained.append({
+                'level': level,
+                'name': f"Select {pending_choices['count']} {'Cantrip(s)' if pending_choices['type'] == 'cantrip' else 'New Spell(s)'}",
+                'type': 'choice'
+            })
+
     @action(detail=True, methods=['post'])
     def level_up(self, request, pk=None):
         """
@@ -114,8 +198,21 @@ class CharacterViewSet(viewsets.ModelViewSet):
         import random
         from campaigns.utils import calculate_spell_slots, get_spellcasting_ability, calculate_spell_save_dc, calculate_spell_attack_bonus
         from campaigns.class_features_data import get_class_features, get_subclass_features
+        from characters.spell_management import calculate_spells_known
+        
+        def dlog(msg):
+            print(f"[LEVEL_UP_DEBUG] {msg}")  # Console output
+            try:
+                import datetime
+                import os
+                log_path = os.path.join(os.getcwd(), 'debug_level_up.log')
+                with open(log_path, 'a') as f:
+                    f.write(f"{datetime.datetime.now()}: {msg}\n")
+            except Exception as e:
+                print(f"[DLOG_ERROR] {str(e)}")
         
         character = self.get_object()
+        
         old_level = character.level
         
         # Check if multiclass level-up
@@ -355,6 +452,9 @@ class CharacterViewSet(viewsets.ModelViewSet):
                     character.stats.spell_attack_bonus = calculate_spell_attack_bonus(character, spellcasting_ability)
                 character.stats.save()
             
+            # Calculate pending spells for the leveled-up class
+            self._calculate_pending_spells(character, target_class, new_class_level, features_gained)
+
             character.save()
             
             serializer = self.get_serializer(character)
@@ -485,7 +585,11 @@ class CharacterViewSet(viewsets.ModelViewSet):
                     'type': 'subclass'
                 })
         
+        # Calculate pending spell choices using helper
+        self._calculate_pending_spells(character, primary_class, new_level, features_gained)
+        
         character.save()
+        dlog(f"DEBUG: Saved Character {character.id}. Pending field in DB: {character.pending_spell_choices}")
         
         serializer = self.get_serializer(character)
         return Response({
@@ -862,6 +966,10 @@ class CharacterViewSet(viewsets.ModelViewSet):
                         source=f"{subclass_name} Level {level}"
                     )
                     features_gained.append(feature_data['name'])
+        
+        # Calculate pending spells for the new subclass (e.g. Arcane Trickster, Eldritch Knight)
+        self._calculate_pending_spells(character, character.character_class, character.level, [])
+        character.save()
         
         return Response({
             "message": f"Subclass '{subclass_name}' selected!",

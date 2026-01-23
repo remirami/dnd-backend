@@ -30,6 +30,9 @@ class SpellViewSet(viewsets.ModelViewSet):
     # Rate limiting: 200 requests per hour for spell lookups
     throttle_classes = [SpellLookupThrottle]
     
+    # Disable pagination for now as frontend expects full list for client-side filtering
+    pagination_class = None
+    
     def get_queryset(self):
         """Filter queryset based on query parameters"""
         queryset = super().get_queryset()

@@ -134,10 +134,18 @@ class Character(models.Model):
     # Experience points
     experience_points = models.IntegerField(default=0, validators=[MinValueValidator(0)])
     
+    # Currency (D&D standard denominations)
+    gold_pieces = models.IntegerField(default=0, validators=[MinValueValidator(0)], help_text="Gold pieces (gp)")
+    silver_pieces = models.IntegerField(default=0, validators=[MinValueValidator(0)], help_text="Silver pieces (sp)")
+    copper_pieces = models.IntegerField(default=0, validators=[MinValueValidator(0)], help_text="Copper pieces (cp)")
+    electrum_pieces = models.IntegerField(default=0, validators=[MinValueValidator(0)], help_text="Electrum pieces (ep)")
+    platinum_pieces = models.IntegerField(default=0, validators=[MinValueValidator(0)], help_text="Platinum pieces (pp)")
+    
     # Pending choices (for standalone character tracking)
     pending_asi_levels = models.JSONField(default=list, blank=True, help_text="List of levels where ASI/Feat is pending player choice (e.g., [4, 8])")
     pending_subclass_selection = models.BooleanField(default=False, help_text="True if character needs to select subclass")
     pending_language_choices = models.IntegerField(default=0, help_text="Number of languages the character can select (e.g. from Linguist feat)")
+    pending_spell_choices = models.JSONField(default=dict, blank=True, help_text="Config for pending spell selection e.g. {'count': 2, 'max_level': 2}")
     
     # Character description
     player_name = models.CharField(max_length=100, blank=True)
@@ -223,6 +231,7 @@ class CharacterStats(models.Model):
     # Combat Stats
     hit_points = models.IntegerField()
     max_hit_points = models.IntegerField()  # Maximum HP (for healing)
+    temporary_hit_points = models.IntegerField(default=0)  # Temporary HP
     armor_class = models.IntegerField()
     speed = models.IntegerField(default=30)  # Base speed in feet
     initiative = models.IntegerField(default=0)  # Initiative modifier

@@ -17,7 +17,7 @@ Including another URLconf
 from django.contrib import admin
 from django.urls import path, include
 from rest_framework.routers import DefaultRouter
-from bestiary.views import EnemyViewSet, import_monsters_view
+from bestiary.views import EnemyViewSet, import_monsters_view, LanguageViewSet
 from encounters.views import EncounterViewSet, EncounterEnemyViewSet, EncounterThemeViewSet
 from characters.views import (
     CharacterViewSet, CharacterClassViewSet, CharacterRaceViewSet,
@@ -38,6 +38,7 @@ from merchants.views import MerchantViewSet
 router = DefaultRouter()
 # Bestiary routes
 router.register(r'enemies', EnemyViewSet, basename='enemy')
+router.register(r'languages', LanguageViewSet, basename='language')
 # Encounter system routes
 router.register(r'encounters', EncounterViewSet, basename='encounter')
 router.register(r'encounter-enemies', EncounterEnemyViewSet, basename='encounter-enemy')

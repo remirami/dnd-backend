@@ -1,8 +1,7 @@
-# D&D 5e Roguelike Gauntlet Backend - Project Summary
+# SRD5 Roguelike Gauntlet Backend - Project Summary
 
-## 📊 Project Overview
-
-This is a **comprehensive Django REST API backend** for D&D 5e that implements a complete roguelike gauntlet campaign system with full character progression, advanced combat mechanics, and extensive D&D 5e content.
+## 📌 Project Overview
+This is a **comprehensive Django REST API backend** for **SRD 5.1 (Fantasy RPG)** that implements a complete roguelike gauntlet campaign system with full character progression, advanced combat mechanics, and extensive **Open5e** content.
 
 ## ✅ What We've Built
 
@@ -142,14 +141,14 @@ dnd-backend/
 ## 🎯 Key Features Implemented
 
 ### Character Progression
-- **All 12 D&D Classes**: Barbarian, Bard, Cleric, Druid, Fighter, Monk, Paladin, Ranger, Rogue, Sorcerer, Warlock, Wizard
+- **SRD Classes**: Barbarian, Bard, Cleric, Druid, Fighter, Monk, Paladin, Ranger, Rogue, Sorcerer, Warlock, Wizard
 - **All 9 Core Races**: Human, Elf, Dwarf, Halfling, Dragonborn, Gnome, Half-Elf, Half-Orc, Tiefling
 - **Major Subclasses**: Champion, Battle Master, School of Evocation, Assassin, Life Domain, Path of the Berserker, College of Lore, and more
 - **Automatic Feature Application**: Features automatically granted at appropriate levels
 - **Multiclass Support**: Full multiclass mechanics with proper spell slot calculation
 
 ### Combat Features
-- **Complete D&D 5e Combat**: All core combat rules implemented
+- **Complete SRD 5.1 Combat**: All core combat rules implemented
 - **Environmental System**: Terrain, cover, lighting, weather effects
 - **Condition System**: All D&D conditions with proper effects
 - **Spell System**: Full spellcasting with concentration, saving throws, and spell slots
@@ -227,7 +226,7 @@ Complete documentation available in `/docs`:
 
 ## 🎉 Achievement Summary
 
-We've built a **production-ready D&D 5e backend** that includes:
+We've built a **production-ready SRD5 backend** that includes:
 - ✅ Complete character system with progression
 - ✅ Full combat system with advanced mechanics
 - ✅ Roguelike campaign system with gold economy
@@ -239,7 +238,9 @@ We've built a **production-ready D&D 5e backend** that includes:
 - ✅ Comprehensive testing
 - ✅ Complete documentation
 
-This is a **fully-featured D&D 5e game engine** ready for any frontend or game client!
+This is a **fully-featured SRD5 game engine** ready for any frontend or game client!
+
+> **Legal Disclaimer**: "Wizards of the Coast", "Dungeons & Dragons", and their logos are trademarks of Wizards of the Coast LLC. This project is not affiliated with, endorsed, sponsored, or specifically approved by Wizards of the Coast LLC. This project uses the System Reference Document 5.1 ("SRD 5.1") provided by Wizards of the Coast LLC under the terms of the Creative Commons Attribution 4.0 International License (CC-BY 4.0).
 
 ---
 

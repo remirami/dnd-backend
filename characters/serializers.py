@@ -182,6 +182,9 @@ class CharacterSerializer(serializers.ModelSerializer):
     wisdom = serializers.IntegerField(write_only=True, min_value=1, max_value=30, required=False)
     charisma = serializers.IntegerField(write_only=True, min_value=1, max_value=30, required=False)
     
+    # Extra Choices
+    language_ids = serializers.ListField(child=serializers.IntegerField(), write_only=True, required=False)
+    
     # Display choices as readable text
     size_display = serializers.CharField(source='get_size_display', read_only=True)
     alignment_display = serializers.CharField(source='get_alignment_display', read_only=True)
@@ -247,6 +250,7 @@ class CharacterSerializer(serializers.ModelSerializer):
         character_class_id = validated_data.pop('character_class_id', None)
         race_id = validated_data.pop('race_id', None)
         background_id = validated_data.pop('background_id', None)
+        language_ids = validated_data.pop('language_ids', [])
         
         # Extract ability scores if provided (for create)
         ability_scores = {
@@ -428,6 +432,21 @@ class CharacterSerializer(serializers.ModelSerializer):
                     source='Background'
                 )
 
+        # Apply Selected Languages (e.g. from Race Choice)
+        if language_ids:
+            from bestiary.models import Language
+            for lang_id in language_ids:
+                try:
+                    lang = Language.objects.get(pk=lang_id)
+                    CharacterProficiency.objects.get_or_create(
+                        character=character,
+                        proficiency_type='language',
+                        language=lang,
+                        defaults={'source': 'Choice'}
+                    )
+                except Language.DoesNotExist:
+                    pass
+                
         return character
 
     def update(self, instance, validated_data):

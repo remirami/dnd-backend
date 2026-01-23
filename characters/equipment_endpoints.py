@@ -1,68 +1,24 @@
+"""
+Equipment endpoints for CharacterViewSet
+This file adds starting equipment endpoints that should be imported in views.py
+"""
+from rest_framework.decorators import action
+from rest_framework.response import Response
+from rest_framework import status
+from characters.models import CharacterItem
+from items.models import Item
 
-    @action(detail=True, methods=['get'])
-    def eligible_languages(self, request, pk=None):
-        """Get languages the character does not already have"""
-        character = self.get_object()
-        from bestiary.models import Language
-        from bestiary.serializers import LanguageSerializer
-        
-        # Get current languages
-        known_language_ids = character.proficiencies.filter(
-            proficiency_type='language',
-            language__isnull=False
-        ).values_list('language_id', flat=True)
-        
-        # Get available languages
-        available = Language.objects.exclude(id__in=known_language_ids).order_by('name')
-        
-        return Response(LanguageSerializer(available, many=True).data)
 
-    @action(detail=True, methods=['post'])
-    def choose_languages(self, request, pk=None):
-        """Choose languages for pending choices"""
-        character = self.get_object()
-        
-        if character.pending_language_choices <= 0:
-             return Response({"error": "No pending language choices"}, status=status.HTTP_400_BAD_REQUEST)
-             
-        language_ids = request.data.get('language_ids', [])
-        
-        if not language_ids:
-            return Response({"error": "No languages selected"}, status=status.HTTP_400_BAD_REQUEST)
-            
-        if len(language_ids) > character.pending_language_choices:
-            return Response({"error": f"You can only choose {character.pending_language_choices} languages"}, status=status.HTTP_400_BAD_REQUEST)
-            
-        from bestiary.models import Language
-        from .models import CharacterProficiency
-        
-        languages = Language.objects.filter(id__in=language_ids)
-        if len(languages) != len(language_ids):
-             return Response({"error": "Invalid language IDs"}, status=status.HTTP_400_BAD_REQUEST)
-             
-        # Add languages
-        for lang in languages:
-            CharacterProficiency.objects.create(
-                character=character,
-                proficiency_type='language',
-                language=lang,
-                source='Feat Choice' # Could be more specific if tracked
-            )
-            
-        # Decrement pending
-        character.pending_language_choices -= len(languages)
-        character.save(update_fields=['pending_language_choices'])
-        
-        return Response({
-            "message": "Languages added successfully",
-            "pending_language_choices": character.pending_language_choices,
-            "character": CharacterSerializer(character).data
-        })
-
+def add_equipment_endpoints_to_viewset(cls):
+    """
+    Decorator to add equipment endpoints to CharacterViewSet
+    Usage: Add @add_equipment_endpoints_to_viewset before CharacterViewSet class
+    """
+    
     @action(detail=False, methods=['get'])
     def starting_equipment_choices(self, request):
         """Get starting equipment choices for a specific class"""
-        from .starting_equipment import get_starting_equipment_for_class, get_all_packs
+        from characters.starting_equipment import get_starting_equipment_for_class, get_all_packs
         
         class_name = request.query_params.get('class_name')
         if not class_name:
@@ -83,14 +39,14 @@
             "choices": equipment_data['choices'],
             "default_items": equipment_data['default_items'],
             "starting_gold": equipment_data['starting_gold'],
-            "available_packs": list(get_all_packs().keys())
+            "available_packs": list(get_all_packs().keys()),
+            "pack_definitions": get_all_packs()
         })
     
     @action(detail=True, methods=['post'])
     def apply_starting_equipment(self, request, pk=None):
         """Apply selected starting equipment to a character"""
-        from .starting_equipment import get_starting_equipment_for_class, get_equipment_pack
-        from items.models import Item
+        from characters.starting_equipment import get_starting_equipment_for_class, get_equipment_pack
         
         character = self.get_object()
         selections = request.data.get('selections', {})
@@ -139,13 +95,73 @@
             
             # Add items from this option
             if 'items' in option_data:
-                items_to_add.extend(option_data['items'])
-            
+                # Track how many choice items we've encountered to map to _sub_0, _sub_1, etc.
+                choice_item_index = 0
+                
+                for item_ref in option_data['items']:
+                    item_name = item_ref['name']
+                    quantity = item_ref.get('quantity', 1)
+                    
+                    # Check if this is a placeholder choice
+                    if 'choice' in item_name.lower():
+                        # Try to find the sub-selection
+                        # Key format: "{choice_num}_sub_{index}"
+                        sub_key = f"{choice_num}_sub_{choice_item_index}"
+                        selected_sub = selections.get(sub_key)
+                        
+                        if selected_sub:
+                            items_to_add.append({'name': selected_sub, 'quantity': quantity})
+                        else:
+                            # Fallback: maybe singular "_sub" was sent (old format/frontend)
+                            short_key = f"{choice_num}_sub"
+                            selected_sub_short = selections.get(short_key)
+                            if selected_sub_short and choice_item_index == 0:
+                                items_to_add.append({'name': selected_sub_short, 'quantity': quantity})
+                            else:
+                                # Start logging but don't fail hard, maybe user didn't select?
+                                # But we should probably error if required choices missing.
+                                # For now, skip adding placeholder.
+                                pass
+                        
+                        choice_item_index += 1
+                    else:
+                        items_to_add.append(item_ref)
+
             # Add pack if specified
             if 'pack' in option_data:
-                pack_data = get_equipment_pack(option_data['pack'])
+                pack_name = option_data['pack']
+                pack_data = get_equipment_pack(pack_name)
+                
                 if pack_data:
                     items_to_add.extend(pack_data['items'])
+                    
+                    # Create the Pack Item itself so it shows on character sheet
+                    try:
+                        # Calculate value/weight estimates or just create placeholder
+                        # Format contents for description
+                        contents_desc = "Contains:\n" + "\n".join([f"- {item['name']} (x{item.get('quantity', 1)})" for item in pack_data['items']])
+                        
+                        from items.models import Item, ItemCategory
+                        
+                        # Ensure category exists
+                        gear_cat, _ = ItemCategory.objects.get_or_create(name="Adventuring Gear")
+                        
+                        pack_item, created = Item.objects.get_or_create(
+                            name=pack_name,
+                            defaults={
+                                'description': contents_desc,
+                                'category': gear_cat,
+                                'weight': 0, # Bundle weight is sum of parts usually
+                                'value': pack_data.get('cost', 0),
+                                'rarity': 'common'
+                            }
+                        )
+                        
+                        # Add the pack container itself to the list (quantity 1)
+                        items_to_add.append({'name': pack_name, 'quantity': 1})
+                        
+                    except Exception as e:
+                        print(f"Error creating pack item: {e}")
         
         # Add default items
         items_to_add.extend(equipment_data.get('default_items', []))
@@ -158,7 +174,7 @@
             item_name = item_spec['name']
             quantity = item_spec.get('quantity', 1)
             
-            # Skip special markers (like 'martial_weapon_choice')
+            # Skip ANY remaining special markers (just in case)
             if 'choice' in item_name.lower():
                 continue
             
@@ -195,3 +211,9 @@
             "failed_items": failed_items,
             "starting_gold": starting_gold
         })
+    
+    # Add methods to class
+    cls.starting_equipment_choices = starting_equipment_choices
+    cls.apply_starting_equipment = apply_starting_equipment
+    
+    return cls

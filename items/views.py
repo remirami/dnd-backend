@@ -52,10 +52,20 @@ class WeaponViewSet(viewsets.ModelViewSet):
     def get_queryset(self):
         queryset = Weapon.objects.all()
         weapon_type = self.request.query_params.get('weapon_type', None)
+        category = self.request.query_params.get('category', None)  # 'simple' or 'martial'
         finesse = self.request.query_params.get('finesse', None)
         
         if weapon_type:
             queryset = queryset.filter(weapon_type=weapon_type)
+            
+        if category:
+            # Filter by simple or martial types
+            # Use icontains because DB might have "Simple Melee Weapons" or "simple_melee"
+            if category.lower() == 'simple':
+                queryset = queryset.filter(weapon_type__icontains='simple')
+            elif category.lower() == 'martial':
+                queryset = queryset.filter(weapon_type__icontains='martial')
+                
         if finesse is not None:
             queryset = queryset.filter(finesse=finesse.lower() == 'true')
         

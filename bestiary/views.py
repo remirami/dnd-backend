@@ -10,9 +10,15 @@ import json
 import csv
 import tempfile
 import os
-from .models import Enemy
-from .serializers import EnemySerializer
+from .models import Enemy, Language
+from .serializers import EnemySerializer, LanguageSerializer
 from .management.commands.import_monsters import Command as ImportCommand
+
+
+class LanguageViewSet(viewsets.ReadOnlyModelViewSet):
+    queryset = Language.objects.all().order_by('name')
+    serializer_class = LanguageSerializer
+
 
 
 class EnemyViewSet(viewsets.ModelViewSet):

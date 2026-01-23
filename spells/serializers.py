@@ -1,6 +1,7 @@
 from rest_framework import serializers
 from .models import Spell, SpellDamage
 from characters.serializers import CharacterClassSerializer
+from characters.models import CharacterClass
 from bestiary.serializers import DamageTypeSerializer
 
 
@@ -25,12 +26,18 @@ class SpellSerializer(serializers.ModelSerializer):
         fields = '__all__'
 
 
+class SimpleClassSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = CharacterClass
+        fields = ['id', 'name']
+
 class SpellListSerializer(serializers.ModelSerializer):
     """Lighter serializer for spell lists"""
     level_display = serializers.CharField(source='get_level_display', read_only=True)
     school_display = serializers.CharField(source='get_school_display', read_only=True)
+    classes = SimpleClassSerializer(many=True, read_only=True)
     
     class Meta:
         model = Spell
         fields = ['id', 'name', 'slug', 'level', 'level_display', 'school', 'school_display', 
-                  'casting_time', 'range', 'concentration', 'ritual']
+                  'casting_time', 'range', 'concentration', 'ritual', 'classes']

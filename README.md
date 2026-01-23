@@ -1,6 +1,8 @@
-# 🎲 D&D 5e Roguelike Gauntlet Backend
+# 🎲 SRD5 Roguelike Gauntlet Backend
 
-A comprehensive Django REST API backend for D&D 5e featuring a roguelike gauntlet campaign system, complete character progression, advanced combat mechanics, and full bestiary integration.
+A comprehensive Django REST API backend for **SRD 5.1 (Fantasy RPG)** featuring a roguelike gauntlet campaign system, complete character progression, advanced combat mechanics, and full bestiary integration.
+
+> **Legal Disclaimer**: This project is based on the System Reference Document 5.1 ("SRD 5.1") by Wizards of the Coast LLC and available at https://dnd.wizards.com/resources/systems-reference-document. The SRD 5.1 is licensed under the Creative Commons Attribution 4.0 International License available at https://creativecommons.org/licenses/by/4.0/legalcode. This project is not affiliated with or endorsed by Wizards of the Coast.
 
 ## 🚀 Features
 
@@ -269,7 +271,7 @@ curl -X POST http://127.0.0.1:8000/api/enemies/ \
   -d '{"name": "Test Monster", "hp": 10, "ac": 12, "challenge_rating": "1/4"}'
 ```
 
-## 🎲 D&D 5e Data Models
+## 🎲 SRD5 Data Models
 
 ### Core Models
 - **Enemy**: Basic creature information
