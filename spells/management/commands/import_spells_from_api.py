@@ -86,6 +86,13 @@ class Command(BaseCommand):
                     skipped_count += 1
                     continue
                 
+                # STRICT SRD FILTER: Only allow wotc-srd content
+                # This ensures we don't import 3rd party content like 'a5e', 'dmag', etc.
+                source_slug = spell_data.get('document__slug', '').lower()
+                if source_slug != 'wotc-srd':
+                    skipped_count += 1
+                    continue
+                
                 # Map Open5e data to our model
                 spell_defaults = {
                     'slug': spell_data.get('slug', slugify(spell_name)),

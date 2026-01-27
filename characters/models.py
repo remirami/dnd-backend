@@ -250,8 +250,14 @@ class CharacterStats(models.Model):
     spell_save_dc = models.IntegerField(blank=True, null=True)
     spell_attack_bonus = models.IntegerField(blank=True, null=True)
     
-    # Spell slots tracking (stored as JSON: {"1": 3, "2": 2} means 3 level-1, 2 level-2 slots remaining)
-    spell_slots = models.JSONField(default=dict, blank=True, help_text="Current spell slots remaining by level")
+    # Spell slots tracking
+    spell_slots = models.JSONField(default=dict, blank=True, help_text="Max spell slots available by level (e.g. {'1': 2})")
+    expended_spell_slots = models.JSONField(default=dict, blank=True, help_text="Expended spell slots by level (e.g. {'1': 1})")
+    
+    # Rest mechanics
+    hit_dice_used = models.IntegerField(default=0, help_text="Number of hit dice spent")
+    ki_points_used = models.IntegerField(default=0, help_text="Number of Ki points spent")
+    temp_hp = models.IntegerField(default=0, help_text="Temporary Hit Points")
     
     def __str__(self):
         return f"{self.character.name} - Stats"

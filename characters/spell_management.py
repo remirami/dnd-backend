@@ -81,6 +81,8 @@ def calculate_spells_prepared(character):
     spellcasting_mod = get_spellcasting_ability(character)
     
     if class_name == 'paladin':
+        if character.level < 2:
+            return 0
         spells_prepared = (character.level // 2) + spellcasting_mod
     else:
         spells_prepared = character.level + spellcasting_mod

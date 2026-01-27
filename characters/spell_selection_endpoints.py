@@ -17,7 +17,7 @@ def add_spell_selection_endpoints(cls):
     @action(detail=False, methods=['get'])
     def starting_spell_choices(self, request):
         """Get available spells for character creation based on class"""
-        from characters.starting_spells import get_spell_selection_requirements
+        from characters.starting_spells import get_spell_selection_requirements, RECOMMENDED_SPELLS
         
         class_name = request.query_params.get('class_name')
         if not class_name:
@@ -49,6 +49,17 @@ def add_spell_selection_endpoints(cls):
         # Serialize spells
         cantrips_data = SpellSerializer(cantrips, many=True).data
         spells_data = SpellSerializer(level_1_spells, many=True).data
+        
+        # Mark recommended spells
+        recommendations = RECOMMENDED_SPELLS.get(class_name.capitalize(), {})
+        rec_cantrips = set(recommendations.get('cantrips', []))
+        rec_spells = set(recommendations.get('spells_level_1', []))
+        
+        for spell in cantrips_data:
+            spell['recommended'] = spell['name'] in rec_cantrips
+            
+        for spell in spells_data:
+            spell['recommended'] = spell['name'] in rec_spells
         
         return Response({
             "class_name": requirements['class_name'],

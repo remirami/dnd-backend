@@ -80,6 +80,42 @@ STARTING_SPELL_RULES = {
     },
 }
 
+# Recommended spells for new players (SRD only)
+RECOMMENDED_SPELLS = {
+    'Cleric': {
+        'cantrips': ['Guidance', 'Sacred Flame', 'Spare the Dying'],
+        'spells_level_1': ['Bless', 'Cure Wounds', 'Guiding Bolt', 'Healing Word', 'Shield of Faith']
+    },
+    'Bard': {
+        'cantrips': ['Vicious Mockery', 'Minor Illusion'],
+        'spells_level_1': ['Healing Word', 'Thunderwave', 'Charm Person', 'Heroism', 'Faerie Fire']
+    },
+    'Druid': {
+        'cantrips': ['Druidcraft', 'Produce Flame', 'Shillelagh'],
+        'spells_level_1': ['Goodberry', 'Entangle', 'Thunderwave', 'Cure Wounds', 'Faerie Fire']
+    },
+    'Sorcerer': {
+        'cantrips': ['Fire Bolt', 'Mage Hand', 'Minor Illusion', 'Prestidigitation'],
+        'spells_level_1': ['Magic Missile', 'Shield', 'Sleep', 'Burning Hands', 'Mage Armor']
+    },
+    'Warlock': {
+        'cantrips': ['Eldritch Blast', 'Mage Hand'],
+        'spells_level_1': ['Hex', 'Hellish Rebuke', 'Protection from Evil and Good']
+    },
+    'Wizard': {
+        'cantrips': ['Fire Bolt', 'Mage Hand', 'Prestidigitation'],
+        'spells_level_1': ['Mage Armor', 'Magic Missile', 'Shield', 'Sleep', 'Find Familiar']
+    },
+    'Paladin': {
+        'cantrips': [],
+        'spells_level_1': ['Bless', 'Cure Wounds', 'Divine Favor', 'Shield of Faith']
+    },
+    'Ranger': {
+        'cantrips': [],
+        'spells_level_1': ['Hunter\'s Mark', 'Cure Wounds', 'Fog Cloud']
+    }
+}
+
 # Non-spellcasting classes
 NON_CASTERS = ['Fighter', 'Barbarian', 'Rogue', 'Monk']
 

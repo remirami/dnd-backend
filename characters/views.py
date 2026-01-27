@@ -33,12 +33,14 @@ from .equipment_endpoints import add_equipment_endpoints_to_viewset
 from .spell_selection_endpoints import add_spell_selection_endpoints
 from .spell_preparation_endpoints import add_spell_preparation_endpoints
 from .hp_endpoints import add_hp_endpoints
+from .rest_endpoints import add_rest_endpoints
 
 
 @add_equipment_endpoints_to_viewset
 @add_spell_selection_endpoints
 @add_spell_preparation_endpoints
 @add_hp_endpoints
+@add_rest_endpoints
 class CharacterViewSet(viewsets.ModelViewSet):
     """API endpoint for managing player characters."""
     serializer_class = CharacterSerializer
@@ -145,6 +147,36 @@ class CharacterViewSet(viewsets.ModelViewSet):
                      'source': 'level_up',
                      'type': 'new_spell'
                  }
+
+        elif character_class.name.lower() in ['paladin', 'cleric', 'druid']:
+             # Prepared Casters: Prompt to prepare spells if limit increases
+             # Paladins must be at least level 2
+             if character_class.name.lower() == 'paladin' and level < 2:
+                 pass
+             else:
+                 from characters.spell_management import calculate_spells_prepared
+                 prepared_limit = calculate_spells_prepared(character)
+                 
+                 current_prepared_count = CharacterSpell.objects.filter(
+                    character=character,
+                    is_prepared=True
+                 ).count()
+                 
+                 diff = prepared_limit - current_prepared_count
+                 
+                 if diff > 0:
+                     max_spell_level = 1
+                     if hasattr(character, 'stats') and character.stats.spell_slots:
+                         for lvl, slots in character.stats.spell_slots.items():
+                             if slots > 0:
+                                 max_spell_level = max(max_spell_level, int(lvl))
+                     
+                     pending_choices = {
+                         'count': diff,
+                         'max_level': max_spell_level,
+                         'source': 'level_up',
+                         'type': 'new_spell'
+                     }
 
         
         # If no leveled spell choices, check for Cantrips
