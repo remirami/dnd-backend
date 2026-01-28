@@ -49,6 +49,35 @@ class CharacterFeatureSerializer(serializers.ModelSerializer):
     class Meta:
         model = CharacterFeature
         fields = "__all__"
+        
+    def validate(self, data):
+        """Validate selection against options and limit"""
+        if 'selection' in data:
+            selection = data['selection']
+            instance = self.instance
+            
+            # If created via nested serializer, we might not have instance or options yet valid in context
+            # But usually we update features via PATCH
+            if instance:
+                options = instance.options
+                choice_limit = instance.choice_limit
+                
+                if selection:
+                    # Generic validation for list
+                    if not isinstance(selection, list):
+                        raise serializers.ValidationError({"selection": "Selection must be a list."})
+                    
+                    # Check limit
+                    if len(selection) > choice_limit:
+                         raise serializers.ValidationError({"selection": f"You can only select up to {choice_limit} options."})
+                    
+                    # Check validity
+                    if options:
+                        for item in selection:
+                            if item not in options:
+                                raise serializers.ValidationError({"selection": f"'{item}' is not a valid option."})
+        
+        return data
 
 
 from items.serializers import ItemSerializer
@@ -277,8 +306,12 @@ class CharacterSerializer(serializers.ModelSerializer):
         # Create the character
         character = super().create(validated_data)
         
-        # Apply racial bonuses to stats
-        if race:
+        # Apply racial bonuses to stats (ONLY for 2014 Rules)
+        # For 2024, species have no ASI. Backgrounds provide them, but we assume
+        # the frontend sends the FINAL calculated scores for 2024 characters (base + background).
+        ruleset_version = validated_data.get('ruleset_version', '2014')
+        
+        if race and ruleset_version != '2024':
             from .services.validators import RacialBonusCalculator
             # Map full names to short names for calculator
             short_scores = {
@@ -301,6 +334,25 @@ class CharacterSerializer(serializers.ModelSerializer):
             ability_scores['wisdom'] = final_scores_short['wis']
             ability_scores['charisma'] = final_scores_short['cha']
         
+        
+        # 2024 Rules: Auto-grant Origin Feat from Background
+        if ruleset_version == '2024' and validated_data.get('background'):
+            bg = validated_data['background']
+            origin_feat_name = bg.ability_score_options.get('feat')
+            if origin_feat_name:
+                try:
+                    from .models import Feat, CharacterFeat
+                    feat = Feat.objects.filter(name__iexact=origin_feat_name).first()
+                    if feat:
+                        CharacterFeat.objects.create(
+                            character=character,
+                            feat=feat,
+                            level_taken=1
+                        )
+                        print(f"Granted Origin Feat: {feat.name}")
+                except Exception as e:
+                    print(f"Failed to grant origin feat {origin_feat_name}: {e}")
+
         # Auto-create CharacterStats
         con_mod = (ability_scores['constitution'] - 10) // 2
         dex_mod = (ability_scores['dexterity'] - 10) // 2
@@ -446,6 +498,21 @@ class CharacterSerializer(serializers.ModelSerializer):
                     )
                 except Language.DoesNotExist:
                     pass
+        
+        # Apply Class Features (Level 1)
+        if character_class:
+            from campaigns.class_features_data import get_class_features
+            features = get_class_features(character_class.name, 1, ruleset=ruleset_version)
+            for feature_data in features:
+                CharacterFeature.objects.create(
+                    character=character,
+                    name=feature_data['name'],
+                    feature_type='class',
+                    description=feature_data['description'],
+                    source=f"{character_class.name} Level 1",
+                    options=feature_data.get('options', []),
+                    choice_limit=feature_data.get('choice_limit', 1)
+                )
                 
         return character
 
@@ -504,7 +571,9 @@ class CharacterSerializer(serializers.ModelSerializer):
                             defaults={
                                 'feature_type': 'class',
                                 'description': feature_data['description'],
-                                'source': f"{instance.character_class.name} Level {level}"
+                                'source': f"{instance.character_class.name} Level {level}",
+                                'options': feature_data.get('options', []),
+                                'choice_limit': feature_data.get('choice_limit', 1)
                             }
                         )
 
@@ -558,3 +627,32 @@ class CharacterFeatSerializer(serializers.ModelSerializer):
         model = CharacterFeat
         fields = '__all__'
         read_only_fields = ('character', 'taken_at')
+        
+    def validate(self, data):
+        """Check for duplicates and provide helpful error message"""
+        character = self.context.get('character')
+        # If character not in context (creation via nested?), try to get from data (not usually present in nested)
+        
+        feat_id = data.get('feat_id')
+        if not feat_id and self.instance:
+            feat_id = self.instance.feat_id
+            
+        if character and feat_id:
+            from .models import CharacterFeat, Feat
+            # Check if likely duplicate
+            if CharacterFeat.objects.filter(character=character, feat_id=feat_id).exists():
+                try:
+                    feat = Feat.objects.get(pk=feat_id)
+                    feat_name = feat.name
+                except:
+                    feat_name = "this feat"
+                    
+                error_msg = f"You already have {feat_name}."
+                
+                # Add context if it's an auto-granted feat
+                if feat_name == "Tough" and "Farmer" in character.background.name:
+                     error_msg += " It was granted automatically by your Farmer background."
+                
+                raise serializers.ValidationError(error_msg)
+                
+        return data

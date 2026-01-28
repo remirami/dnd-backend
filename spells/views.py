@@ -61,6 +61,12 @@ class SpellViewSet(viewsets.ModelViewSet):
         class_name = self.request.query_params.get('classes')
         if class_name:
             queryset = queryset.filter(classes__name__iexact=class_name)
+            
+        # Filter by ruleset (default to 2014 if not specified, or handle both?)
+        # For now, explicit filtering.
+        ruleset = self.request.query_params.get('ruleset')
+        if ruleset:
+            queryset = queryset.filter(source_ruleset=ruleset)
         
         return queryset
     

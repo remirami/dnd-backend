@@ -393,7 +393,7 @@ class CharacterViewSet(viewsets.ModelViewSet):
             
             # Apply class features for this class level
             features_gained = []
-            class_features = get_class_features(target_class.name, new_class_level)
+            class_features = get_class_features(target_class.name, new_class_level, ruleset=character.ruleset_version)
             for feature_data in class_features:
                 CharacterFeature.objects.get_or_create(
                     character=character,
@@ -401,7 +401,9 @@ class CharacterViewSet(viewsets.ModelViewSet):
                     defaults={
                         'feature_type': 'class',
                         'description': feature_data['description'],
-                        'source': f"{target_class.get_name_display()} Level {new_class_level}"
+                        'source': f"{target_class.get_name_display()} Level {new_class_level}",
+                        'options': feature_data.get('options', []),
+                        'choice_limit': feature_data.get('choice_limit', 1)
                     }
                 )
                 features_gained.append({
@@ -412,7 +414,7 @@ class CharacterViewSet(viewsets.ModelViewSet):
             
             # Apply subclass features if applicable
             if class_level.subclass:
-                subclass_features = get_subclass_features(class_level.subclass, new_class_level)
+                subclass_features = get_subclass_features(class_level.subclass, new_class_level, ruleset=character.ruleset_version)
                 for feature_data in subclass_features:
                     CharacterFeature.objects.get_or_create(
                         character=character,
@@ -420,7 +422,9 @@ class CharacterViewSet(viewsets.ModelViewSet):
                         defaults={
                             'feature_type': 'class',
                             'description': feature_data['description'],
-                            'source': f"{class_level.subclass} Level {new_class_level}"
+                            'source': f"{class_level.subclass} Level {new_class_level}",
+                            'options': feature_data.get('options', []),
+                            'choice_limit': feature_data.get('choice_limit', 1)
                         }
                     )
                     features_gained.append({
@@ -581,7 +585,7 @@ class CharacterViewSet(viewsets.ModelViewSet):
         
         # Apply class features
         features_gained = []
-        class_features = get_class_features(primary_class.name, new_level)
+        class_features = get_class_features(primary_class.name, new_level, ruleset=character.ruleset_version)
         for feature_data in class_features:
             CharacterFeature.objects.get_or_create(
                 character=character,
@@ -600,7 +604,7 @@ class CharacterViewSet(viewsets.ModelViewSet):
         
         # Apply subclass features if character has a subclass
         if character.subclass:
-            subclass_features = get_subclass_features(character.subclass, new_level)
+            subclass_features = get_subclass_features(character.subclass, new_level, ruleset=character.ruleset_version)
             for feature_data in subclass_features:
                 CharacterFeature.objects.get_or_create(
                     character=character,
@@ -862,7 +866,15 @@ class CharacterViewSet(viewsets.ModelViewSet):
     def eligible_subclasses(self, request, pk=None):
         """Get list of eligible subclasses for the character (handling multiclassing)"""
         character = self.get_object()
-        from campaigns.class_features_data import AVAILABLE_SUBCLASSES, SUBCLASS_FEATURES
+        from campaigns.class_features_data import AVAILABLE_SUBCLASSES_2014, AVAILABLE_SUBCLASSES_2024, SUBCLASS_FEATURES_2014, SUBCLASS_FEATURES_2024
+        
+        # Select ruleset data
+        if character.ruleset_version == '2024':
+            AVAILABLE_SUBCLASSES = AVAILABLE_SUBCLASSES_2024
+            features_source = SUBCLASS_FEATURES_2024
+        else:
+            AVAILABLE_SUBCLASSES = AVAILABLE_SUBCLASSES_2014
+            features_source = SUBCLASS_FEATURES_2014
         
         # Subclass selection levels
         subclass_levels = {
@@ -932,16 +944,18 @@ class CharacterViewSet(viewsets.ModelViewSet):
             })
             
         options = []
+        options = []
         for sub_name in AVAILABLE_SUBCLASSES[lookup_name]:
             description = "No description available."
-            if sub_name in SUBCLASS_FEATURES:
+            if sub_name in features_source:
                 # Try to get a description from the first feature at the earliest level
-                levels = sorted(SUBCLASS_FEATURES[sub_name].keys())
-                if levels and SUBCLASS_FEATURES[sub_name][levels[0]]:
-                     for feature in SUBCLASS_FEATURES[sub_name][levels[0]]:
+                levels = sorted(features_source[sub_name].keys())
+                if levels and features_source[sub_name][levels[0]]:
+                     for feature in features_source[sub_name][levels[0]]:
                          if 'description' in feature:
                              description = feature['description']
                              break
+            
             
             options.append({
                 "name": sub_name,
@@ -967,7 +981,13 @@ class CharacterViewSet(viewsets.ModelViewSet):
             return Response({"error": "Character already has a subclass"}, status=status.HTTP_400_BAD_REQUEST)
             
         # Verify eligibility
-        from campaigns.class_features_data import AVAILABLE_SUBCLASSES, get_all_subclass_features_up_to_level
+        from campaigns.class_features_data import AVAILABLE_SUBCLASSES_2014, AVAILABLE_SUBCLASSES_2024, get_all_subclass_features_up_to_level
+
+        # Select ruleset data
+        if character.ruleset_version == '2024':
+            AVAILABLE_SUBCLASSES = AVAILABLE_SUBCLASSES_2024
+        else:
+            AVAILABLE_SUBCLASSES = AVAILABLE_SUBCLASSES_2014
         
         class_name = character.character_class.name
         # Handle case mismatch
@@ -978,14 +998,49 @@ class CharacterViewSet(viewsets.ModelViewSet):
         if class_name not in AVAILABLE_SUBCLASSES or subclass_name not in AVAILABLE_SUBCLASSES[class_name]:
             return Response({"error": f"Invalid subclass '{subclass_name}' for class '{class_name}'"}, status=status.HTTP_400_BAD_REQUEST)
             
-        # Apply subclass
+        # Apply subclass to Character model (Legacy compatibility)
         character.subclass = subclass_name
         character.pending_subclass_selection = False
         character.save()
         
+        # Sync subclass to CharacterClassLevel (For Multiclassing/Frontend)
+        from .models import CharacterClassLevel
+        if character.character_class:
+            class_level = CharacterClassLevel.objects.filter(
+                character=character, 
+                character_class=character.character_class
+            ).first()
+            if class_level:
+                class_level.subclass = subclass_name
+                class_level.save()
+
+        # Sync selection to the defining Class Feature (e.g. "Martial Archetype")
+        selector_feature_map = {
+            'Fighter': 'Martial Archetype',
+            'Barbarian': 'Primal Path',
+            'Rogue': 'Roguish Archetype',
+            'Sorcerer': 'Sorcerous Origin',
+            'Warlock': 'Otherworldly Patron',
+            'Cleric': 'Divine Domain',
+            'Druid': 'Druid Circle',
+            'Bard': 'Bard College',
+            'Monk': 'Monastic Tradition',
+            'Paladin': 'Sacred Oath',
+            'Ranger': 'Ranger Archetype',
+            'Wizard': 'Arcane Tradition',
+        }
+        
+        # Use Title Case for map lookup to match keys (e.g. 'fighter' -> 'Fighter')
+        selector_name = selector_feature_map.get(character.character_class.name.title())
+        if selector_name:
+            feature = CharacterFeature.objects.filter(character=character, name=selector_name).first()
+            if feature:
+                feature.selection = [subclass_name]
+                feature.save()
+        
         # Apply retroactive features
         features_gained = []
-        features_by_level = get_all_subclass_features_up_to_level(subclass_name, character.level)
+        features_by_level = get_all_subclass_features_up_to_level(subclass_name, character.level, ruleset=character.ruleset_version)
         
         for level, features in features_by_level.items():
             for feature_data in features:
@@ -995,7 +1050,9 @@ class CharacterViewSet(viewsets.ModelViewSet):
                         name=feature_data['name'],
                         feature_type='subclass',
                         description=feature_data['description'],
-                        source=f"{subclass_name} Level {level}"
+                        source=f"{subclass_name} Level {level}",
+                        options=feature_data.get('options', []),
+                        choice_limit=feature_data.get('choice_limit', 1)
                     )
                     features_gained.append(feature_data['name'])
         
@@ -2249,6 +2306,30 @@ class CharacterViewSet(viewsets.ModelViewSet):
 
 class CharacterClassViewSet(viewsets.ReadOnlyModelViewSet):
     """API endpoint for viewing character classes."""
+    @action(detail=True, methods=['get'])
+    def subclasses(self, request, pk=None):
+        """Get available subclasses for this class"""
+        character_class = self.get_object()
+        ruleset = request.query_params.get('ruleset', '2014')
+        
+        from campaigns.class_features_data import AVAILABLE_SUBCLASSES_2014, AVAILABLE_SUBCLASSES_2024
+        
+        if ruleset == '2024':
+            subclasses = AVAILABLE_SUBCLASSES_2024.get(character_class.name, [])
+        else:
+            subclasses = AVAILABLE_SUBCLASSES_2014.get(character_class.name, [])
+            
+        data = []
+        for sc_name in subclasses:
+            # TODO: Add real descriptions from data
+            data.append({
+                'name': sc_name,
+                'id': sc_name,
+                'description': f"A valid subclass for {character_class.name}"
+            })
+            
+        return Response(data)
+
     queryset = CharacterClass.objects.all()
     serializer_class = CharacterClassSerializer
 
@@ -2258,11 +2339,30 @@ class CharacterRaceViewSet(viewsets.ReadOnlyModelViewSet):
     queryset = CharacterRace.objects.all()
     serializer_class = CharacterRaceSerializer
 
+    def get_queryset(self):
+        queryset = CharacterRace.objects.all()
+        ruleset = self.request.query_params.get('ruleset', '2014')
+        
+        if ruleset == '2024':
+            return queryset.filter(source_ruleset__in=['2024', 'all'])
+        else:
+            # Default to 2014 (Legacy) behavior
+            return queryset.filter(source_ruleset__in=['2014', 'all'])
+
 
 class CharacterBackgroundViewSet(viewsets.ReadOnlyModelViewSet):
     """API endpoint for viewing character backgrounds."""
     queryset = CharacterBackground.objects.all()
     serializer_class = CharacterBackgroundSerializer
+
+    def get_queryset(self):
+        queryset = CharacterBackground.objects.all()
+        ruleset = self.request.query_params.get('ruleset', '2014')
+        
+        if ruleset == '2024':
+            return queryset.filter(source_ruleset__in=['2024', 'all'])
+        else:
+            return queryset.filter(source_ruleset__in=['2014', 'all'])
 
 
 class CharacterStatsViewSet(viewsets.ModelViewSet):

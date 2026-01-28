@@ -27,9 +27,111 @@ class CharacterClass(models.Model):
     primary_ability = models.CharField(max_length=3)  # STR, DEX, CON, INT, WIS, CHA
     saving_throw_proficiencies = models.CharField(max_length=10)  # e.g. "STR,CON"
     description = models.TextField(blank=True, null=True)
+    source_ruleset = models.CharField(
+        max_length=10, 
+        choices=[('2014', '2014'), ('2024', '2024'), ('all', 'All')],
+        default='2014'
+    )
     
     def __str__(self):
         return self.get_name_display()
+
+
+class Feat(models.Model):
+    """D&D 5e feats that can be taken instead of ASI"""
+    
+    name = models.CharField(max_length=100, unique=True)
+    description = models.TextField()
+    
+    # Prerequisites
+    strength_requirement = models.IntegerField(default=0, validators=[MinValueValidator(0), MaxValueValidator(20)])
+    dexterity_requirement = models.IntegerField(default=0, validators=[MinValueValidator(0), MaxValueValidator(20)])
+    constitution_requirement = models.IntegerField(default=0, validators=[MinValueValidator(0), MaxValueValidator(20)])
+    intelligence_requirement = models.IntegerField(default=0, validators=[MinValueValidator(0), MaxValueValidator(20)])
+    wisdom_requirement = models.IntegerField(default=0, validators=[MinValueValidator(0), MaxValueValidator(20)])
+    charisma_requirement = models.IntegerField(default=0, validators=[MinValueValidator(0), MaxValueValidator(20)])
+    
+    # Level requirements
+    minimum_level = models.IntegerField(default=4, validators=[MinValueValidator(1), MaxValueValidator(20)])
+    
+    # Proficiency requirements
+    proficiency_requirements = models.CharField(
+        max_length=200, 
+        blank=True,
+        help_text="Comma-separated list of required proficiencies (e.g., 'Heavy Armor,Martial Weapons')"
+    )
+    
+    # Ability score increases granted by this feat (some feats give +1 to a stat)
+    ability_score_increase = models.CharField(
+        max_length=3,
+        blank=True,
+        choices=[
+            ('STR', 'Strength'),
+            ('DEX', 'Dexterity'),
+            ('CON', 'Constitution'),
+            ('INT', 'Intelligence'),
+            ('WIS', 'Wisdom'),
+            ('CHA', 'Charisma'),
+        ],
+        help_text="If this feat grants +1 to an ability score, specify which one"
+    )
+    
+    # Source book
+    source = models.CharField(max_length=100, default='Player\'s Handbook')
+    
+    def __str__(self):
+        return self.name
+    
+    def check_prerequisites(self, character):
+        """
+        Check if a character meets the prerequisites for this feat.
+        
+        Args:
+            character: Character instance
+        
+        Returns:
+            tuple: (is_eligible, reason_if_not)
+        """
+        if not hasattr(character, 'stats'):
+            return False, "Character must have stats"
+        
+        stats = character.stats
+        
+        # Check level requirement
+        if character.level < self.minimum_level:
+            return False, f"Requires level {self.minimum_level}"
+        
+        # Check ability score requirements
+        if stats.strength < self.strength_requirement:
+            return False, f"Requires Strength {self.strength_requirement}"
+        if stats.dexterity < self.dexterity_requirement:
+            return False, f"Requires Dexterity {self.dexterity_requirement}"
+        if stats.constitution < self.constitution_requirement:
+            return False, f"Requires Constitution {self.constitution_requirement}"
+        if stats.intelligence < self.intelligence_requirement:
+            return False, f"Requires Intelligence {self.intelligence_requirement}"
+        if stats.wisdom < self.wisdom_requirement:
+            return False, f"Requires Wisdom {self.wisdom_requirement}"
+        if stats.charisma < self.charisma_requirement:
+            return False, f"Requires Charisma {self.charisma_requirement}"
+        
+        # Check proficiency requirements
+        if self.proficiency_requirements:
+            required_profs = [p.strip() for p in self.proficiency_requirements.split(',')]
+            character_profs = set(
+                character.proficiencies.values_list('skill_name', flat=True)
+            ) | set(
+                character.proficiencies.values_list('item_name', flat=True)
+            )
+            
+            for req_prof in required_profs:
+                if req_prof not in character_profs:
+                    return False, f"Requires proficiency in {req_prof}"
+        
+        return True, None
+    
+    class Meta:
+        ordering = ['name']
 
 
 class CharacterRace(models.Model):
@@ -56,6 +158,11 @@ class CharacterRace(models.Model):
     skill_proficiencies = models.CharField(max_length=100, blank=True, help_text="Comma-separated list of skills, e.g. 'Perception,Stealth'")
     traits = models.JSONField(default=list, blank=True, help_text="List of racial traits")
     description = models.TextField(blank=True, null=True)
+    source_ruleset = models.CharField(
+        max_length=10, 
+        choices=[('2014', '2014'), ('2024', '2024'), ('all', 'All')],
+        default='2014'
+    )
     
     def __str__(self):
         return self.get_name_display()
@@ -85,6 +192,17 @@ class CharacterBackground(models.Model):
     feature_name = models.CharField(max_length=100, blank=True, null=True) # e.g. "Shelter of the Faithful"
     feature_description = models.TextField(blank=True, null=True)
     description = models.TextField(blank=True, null=True)
+    source_ruleset = models.CharField(
+        max_length=10, 
+        choices=[('2014', '2014'), ('2024', '2024'), ('all', 'All')],
+        default='2014'
+    )
+    # 2024 Rules: Backgrounds provide ASIs
+    ability_score_options = models.JSONField(
+        default=dict, 
+        blank=True, 
+        help_text="For 2024 rules: {'options': ['+2/+1', '+1/+1/+1'], 'stats': ['str', 'dex', ...]}"
+    )
     
     def __str__(self):
         return self.get_name_display()
@@ -95,6 +213,11 @@ class Character(models.Model):
     SIZE_CHOICES = [
         ('S', 'Small'),
         ('M', 'Medium'),
+    ]
+
+    RULESET_CHOICES = [
+        ('2014', '2014 Legacy'),
+        ('2024', '2024 Standard'),
     ]
     
     ALIGNMENT_CHOICES = [
@@ -129,6 +252,7 @@ class Character(models.Model):
     # Basic properties
     size = models.CharField(max_length=1, choices=SIZE_CHOICES, default='M')
     alignment = models.CharField(max_length=2, choices=ALIGNMENT_CHOICES, default='N')
+    ruleset_version = models.CharField(max_length=10, choices=RULESET_CHOICES, default='2014')
     hp_method = models.CharField(max_length=10, choices=HP_METHOD_CHOICES, default='fixed', help_text="Method used for HP calculation")
     
     # Experience points
@@ -361,6 +485,11 @@ class CharacterFeature(models.Model):
     description = models.TextField()
     source = models.CharField(max_length=100, blank=True)  # e.g. "Fighter Level 2", "Elf Race"
     
+    # Choice handling
+    options = models.JSONField(default=list, blank=True, help_text="List of available choices (e.g. ['Archery', 'Defense'])")
+    choice_limit = models.IntegerField(default=1, help_text="Number of choices allowed")
+    selection = models.JSONField(default=list, blank=True, null=True, help_text="User's selection (list of strings)")
+    
     def __str__(self):
         return f"{self.character.name} - {self.name}"
 
@@ -585,101 +714,6 @@ class CharacterClassLevel(models.Model):
         return f"{self.character.name} - {self.character_class.get_name_display()} Level {self.level}"
 
 
-class Feat(models.Model):
-    """D&D 5e feats that can be taken instead of ASI"""
-    
-    name = models.CharField(max_length=100, unique=True)
-    description = models.TextField()
-    
-    # Prerequisites
-    strength_requirement = models.IntegerField(default=0, validators=[MinValueValidator(0), MaxValueValidator(20)])
-    dexterity_requirement = models.IntegerField(default=0, validators=[MinValueValidator(0), MaxValueValidator(20)])
-    constitution_requirement = models.IntegerField(default=0, validators=[MinValueValidator(0), MaxValueValidator(20)])
-    intelligence_requirement = models.IntegerField(default=0, validators=[MinValueValidator(0), MaxValueValidator(20)])
-    wisdom_requirement = models.IntegerField(default=0, validators=[MinValueValidator(0), MaxValueValidator(20)])
-    charisma_requirement = models.IntegerField(default=0, validators=[MinValueValidator(0), MaxValueValidator(20)])
-    
-    # Level requirements
-    minimum_level = models.IntegerField(default=4, validators=[MinValueValidator(1), MaxValueValidator(20)])
-    
-    # Proficiency requirements
-    proficiency_requirements = models.CharField(
-        max_length=200, 
-        blank=True,
-        help_text="Comma-separated list of required proficiencies (e.g., 'Heavy Armor,Martial Weapons')"
-    )
-    
-    # Ability score increases granted by this feat (some feats give +1 to a stat)
-    ability_score_increase = models.CharField(
-        max_length=3,
-        blank=True,
-        choices=[
-            ('STR', 'Strength'),
-            ('DEX', 'Dexterity'),
-            ('CON', 'Constitution'),
-            ('INT', 'Intelligence'),
-            ('WIS', 'Wisdom'),
-            ('CHA', 'Charisma'),
-        ],
-        help_text="If this feat grants +1 to an ability score, specify which one"
-    )
-    
-    # Source book
-    source = models.CharField(max_length=100, default='Player\'s Handbook')
-    
-    def __str__(self):
-        return self.name
-    
-    def check_prerequisites(self, character):
-        """
-        Check if a character meets the prerequisites for this feat.
-        
-        Args:
-            character: Character instance
-        
-        Returns:
-            tuple: (is_eligible, reason_if_not)
-        """
-        if not hasattr(character, 'stats'):
-            return False, "Character must have stats"
-        
-        stats = character.stats
-        
-        # Check level requirement
-        if character.level < self.minimum_level:
-            return False, f"Requires level {self.minimum_level}"
-        
-        # Check ability score requirements
-        if stats.strength < self.strength_requirement:
-            return False, f"Requires Strength {self.strength_requirement}"
-        if stats.dexterity < self.dexterity_requirement:
-            return False, f"Requires Dexterity {self.dexterity_requirement}"
-        if stats.constitution < self.constitution_requirement:
-            return False, f"Requires Constitution {self.constitution_requirement}"
-        if stats.intelligence < self.intelligence_requirement:
-            return False, f"Requires Intelligence {self.intelligence_requirement}"
-        if stats.wisdom < self.wisdom_requirement:
-            return False, f"Requires Wisdom {self.wisdom_requirement}"
-        if stats.charisma < self.charisma_requirement:
-            return False, f"Requires Charisma {self.charisma_requirement}"
-        
-        # Check proficiency requirements
-        if self.proficiency_requirements:
-            required_profs = [p.strip() for p in self.proficiency_requirements.split(',')]
-            character_profs = set(
-                character.proficiencies.values_list('skill_name', flat=True)
-            ) | set(
-                character.proficiencies.values_list('item_name', flat=True)
-            )
-            
-            for req_prof in required_profs:
-                if req_prof not in character_profs:
-                    return False, f"Requires proficiency in {req_prof}"
-        
-        return True, None
-    
-    class Meta:
-        ordering = ['name']
 
 
 class CharacterFeat(models.Model):

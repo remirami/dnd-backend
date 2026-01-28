@@ -61,6 +61,12 @@ class Spell(models.Model):
     
     # Metadata
     source = models.CharField(max_length=50, default='PHB', help_text="Source book (PHB, XGE, TCE, etc.)")
+    source_ruleset = models.CharField(
+        max_length=10, 
+        choices=[('2014', '2014 Rules'), ('2024', '2024 Rules')], 
+        default='2014',
+        help_text="The ruleset version this spell belongs to."
+    )
     page = models.CharField(max_length=10, blank=True, help_text="Page number in source book")
     
     # Timestamps

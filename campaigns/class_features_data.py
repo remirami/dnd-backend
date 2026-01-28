@@ -6,7 +6,9 @@ Features are organized by class and level.
 """
 
 # Class features by class name and level
-CLASS_FEATURES = {
+# Class features by class name and level
+CLASS_FEATURES_2014 = {
+
     'fighter': {
         1: [
             {
@@ -27,7 +29,9 @@ CLASS_FEATURES = {
         3: [
             {
                 'name': 'Martial Archetype',
-                'description': 'You choose an archetype that you strive to emulate in your combat styles and techniques (Champion, Battle Master, or Eldritch Knight). Your choice grants you features at 3rd level and again at 7th, 10th, 15th, and 18th level.'
+                'description': 'You choose an archetype that you strive to emulate in your combat styles and techniques (Champion, Battle Master, or Eldritch Knight). Your choice grants you features at 3rd level and again at 7th, 10th, 15th, and 18th level.',
+                'options': ['Champion', 'Battle Master', 'Eldritch Knight'],
+                'choice_limit': 1
             }
         ],
         4: [],  # ASI only
@@ -1286,34 +1290,421 @@ CLASS_FEATURES = {
 }
 
 
-def get_class_features(class_name, level):
+# 2024 Class Features
+CLASS_FEATURES_2024 = {
+    'Fighter': {
+        1: [
+            {
+                'name': 'Fighting Style',
+                'description': 'You gain a Fighting Style feat of your choice.'
+            },
+            {
+                'name': 'Second Wind',
+                'description': 'You have a limited well of stamina that you can draw on to protect yourself from harm. On your turn, you can use a bonus action to regain hit points equal to 1d10 + your fighter level. You can use this feature 2 times.'
+            },
+            {
+                'name': 'Weapon Mastery',
+                'description': 'You have mastered the use of weapons. You can use the mastery properties of weapons you are proficient with.'
+            }
+        ],
+        2: [
+            {
+                'name': 'Action Surge',
+                'description': 'You can push yourself beyond your normal limits for a moment. On your turn, you can take one additional action.'
+            },
+            {
+                'name': 'Tactical Mind',
+                'description': 'You have a mind for tactics on and off the battlefield. When you fail an ability check, you can expend a use of your Second Wind to add 1d10 to the roll.'
+            }
+        ],
+        3: [
+            {
+                'name': 'Martial Archetype',
+                'description': 'You choose an archetype that you strive to emulate in your combat styles and techniques.',
+                'options': ['Champion', 'Battle Master', 'Eldritch Knight'],
+                'choice_limit': 1
+            }
+        ]
+    },
+    'Wizard': {
+        1: [
+            {
+                'name': 'Spellcasting',
+                'description': 'As a student of arcane magic, you have a spellbook containing spells that show the first glimmerings of your true power. You also have the Ritual Caster feature.'
+            },
+            {
+                'name': 'Arcane Recovery',
+                'description': 'You have learned to regain some of your magical energy by studying your spellbook. Once per day when you finish a short rest, you can recover spell slots.'
+            }
+        ],
+        2: [
+            {
+                'name': 'Scholar',
+                'description': 'You have studied the lore of the multiverse. You gain Expertise in one of the following skills: Arcana, History, Nature, or Religion.'
+            }
+        ],
+        3: [
+            {
+                'name': 'Wizard Subclass',
+                'description': 'You choose a wizard subclass (Arcane Tradition) at 3rd level.'
+            }
+        ]
+    },
+    'Cleric': {
+        1: [
+            {
+                'name': 'Spellcasting',
+                'description': 'You have learned to cast spells through meditation and prayer to your deity. You also have the Ritual Caster feature.'
+            },
+            {
+                'name': 'Divine Order',
+                'description': 'You have dedicated yourself to a specific order of divine service. Choose one of the following: Protector (Heavy Armor & Martial Weapon proficiency) or Thaumaturge (Extra cantrip & increased Religion checks).'
+            }
+        ],
+        2: [
+            {
+                'name': 'Channel Divinity',
+                'description': 'You gain the ability to channel divine energy directly from your deity, using that energy to fuel magical effects. You start with two effects: Divine Spark and Turn Undead.'
+            }
+        ],
+        3: [
+            {
+                'name': 'Cleric Subclass',
+                'description': 'You choose a cleric subclass (Divine Domain) at 3rd level.'
+            }
+        ]
+    },
+    'Rogue': {
+        1: [
+            {
+                'name': 'Expertise',
+                'description': 'Choose two of your skill proficiencies or one of your skill proficiencies and your proficiency with thieves\' tools. Your proficiency bonus is doubled for any ability check you make that uses either of the chosen proficiencies.'
+            },
+            {
+                'name': 'Sneak Attack',
+                'description': 'You know how to strike subtly and exploit a foe\'s distraction. Once per turn, you can deal an extra 1d6 damage to one creature you hit with an attack if you have advantage on the attack roll.'
+            },
+            {
+                'name': 'Thieves\' Cant',
+                'description': 'You have learned thieves\' cant, a secret mix of dialect, jargon, and code that allows you to hide messages in seemingly normal conversation.'
+            },
+            {
+                'name': 'Weapon Mastery',
+                'description': 'You have mastered the use of weapons. You can use the mastery properties of weapons you are proficient with.'
+            }
+        ],
+        2: [
+            {
+                'name': 'Cunning Action',
+                'description': 'Your quick thinking and agility allow you to move and act quickly. You can take a bonus action on each of your turns in combat to take the Dash, Disengage, or Hide action.'
+            }
+        ],
+        3: [
+            {
+                'name': 'Rogue Subclass',
+                'description': 'You choose a rogue subclass at 3rd level.'
+            },
+            {
+                'name': 'Steady Aim',
+                'description': 'As a bonus action, you give yourself advantage on your next attack roll on the current turn. You can use this bonus action only if you haven\'t moved during this turn, and after you use the bonus action, your speed is 0 until the end of the current turn.'
+            }
+        ]
+    },
+    'Barbarian': {
+        1: [
+            {
+                'name': 'Rage',
+                'description': 'In battle, you fight with primal ferocity. On your turn, you can enter a rage as a bonus action.'
+            },
+            {
+                'name': 'Unarmored Defense',
+                'description': 'While you are not wearing any armor, your Armor Class equals 10 + your Dexterity modifier + your Constitution modifier. You can use a shield and still gain this benefit.'
+            },
+            {
+                'name': 'Weapon Mastery',
+                'description': 'You have mastered the use of weapons. You can use the mastery properties of weapons you are proficient with.'
+            }
+        ],
+        2: [
+            {
+                'name': 'Danger Sense',
+                'description': 'You gain an uncanny sense of when things nearby aren\'t as they should be, giving you an edge when you dodge away from danger.'
+            },
+            {
+                'name': 'Reckless Attack',
+                'description': 'You can throw aside all concern for defense to attack with fierce desperation. When you make your first attack on your turn, you can decide to attack recklessly.'
+            }
+        ],
+        3: [
+            {
+                'name': 'Barbarian Subclass',
+                'description': 'You choose a path that shapes the nature of your rage (Primal Path).'
+            },
+            {
+                'name': 'Primal Knowledge',
+                'description': 'You gain proficiency in another skill of your choice from the list of skills available to barbarians at 1st level.'
+            }
+        ]
+    },
+    'Bard': {
+        1: [
+            {
+                'name': 'Spellcasting',
+                'description': 'You have learned to untangle and reshape the fabric of reality in harmony with your wishes and music. You have the Ritual Caster feature.'
+            },
+            {
+                'name': 'Bardic Inspiration',
+                'description': 'You can inspire others through stirring words or music. To do so, you use a bonus action on your turn to choose one creature other than yourself within 60 feet of you who can hear you. That creature gains one Bardic Inspiration die, a d6.'
+            }
+        ],
+        2: [
+            {
+                'name': 'Expertise',
+                'description': 'Choose two of your skill proficiencies. Your proficiency bonus is doubled for any ability check you make that uses either of the chosen proficiencies.'
+            }
+        ],
+        3: [
+            {
+                'name': 'Bard Subclass',
+                'description': 'You choose a bard college that shapes your practice of magical lore (Bard College).'
+            },
+            {
+                'name': 'Jack of All Trades',
+                'description': 'You can add half your proficiency bonus, rounded down, to any ability check you make that doesn\'t already include your proficiency bonus.'
+            }
+        ]
+    },
+    'Druid': {
+        1: [
+            {
+                'name': 'Spellcasting',
+                'description': 'Drawing on the divine essence of nature itself, you can cast spells to shape that essence to your will. You have the Ritual Caster feature.'
+            },
+            {
+                'name': 'Druidic',
+                'description': 'You know Druidic, the secret language of druids. You can speak the language and use it to leave hidden messages. You and others who know this language automatically spot such a message.'
+            },
+            {
+                'name': 'Primal Order',
+                'description': 'You have dedicated yourself to a specific order of nature. Choose one: Magician (Extra cantrip & increased Nature/Arcana checks) or Warden (Medium Armor & Martial Weapon proficiency).'
+            }
+        ],
+        2: [
+            {
+                'name': 'Wild Shape',
+                'description': 'You can use your action to magically assume the shape of a beast that you have seen before. You can use this feature twice.'
+            },
+            {
+                'name': 'Wild Companion',
+                'description': 'You gain the ability to summon a spirit that assumes an animal form: as an action, you can expend a use of your Wild Shape feature to cast the Find Familiar spell, without material components.'
+            }
+        ],
+        3: [
+            {
+                'name': 'Druid Subclass',
+                'description': 'You choose a druid circle to identify with (Druid Circle) at 3rd level.'
+            }
+        ]
+    },
+    'Monk': {
+        1: [
+            {
+                'name': 'Martial Arts',
+                'description': 'Your practice of martial arts gives you mastery of combat styles that use unarmed strikes and monk weapons.'
+            },
+            {
+                'name': 'Unarmored Defense',
+                'description': 'Beginning at 1st level, while you are wearing no armor and not wielding a shield, your AC equals 10 + your Dexterity modifier + your Wisdom modifier.'
+            }
+        ],
+        2: [
+            {
+                'name': 'Monk\'s Discipline',
+                'description': 'You harness the mystic energy of ki. You have a number of focus points equal to your Monk level.'
+            },
+            {
+                'name': 'Unarmored Movement',
+                'description': 'Your speed increases by 10 feet while you are not wearing armor or wielding a shield.'
+            },
+             {
+                'name': 'Deflect Attacks',
+                'description': 'You can use your reaction to deflect or catch the missile when you are hit by a ranged weapon attack.'
+            }
+        ],
+        3: [
+            {
+                'name': 'Monk Subclass',
+                'description': 'You choose a monastic tradition that you commit yourself to (Monastic Tradition).'
+            },
+            {
+                'name': 'Deflect Energy',
+                'description': 'You can use your Deflect Attacks feature against attacks that deal damage other than bludgeoning, piercing, or slashing damage.'
+            }
+        ]
+    },
+    'Paladin': {
+        1: [
+            {
+                'name': 'Lay on Hands',
+                'description': 'Your blessed touch can heal wounds. You have a pool of healing power that replenishes when you take a long rest.'
+            },
+            {
+                'name': 'Spellcasting',
+                'description': 'You have learned to draw on divine magic through meditation and prayer to cast spells as a cleric does. You have the Ritual Caster feature.'
+            },
+            {
+                'name': 'Weapon Mastery',
+                'description': 'You have mastered the use of weapons. You can use the mastery properties of weapons you are proficient with.'
+            }
+        ],
+        2: [
+            {
+                'name': 'Fighting Style',
+                'description': 'You adopt a particular style of fighting as your specialty. Choose one of the Fighting Style feats.'
+            },
+             {
+                'name': 'Paladin\'s Smite',
+                'description': 'You have the ability to imbue your weapon strikes with divine power. You always have the Divine Smite spell prepared.'
+            }
+        ],
+        3: [
+            {
+                'name': 'Paladin Subclass',
+                'description': 'You choose the oath that guides you as a paladin (Sacred Oath).'
+            },
+             {
+                'name': 'Channel Divinity',
+                'description': 'Your oath allows you to channel divine energy to fuel magical effects. Each Channel Divinity option provided by your oath explains how to use it.'
+            }
+        ]
+    },
+    'Ranger': {
+        1: [
+            {
+                'name': 'Spellcasting',
+                'description': 'You have learned to use the magical essence of nature to cast spells, much as a druid does. You have the Ritual Caster feature.'
+            },
+            {
+                'name': 'Favored Enemy',
+                'description': 'You always have the Hunter\'s Mark spell prepared. You can cast it a number of times equal to your Wisdom modifier without expending a spell slot.'
+            },
+            {
+                'name': 'Weapon Mastery',
+                'description': 'You have mastered the use of weapons. You can use the mastery properties of weapons you are proficient with.'
+            }
+        ],
+        2: [
+             {
+                'name': 'Fighting Style',
+                'description': 'You adopt a particular style of fighting as your specialty. Choose one of the Fighting Style feats.'
+            },
+            {
+                'name': 'Deft Explorer',
+                'description': 'You gain Expertise in one of your skill proficiencies and you gain two languages of your choice.'
+            }
+        ],
+        3: [
+            {
+                'name': 'Ranger Subclass',
+                'description': 'You choose an archetype that you strive to emulate (Ranger Archetype).'
+            }
+        ]
+    },
+    'Sorcerer': {
+        1: [
+            {
+                'name': 'Spellcasting',
+                'description': 'An event in your past, or in the life of a parent or ancestor, left an indelible mark on you, infusing you with arcane magic. You have the Ritual Caster feature.'
+            },
+             {
+                'name': 'Innate Sorcery',
+                'description': 'An event in your past or in the life of a parent or ancestor left an indelible mark on you, infusing you with arcane magic. You can use a bonus action to activate Innate Sorcery for 1 minute, increasing your spell save DC and granting advantage on attack rolls.'
+            }
+        ],
+        2: [
+            {
+                'name': 'Font of Magic',
+                'description': 'You tap into a deep wellspring of magic within yourself. This wellspring is represented by sorcery points, which allow you to create a variety of magical effects.'
+            },
+             {
+                'name': 'Metamagic',
+                'description': 'You gain the ability to twist your spells to suit your needs. You gain two of the following Metamagic options of your choice.'
+            }
+        ],
+        3: [
+            {
+                'name': 'Sorcerer Subclass',
+                'description': 'You choose a sorcerous origin, which describes the source of your innate magical power.'
+            }
+        ]
+    },
+    'Warlock': {
+        1: [
+             {
+                'name': 'Pact Magic',
+                'description': 'Your arcane research and the magic bestowed on you by your patron have given you facility with spells. You have the Ritual Caster feature.'
+            },
+            {
+                'name': 'Eldritch Invocations',
+                'description': 'In your study of occult lore, you have unearthed eldritch invocations, fragments of forbidden knowledge that imbue you with an abiding magical ability. You gain one invocation.'
+            }
+        ],
+        2: [
+             {
+                'name': 'Magical Cunning',
+                'description': 'You can perform a 1-minute ritual to regain half your Pact Magic spell slots (rounded up). You can use this feature once per Long Rest.'
+            }
+        ],
+        3: [
+            {
+                'name': 'Warlock Subclass',
+                'description': 'You choose a patron who grants you power (Otherworldly Patron).'
+            },
+             {
+                'name': 'Pact Boon',
+                'description': 'Your patron bestows a gift upon you for your loyal service. You gain one of the following Pact Boon feats: Pact of the Blade, Pact of the Chain, or Pact of the Tome.'
+            }
+        ]
+    }
+}
+
+
+def get_class_features(class_name, level, ruleset='2014'):
     """
     Get class features for a specific class at a specific level.
     
     Args:
         class_name: Name of the class (e.g., 'Fighter', 'Wizard')
         level: Character level (1-20)
+        ruleset: '2014' or '2024'
     
     Returns:
         List of feature dictionaries with 'name' and 'description' keys
     """
-    if class_name not in CLASS_FEATURES:
-        # Try lowercase as fallback
-        if class_name.lower() in CLASS_FEATURES:
-            class_name = class_name.lower()
-        # Try title case as fallback
-        elif class_name.title() in CLASS_FEATURES:
-            class_name = class_name.title()
-        else:
-            return []
+    features_source = CLASS_FEATURES_2024 if ruleset == '2024' else CLASS_FEATURES_2014
     
-    if level not in CLASS_FEATURES[class_name]:
+    # Normalize class name
+    target_class = None
+    if class_name in features_source:
+        target_class = class_name
+    elif class_name.lower() in features_source:
+        target_class = class_name.lower()
+    elif class_name.title() in features_source:
+        target_class = class_name.title()
+        
+    if not target_class:
+        # Fallback for 2024: if missing, try 2014 or return empty
+        if ruleset == '2024':
+            return get_class_features(class_name, level, '2014')
         return []
     
-    return CLASS_FEATURES[class_name][level]
+    if level not in features_source[target_class]:
+        return []
+    
+    return features_source[target_class][level]
 
 
-def get_all_features_up_to_level(class_name, level):
+def get_all_features_up_to_level(class_name, level, ruleset='2014'):
     """
     Get all class features from level 1 up to the specified level.
     Useful for creating a new character at a higher level.
@@ -1321,17 +1712,32 @@ def get_all_features_up_to_level(class_name, level):
     Args:
         class_name: Name of the class
         level: Character level
+        ruleset: '2014' or '2024'
     
     Returns:
         Dictionary mapping level to list of features
     """
-    if class_name not in CLASS_FEATURES:
+    features_source = CLASS_FEATURES_2024 if ruleset == '2024' else CLASS_FEATURES_2014
+    
+    # Normalize class name (logic duplicated for safety/clarity)
+    target_class = None
+    if class_name in features_source:
+        target_class = class_name
+    elif class_name.lower() in features_source:
+        target_class = class_name.lower()
+    elif class_name.title() in features_source:
+        target_class = class_name.title()
+        
+    if not target_class:
+        if ruleset == '2024':
+            return get_all_features_up_to_level(class_name, level, '2014')
+        return {}
         return {}
     
     features_by_level = {}
     for lvl in range(1, level + 1):
-        if lvl in CLASS_FEATURES[class_name]:
-            features = CLASS_FEATURES[class_name][lvl]
+        if target_class in features_source and lvl in features_source[target_class]:
+            features = features_source[target_class][lvl]
             if features:  # Only include levels with features
                 features_by_level[lvl] = features
     
@@ -1339,7 +1745,8 @@ def get_all_features_up_to_level(class_name, level):
 
 
 # Available subclasses by class
-AVAILABLE_SUBCLASSES = {
+# Available subclasses by class
+AVAILABLE_SUBCLASSES_2014 = {
     'Fighter': ['Champion', 'Battle Master'],
     'Rogue': ['Thief', 'Assassin'],
     'Wizard': ['School of Evocation'],
@@ -1354,10 +1761,25 @@ AVAILABLE_SUBCLASSES = {
     'Bard': ['College of Lore'],
 }
 
+AVAILABLE_SUBCLASSES_2024 = {
+    'Fighter': ['Champion', 'Battle Master'],
+    'Rogue': ['Thief', 'Assassin'], # Thief, Assassin, Soulknife, Arcane Trickster
+    'Wizard': ['School of Evocation'], # Abjuration, Divination, Evocation, Illusion
+    'Cleric': ['Life Domain'], # Light, Life, Trickery, War
+    'Druid': ['Circle of the Land'], # Land, Moon, Sea, Stars
+    'Monk': ['Warrior of the Open Hand'], # Open Hand, Shadow, Elements, Mercy
+    'Paladin': ['Oath of Devotion'], # Devotion, Glory, Ancients, Vengeance
+    'Ranger': ['Hunter'], # Hunter, Beast Master, Gloom Stalker, Fey Wanderer
+    'Sorcerer': ['Draconic Sorcery'], # Draconic, Wild Magic, Aberrant, Clockwork
+    'Warlock': ['Fiend Patron'], # Archfey, Celestial, Fiend, GOO
+    'Barbarian': ['Path of the Berserker'], # Berserker, Wild Heart, World Tree, Zealot
+    'Bard': ['College of Lore'], # Dance, Glamour, Lore, Valor
+}
+
 
 # Subclass features by subclass name and level
 # Only includes official D&D 5e Core Rules subclasses from Open5e
-SUBCLASS_FEATURES = {
+SUBCLASS_FEATURES_2014 = {
     'Champion': {
         3: [
             {
@@ -1791,45 +2213,231 @@ SUBCLASS_FEATURES = {
     },
 }
 
-def get_subclass_features(subclass_name, level):
+# 2024 Class Features
+CLASS_FEATURES_2024 = {
+    'Fighter': {
+        1: [
+            {
+                'name': 'Fighting Style', 
+                'description': 'You adopt a particular style of fighting as your specialty. Choose one Fighting Style feat.',
+                'options': ['Archery', 'Defense', 'Dueling', 'Great Weapon Fighting', 'Protection', 'Two-Weapon Fighting', 'Blind Fighting', 'Interception', 'Thrown Weapon Fighting', 'Unarmed Fighting']
+            },
+            {'name': 'Second Wind', 'description': 'Bonus Action: Regain 1d10 + Fighter Level HP. 2 uses.'}
+        ],
+        2: [
+            {'name': 'Action Surge', 'description': 'Take one additional Action on your turn (once per Short Rest).'},
+            {'name': 'Tactical Mind', 'description': 'Spend Second Wind use to add 1d10 to a failed Ability Check.'}
+        ],
+        3: [{'name': 'Martial Archetype', 'description': 'Choose a Martial Archetype (Champion, Battle Master, etc.).'}],
+        4: [{'name': 'Ability Score Improvement', 'description': 'Increase one score by 2 or two by 1, or choose a Feat.'}],
+        5: [
+            {'name': 'Extra Attack', 'description': 'You can attack twice whenever you take the Attack action on your turn.'},
+            {'name': 'Tactical Shift', 'description': 'Move up to half your speed without provoking Opportunity Attacks when you use Second Wind.'}
+        ],
+        6: [{'name': 'Ability Score Improvement', 'description': 'Increase one score by 2 or two by 1, or choose a Feat.'}],
+        9: [{'name': 'Indomitable', 'description': 'Reroll a failed saving throw with a bonus equal to Fighter Level.'}],
+        11: [
+            {'name': 'Two Extra Attacks', 'description': 'You can attack three times whenever you take the Attack action on your turn.'}
+        ],
+        13: [{'name': 'Indomitable (2 uses)', 'description': 'You can use Indomitable twice between Long Rests.'}],
+        17: [
+            {'name': 'Action Surge (2 uses)', 'description': 'You can use Action Surge twice before a rest.'},
+            {'name': 'Indomitable (3 uses)', 'description': 'You can use Indomitable three times between Long Rests.'}
+        ],
+        20: [{'name': 'Three Extra Attacks', 'description': 'You can attack four times whenever you take the Attack action on your turn.'}]
+    },
+    'Wizard': {
+        1: [
+            {'name': 'Spellcasting', 'description': 'Cast Wizard spells using Intelligence.'},
+            {'name': 'Arcane Recovery', 'description': 'Recover spell slots (combined level <= Wizard Level / 2) on Short Rest.'},
+            {'name': 'Ritual Adept', 'description': 'You can cast any Wizard spell as a ritual if it has the Ritual tag.'}
+        ],
+        2: [{'name': 'Scholar', 'description': 'Gain Expertise in one skill (Arcana, History, Nature, or Religion).'}],
+        3: [{'name': 'Arcane Tradition', 'description': 'Choose an Arcane Tradition.'}],
+        5: [{'name': 'Memorize Spell', 'description': 'Replace one prepared spell on a Short Rest.'}],
+        18: [{'name': 'Spell Mastery', 'description': 'Cast a 1st and 2nd level spell at will.'}],
+        20: [{'name': 'Signature Spells', 'description': 'Two 3rd level spells always prepared and cast once/rest without slot.'}]
+    }
+}
+
+# 2024 Subclass Features
+SUBCLASS_FEATURES_2024 = {
+    'Champion': {
+        3: [
+            {'name': 'Improved Critical', 'description': 'Your weapon attacks score a critical hit on a roll of 19 or 20.'},
+            {'name': 'Remarkable Athlete', 'description': 'You can add half your proficiency bonus to any Strength, Dexterity, or Constitution check you make that doesn\'t already use your proficiency bonus. Jump distance increases by STR modifier.'}
+        ],
+        7: [{'name': 'Additional Fighting Style', 'description': 'You can choose a second option from the Fighting Style class feature.'}],
+        10: [{'name': 'Heroic Warrior', 'description': 'During combat, you can give yourself Heroic Inspiration whenever you start your turn without it.'}],
+        15: [{'name': 'Superior Critical', 'description': 'Your weapon attacks score a critical hit on a roll of 18-20.'}],
+        18: [{'name': 'Survivor', 'description': 'At the start of each of your turns, you regain 5 + CON modifier HP if you have no more than half your HP left.'}]
+    },
+    'Battle Master': {
+        3: [
+            {
+                'name': 'Combat Superiority', 
+                'description': 'You learn maneuvers fueled by superiority dice (4d8). Choose 3 Maneuvers.',
+                'options': ['Commander\'s Strike', 'Disarming Attack', 'Distracting Strike', 'Evasive Footwork', 'Feinting Attack', 'Goading Attack', 'Lunging Attack', 'Maneuvering Attack', 'Menacing Attack', 'Parry', 'Precision Attack', 'Pushing Attack', 'Rally', 'Riposte', 'Sweeping Attack', 'Trip Attack', 'Ambush', 'Bait and Switch', 'Brace', 'Commanding Presence', 'Grappling Strike', 'Quick Toss', 'Tactical Assessment'],
+                'choice_limit': 3
+            },
+            {'name': 'Student of War', 'description': 'Gain proficiency with one artisan\'s tool.'}
+        ],
+        7: [{'name': 'Know Your Enemy', 'description': 'Learn capabilities of a creature by observing it.'}],
+        10: [{'name': 'Improved Combat Superiority', 'description': 'Superiority dice turn into d10s.'}],
+        15: [{'name': 'Relentless', 'description': 'Regain 1 superiority die if you have none when rolling initiative.'}],
+        18: [{'name': 'Improved Combat Superiority', 'description': 'Superiority dice turn into d12s.'}]
+    },
+    'Path of the Berserker': {
+        3: [{'name': 'Frenzy', 'description': 'If you use Reckless Attack while raging, you can deal extra damage equal to your Rage Damage bonus.'}],
+        6: [{'name': 'Mindless Rage', 'description': 'You can\'t be Charmed or Frightened while Raging. Immunity to these conditions if you enter rage while affected.'}],
+        10: [{'name': 'Retaliation', 'description': 'When you take damage from a creature within 5 feet, you can use your Reaction to make a melee weapon attack against that creature.'}],
+        14: [{'name': 'Intimidating Presence', 'description': 'As a Bonus Action, you can shout to frighten enemies within 30 feet (Wisdom save). Effect lasts 1 turn, can be extended.'}]
+    },
+    'College of Lore': {
+        3: [
+            {'name': 'Bonus Proficiencies', 'description': 'Gain proficiency with three skills of your choice.'},
+            {'name': 'Cutting Words', 'description': 'Use reaction and Bardic Inspiration to reduce an attack roll, ability check, or damage roll of a creature you see.'}
+        ],
+        6: [{'name': 'Magical Discoveries', 'description': 'Learn two spells from any class list (Magical Secrets).'}],
+        14: [{'name': 'Peerless Skill', 'description': 'Expend Bardic Inspiration to add to your own ability check.'}]
+    },
+    'Life Domain': {
+        3: [
+            {'name': 'Disciple of Life', 'description': 'Healing spells of 1st level or higher restore additional HP equal to 2 + spell level.'},
+            {'name': 'Preserve Life', 'description': 'Channel Divinity: Restore 5 x Cleric level HP to creatures within 30 feet (max half HP).'}
+        ],
+        6: [{'name': 'Blessed Healer', 'description': 'When you cast a healing spell on another, you regain 2 + spell level HP.'}],
+        17: [{'name': 'Supreme Healing', 'description': 'Use max possible roll for healing dice.'}]
+    },
+    'Circle of the Land': {
+        3: [
+            {'name': 'Circle Spells', 'description': 'You always have certain spells prepared based on your land type choice.'},
+            {'name': 'Land\'s Aid', 'description': 'As a Magic Action, you can expend a Wild Shape use to heal or harm creatures in a 10-foot radius sphere.'}
+        ],
+        6: [{'name': 'Natural Recovery', 'description': 'Recover spell slots during a Short Rest (once per Long Rest).'}],
+        10: [{'name': 'Nature\'s Ward', 'description': 'Immunity to Poison and Disease; resistance to Poison damage. Cannot be Charmed/Frightened by Elementals/Fey.'}],
+        14: [{'name': 'Nature\'s Sanctuary', 'description': 'Spectral vines grant Half Cover; immunity to difficult terrain; resistance to elemental damage types.'}]
+    },
+    'Warrior of the Open Hand': {
+        3: [{'name': 'Open Hand Technique', 'description': 'Flurry of Blows adds effects: Knock prone, Push 15ft, or Deny reactions.'}],
+        6: [{'name': 'Wholeness of Body', 'description': 'Bonus Action: Regain HP equal to Martial Arts die roll + Wis mod. Use number of times equal to Wis mod.'}],
+        11: [{'name': 'Fleet Step', 'description': 'Bonus Action: Step of the Wind allows you to take Dash or Disengage anytime you take a Bonus Action.'}],
+        17: [{'name': 'Quivering Palm', 'description': 'Lethal vibrational strike (3 Ki points). 10d10 necrotic damage or drop to 0 HP.'}]
+    },
+    'Oath of Devotion': {
+        3: [
+            {'name': 'Sacred Weapon', 'description': 'Channel Divinity: Add Cha mod to attack rolls, weapon becomes magical and emits light.'},
+            {'name': 'Turn the Unholy', 'description': 'Channel Divinity: Turn Fiends and Undead.'}
+        ],
+        7: [{'name': 'Aura of Devotion', 'description': 'You and friendly creatures within 10 feet can\'t be Charmed.'}],
+        15: [{'name': 'Smite of Protection', 'description': 'Using Divine Smite grants Half Cover to you and allies within 10 feet.'}],
+        20: [{'name': 'Holy Nimbus', 'description': 'Radiant sunlight aura damages enemies and grants advantage against spells from Fiends/Undead.'}]
+    },
+    'Hunter': {
+        3: [{'name': 'Hunter\'s Prey', 'description': 'Choose: Colossus Slayer (extra damage to injured), Giant Killer (reaction attack vs Large), or Horde Breaker (extra attack vs adjacent).'}],
+        7: [{'name': 'Defensive Tactics', 'description': 'Choose: Escape the Horde (OA disadvantage), Multiattack Defense (+4 AC after hit), or Steel Will (Frightened advantage).'}],
+        11: [{'name': 'Multiattack', 'description': 'Choose: Volley (Area ranged attack) or Whirlwind Attack (Area melee attack).'}],
+        15: [{'name': 'Superior Hunter\'s Defense', 'description': 'Choose: Evasion, Stand Against the Tide, or Uncanny Dodge.'}]
+    },
+    'Thief': {
+        3: [
+            {'name': 'Fast Hands', 'description': 'Cunning Action can be used for Sleight of Hand, Thieves\' Tools, or Use an Object.'},
+            {'name': 'Second-Story Work', 'description': 'Climbing speed equals walking speed. Jump distance uses Dex.'}
+        ],
+        9: [{'name': 'Supreme Sneak', 'description': 'Advantage on Stealth checks if moved no more than half speed. Attack rolls against you have disadvantage if you are hidden.'}],
+        13: [{'name': 'Use Magic Device', 'description': 'Attune to 4 magic items. Ignore class/race/level requirements for items. Use Spell Scrolls.'}],
+        17: [{'name': 'Thief\'s Reflexes', 'description': 'Two turns in the first round of combat (Initiative and Initiative - 10).'}]
+    },
+    'Draconic Sorcery': {
+        3: [
+            {'name': 'Draconic Resilience', 'description': 'HP max increases by 1 per level. AC = 13 + Dex mod when unarmored.'},
+            {'name': 'Dragon Ancestor', 'description': 'Choose dragon type. Speak Draconic. Charisma check proficiency doubled for dragons.'}
+        ],
+        6: [{'name': 'Elemental Affinity', 'description': 'Add Cha mod to damage of associated type. Resist associated damage type (1 SP).'}],
+        14: [{'name': 'Dragon Wings', 'description': 'Manifest wings (Fly speed).'}],
+        18: [{'name': 'Draconic Presence', 'description': 'Aura of Awe or Fear (5 SP).'}],
+    },
+    'Fiend Patron': {
+        3: [{'name': 'Dark One\'s Blessing', 'description': 'Reduce hostile to 0 HP: Gain THP = Cha mod + Warlock level.'}],
+        6: [{'name': 'Dark One\'s Own Luck', 'description': 'Add d10 to an ability check or saving throw (once per Short/Long Rest).'}],
+        10: [{'name': 'Fiendish Resilience', 'description': 'Choose resistance to one damage type (change on Short/Long Rest).'}],
+        14: [{'name': 'Hurl Through Hell', 'description': 'Hit with attack: Banish target to Lower Planes (10d10 psychic damage on return). Once per Long Rest.'}]
+    },
+    'School of Evocation': {
+        3: [
+            {'name': 'Evocation Savant', 'description': 'Halves cost/time to copy Evocation spells.'},
+            {'name': 'Sculpt Spells', 'description': 'Protect allies from your Evocation spell damage (Evasion-like effect).'}
+        ],
+        6: [{'name': 'Potent Cantrip', 'description': 'Cantrips do half damage on successful save.'}],
+        10: [{'name': 'Empowered Evocation', 'description': 'Add Int mod to damage roll of Evocation spells.'}],
+        14: [{'name': 'Overchannel', 'description': 'Max damage on 1st-5th level spells. Take necrotic damage on subsequent uses.'}]
+    }
+}
+
+
+def get_subclass_features(subclass_name, level, ruleset='2014'):
     """
     Get subclass features for a specific subclass at a specific level.
     
     Args:
         subclass_name: Name of the subclass (e.g., 'Champion', 'School of Evocation')
         level: Character level (1-20)
+        ruleset: '2014' or '2024'
     
     Returns:
         List of feature dictionaries with 'name' and 'description' keys
     """
-    if subclass_name not in SUBCLASS_FEATURES:
+    features_source = SUBCLASS_FEATURES_2024 if ruleset == '2024' else SUBCLASS_FEATURES_2014
+    
+    # Try direct match
+    if subclass_name in features_source:
+        pass
+    # Try title case
+    elif subclass_name.title() in features_source:
+        subclass_name = subclass_name.title()
+    # Try 2014 fallback if 2024 requested but missing
+    elif ruleset == '2024':
+        return get_subclass_features(subclass_name, level, '2014')
+    else:
         return []
     
-    if level not in SUBCLASS_FEATURES[subclass_name]:
+    if level not in features_source[subclass_name]:
         return []
     
-    return SUBCLASS_FEATURES[subclass_name][level]
+    return features_source[subclass_name][level]
 
 
-def get_all_subclass_features_up_to_level(subclass_name, level):
+def get_all_subclass_features_up_to_level(subclass_name, level, ruleset='2014'):
     """
     Get all subclass features from the first subclass level up to the specified level.
     
     Args:
         subclass_name: Name of the subclass
         level: Character level
+        ruleset: '2014' or '2024'
     
     Returns:
         Dictionary mapping level to list of features
     """
-    if subclass_name not in SUBCLASS_FEATURES:
+    features_source = SUBCLASS_FEATURES_2024 if ruleset == '2024' else SUBCLASS_FEATURES_2014
+    
+    # Try direct match
+    if subclass_name in features_source:
+        pass
+    # Try title case
+    elif subclass_name.title() in features_source:
+        subclass_name = subclass_name.title()
+    # Try 2014 fallback
+    elif ruleset == '2024':
+        return get_all_subclass_features_up_to_level(subclass_name, level, '2014')
+    else:
         return {}
     
     features_by_level = {}
     for lvl in range(1, level + 1):
-        if lvl in SUBCLASS_FEATURES[subclass_name]:
-            features = SUBCLASS_FEATURES[subclass_name][lvl]
-            if features:  # Only include levels with features
+        if lvl in features_source[subclass_name]:
+            features = features_source[subclass_name][lvl]
+            if features:
                 features_by_level[lvl] = features
     
     return features_by_level
