@@ -33,6 +33,13 @@ class CharacterClass(models.Model):
         default='2014'
     )
     
+    # Skill Choices (e.g. "Choose 2 from Acrobatics, Athletics...")
+    skill_proficiency_choices = models.TextField(
+        blank=True, 
+        help_text="Comma-separated list of skills available to choose from"
+    )
+    num_skill_choices = models.IntegerField(default=2, help_text="Number of skills to choose")
+    
     def __str__(self):
         return self.get_name_display()
 
@@ -617,6 +624,21 @@ class Feat(models.Model):
         help_text="If this feat grants +1 to an ability score, specify which one"
     )
     
+    # 2024 Category
+    CATEGORY_CHOICES = [
+        ('origin', 'Origin'),
+        ('general', 'General'),
+        ('fighting_style', 'Fighting Style'),
+        ('epic_boon', 'Epic Boon'),
+        ('other', 'Other'),
+    ]
+    category = models.CharField(
+        max_length=20, 
+        choices=CATEGORY_CHOICES, 
+        default='other',
+        help_text="Feat Category (2024 Rules)"
+    )
+    
     # Source book
     source = models.CharField(max_length=100, default='Player\'s Handbook')
     
@@ -686,8 +708,13 @@ class CharacterFeat(models.Model):
     )
     taken_at = models.DateTimeField(auto_now_add=True)
     
+    # Feature Choice Logic (e.g. for "Skilled", "Magic Initiate")
+    options = models.JSONField(default=list, blank=True, help_text="List of available options for this feat")
+    selection = models.JSONField(default=list, blank=True, help_text="User's selected options")
+    choice_limit = models.IntegerField(default=1, help_text="Number of choices allowed")
+    
     class Meta:
-        unique_together = ['character', 'feat']
+        # unique_together = ['character', 'feat']  # Removed to support repeatable feats (e.g. Skilled)
         ordering = ['level_taken', 'feat__name']
     
     def __str__(self):
@@ -712,25 +739,4 @@ class CharacterClassLevel(models.Model):
     
     def __str__(self):
         return f"{self.character.name} - {self.character_class.get_name_display()} Level {self.level}"
-
-
-
-
-class CharacterFeat(models.Model):
-    """Tracks which feats a character has taken"""
-    
-    character = models.ForeignKey('Character', on_delete=models.CASCADE, related_name='character_feats')
-    feat = models.ForeignKey(Feat, on_delete=models.CASCADE, related_name='character_feats')
-    level_taken = models.IntegerField(
-        validators=[MinValueValidator(1), MaxValueValidator(20)],
-        help_text="Level at which this feat was taken"
-    )
-    taken_at = models.DateTimeField(auto_now_add=True)
-    
-    class Meta:
-        unique_together = ['character', 'feat']
-        ordering = ['level_taken', 'feat__name']
-    
-    def __str__(self):
-        return f"{self.character.name} - {self.feat.name} (Level {self.level_taken})"
 

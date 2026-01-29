@@ -49,7 +49,7 @@ class Command(BaseCommand):
         # Fetch all pages
         while next_url:
             try:
-                response = requests.get(next_url, timeout=10)
+                response = requests.get(next_url, timeout=30)
                 response.raise_for_status()
                 data = response.json()
                 

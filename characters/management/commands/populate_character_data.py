@@ -13,84 +13,108 @@ class Command(BaseCommand):
                 'hit_dice': 'd12',
                 'primary_ability': 'STR',
                 'saving_throw_proficiencies': 'STR,CON',
-                'description': 'A fierce warrior of primitive background who can enter a battle rage.'
+                'description': 'A fierce warrior of primitive background who can enter a battle rage.',
+                'skill_proficiency_choices': 'Animal Handling,Athletics,Intimidation,Nature,Perception,Survival',
+                'num_skill_choices': 2
             },
             {
                 'name': 'bard',
                 'hit_dice': 'd8',
                 'primary_ability': 'CHA',
                 'saving_throw_proficiencies': 'DEX,CHA',
-                'description': 'An inspiring magician whose power echoes the music of creation.'
+                'description': 'An inspiring magician whose power echoes the music of creation.',
+                'skill_proficiency_choices': 'Acrobatics,Animal Handling,Arcana,Athletics,Deception,History,Insight,Intimidation,Investigation,Medicine,Nature,Perception,Performance,Persuasion,Religion,Sleight of Hand,Stealth,Survival',
+                'num_skill_choices': 3
             },
             {
                 'name': 'cleric',
                 'hit_dice': 'd8',
                 'primary_ability': 'WIS',
                 'saving_throw_proficiencies': 'WIS,CHA',
-                'description': 'A priestly champion who wields divine magic in service of a higher power.'
+                'description': 'A priestly champion who wields divine magic in service of a higher power.',
+                'skill_proficiency_choices': 'History,Insight,Medicine,Persuasion,Religion',
+                'num_skill_choices': 2
             },
             {
                 'name': 'druid',
                 'hit_dice': 'd8',
                 'primary_ability': 'WIS',
                 'saving_throw_proficiencies': 'INT,WIS',
-                'description': 'A priest of the Old Faith, wielding the powers of nature.'
+                'description': 'A priest of the Old Faith, wielding the powers of nature.',
+                'skill_proficiency_choices': 'Arcana,Animal Handling,Insight,Medicine,Nature,Perception,Religion,Survival',
+                'num_skill_choices': 2
             },
             {
                 'name': 'fighter',
                 'hit_dice': 'd10',
                 'primary_ability': 'STR',
                 'saving_throw_proficiencies': 'STR,CON',
-                'description': 'A master of martial combat, skilled with a variety of weapons and armor.'
+                'description': 'A master of martial combat, skilled with a variety of weapons and armor.',
+                'skill_proficiency_choices': 'Acrobatics,Animal Handling,Athletics,History,Insight,Intimidation,Perception,Survival',
+                'num_skill_choices': 2
             },
             {
                 'name': 'monk',
                 'hit_dice': 'd8',
                 'primary_ability': 'DEX',
                 'saving_throw_proficiencies': 'STR,DEX',
-                'description': 'A master of martial arts, harnessing the power of the body in pursuit of physical and spiritual perfection.'
+                'description': 'A master of martial arts, harnessing the power of the body in pursuit of physical and spiritual perfection.',
+                'skill_proficiency_choices': 'Acrobatics,Athletics,History,Insight,Religion,Stealth',
+                'num_skill_choices': 2
             },
             {
                 'name': 'paladin',
                 'hit_dice': 'd10',
                 'primary_ability': 'STR',
                 'saving_throw_proficiencies': 'WIS,CHA',
-                'description': 'A holy warrior bound to a sacred oath.'
+                'description': 'A holy warrior bound to a sacred oath.',
+                'skill_proficiency_choices': 'Athletics,Insight,Intimidation,Medicine,Persuasion,Religion',
+                'num_skill_choices': 2
             },
             {
                 'name': 'ranger',
                 'hit_dice': 'd10',
                 'primary_ability': 'DEX',
                 'saving_throw_proficiencies': 'STR,DEX',
-                'description': 'A warrior who uses martial prowess and nature magic to combat threats on the edges of civilization.'
+                'description': 'A warrior who uses martial prowess and nature magic to combat threats on the edges of civilization.',
+                'skill_proficiency_choices': 'Animal Handling,Athletics,Insight,Investigation,Nature,Perception,Stealth,Survival',
+                'num_skill_choices': 3
             },
             {
                 'name': 'rogue',
                 'hit_dice': 'd8',
                 'primary_ability': 'DEX',
                 'saving_throw_proficiencies': 'DEX,INT',
-                'description': 'A scoundrel who uses stealth and trickery to overcome obstacles and enemies.'
+                'description': 'A scoundrel who uses stealth and trickery to overcome obstacles and enemies.',
+                'skill_proficiency_choices': 'Acrobatics,Athletics,Deception,Insight,Intimidation,Investigation,Perception,Performance,Persuasion,Sleight of Hand,Stealth',
+                'num_skill_choices': 4
             },
             {
                 'name': 'sorcerer',
                 'hit_dice': 'd6',
                 'primary_ability': 'CHA',
                 'saving_throw_proficiencies': 'CON,CHA',
-                'description': 'A spellcaster who draws on inherent magic from a gift or bloodline.'
+                'description': 'A spellcaster who draws on inherent magic from a gift or bloodline.',
+                'skill_proficiency_choices': 'Arcana,Deception,Insight,Intimidation,Persuasion,Religion',
+                'num_skill_choices': 2
             },
             {
                 'name': 'warlock',
                 'hit_dice': 'd8',
                 'primary_ability': 'CHA',
                 'saving_throw_proficiencies': 'WIS,CHA',
-                'description': 'A wielder of magic that is derived from a bargain with an extraplanar entity.'
+                'description': 'A wielder of magic that is derived from a bargain with an extraplanar entity.',
+                'skill_proficiency_choices': 'Arcana,Deception,History,Intimidation,Investigation,Nature,Religion',
+                'num_skill_choices': 2
             },
             {
                 'name': 'wizard',
                 'hit_dice': 'd6',
                 'primary_ability': 'INT',
                 'saving_throw_proficiencies': 'INT,WIS',
-                'description': 'A scholarly magic-user capable of manipulating the structures of reality.'
+                'description': 'A scholarly magic-user capable of manipulating the structures of reality.',
+                'skill_proficiency_choices': 'Arcana,History,Insight,Investigation,Medicine,Religion',
+                'num_skill_choices': 2
             },
         ]
         
@@ -101,7 +125,9 @@ class Command(BaseCommand):
                     'hit_dice': class_data['hit_dice'],
                     'primary_ability': class_data['primary_ability'],
                     'saving_throw_proficiencies': class_data['saving_throw_proficiencies'],
-                    'description': class_data['description']
+                    'description': class_data['description'],
+                    'skill_proficiency_choices': class_data.get('skill_proficiency_choices', ''),
+                    'num_skill_choices': class_data.get('num_skill_choices', 0)
                 }
             )
             self.stdout.write(f'Created/updated class: {class_data["name"]}')

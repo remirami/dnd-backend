@@ -22,8 +22,9 @@ from .spell_management import (
     calculate_spells_prepared, calculate_spells_known,
     get_wizard_spellbook_size, can_learn_spell, can_add_to_spellbook,
     get_prepared_spells, get_known_spells, get_spellbook_spells,
-    can_cast_spell
+    can_cast_spell, get_spellcasting_ability
 )
+from campaigns.utils import calculate_spell_slots
 from .inventory_management import (
     equip_item, unequip_item, get_equipped_items,
     calculate_total_weight, get_encumbrance_level, get_encumbrance_effects,
@@ -105,21 +106,32 @@ class CharacterViewSet(viewsets.ModelViewSet):
     def _calculate_pending_spells(self, character, character_class, level, features_gained):
         """Helper to calculate pending spell choices on level up"""
         # Calculate pending spell choices
-        pending_choices = {}
         if character_class.name.lower() == 'wizard':
-             # Find max spell level available
-             max_spell_level = 1
-             if hasattr(character, 'stats') and character.stats.spell_slots:
-                 for lvl, slots in character.stats.spell_slots.items():
-                     if slots > 0:
-                         max_spell_level = max(max_spell_level, int(lvl))
+             # Wizards gain 2 spells per level into their spellbook
+             # Base 6 at level 1, +2 for each level after
+             expected_min_spells = 6 + (2 * (level - 1))
              
-             pending_choices = {
-                 'count': 2,
-                 'max_level': max_spell_level,
-                 'source': 'level_up',
-                 'type': 'spellbook'
-             }
+             current_spellbook_count = CharacterSpell.objects.filter(
+                character=character,
+                in_spellbook=True
+             ).count()
+             
+             diff = expected_min_spells - current_spellbook_count
+             
+             if diff > 0:
+                 # Find max spell level available
+                 max_spell_level = 1
+                 if hasattr(character, 'stats') and character.stats.spell_slots:
+                     for lvl, slots in character.stats.spell_slots.items():
+                         if slots > 0:
+                             max_spell_level = max(max_spell_level, int(lvl))
+                 
+                 pending_choices = {
+                     'count': diff,
+                     'max_level': max_spell_level,
+                     'source': 'level_up',
+                     'type': 'spellbook'
+                 }
         elif character_class.name.lower() in ['bard', 'sorcerer', 'warlock', 'ranger']:
              from characters.spell_management import calculate_spells_known
              spells_known_limit = calculate_spells_known(character)
@@ -449,7 +461,7 @@ class CharacterViewSet(viewsets.ModelViewSet):
                 character.pending_asi_levels.append(new_class_level)
             
             # Check if subclass selection is needed
-            subclass_levels = {
+            subclass_levels_2014 = {
                 'Cleric': 1,
                 'Druid': 2,
                 'Wizard': 2,
@@ -468,10 +480,14 @@ class CharacterViewSet(viewsets.ModelViewSet):
                 'Ranger (UA)': 3
             }
             c_name = target_class.name
-            trigger_level = subclass_levels.get(c_name, 3)
-            # Handle casing fallback
-            if c_name not in subclass_levels and c_name.title() in subclass_levels:
-                trigger_level = subclass_levels[c_name.title()]
+            
+            if character.ruleset_version == '2024':
+                 trigger_level = 3
+            else:
+                trigger_level = subclass_levels_2014.get(c_name, 3)
+                # Handle casing fallback
+                if c_name not in subclass_levels_2014 and c_name.title() in subclass_levels_2014:
+                    trigger_level = subclass_levels_2014[c_name.title()]
                 
             if new_class_level == trigger_level and not class_level.subclass:
                 character.pending_subclass_selection = True
@@ -489,7 +505,10 @@ class CharacterViewSet(viewsets.ModelViewSet):
                 character.stats.save()
             
             # Calculate pending spells for the leveled-up class
-            self._calculate_pending_spells(character, target_class, new_class_level, features_gained)
+            try:
+                self._calculate_pending_spells(character, target_class, new_class_level, features_gained)
+            except Exception as e:
+                print(f"Error calculating pending spells: {str(e)}")
 
             character.save()
             
@@ -565,20 +584,25 @@ class CharacterViewSet(viewsets.ModelViewSet):
                 character.pending_asi_levels.append(new_level)
         
         # Check if subclass selection is needed
-        # Check if subclass selection is needed
-        subclass_levels = {
+        subclass_levels_2014 = {
             'Cleric': 1,
             'Druid': 2,
             'Wizard': 2,
             'Sorcerer': 1,
             'Warlock': 1,
         }
+        
         default_subclass_level = 3
         # Ensure we check against the actual class name casing or fallback to title case
         class_name = primary_class.name
-        subclass_level = subclass_levels.get(class_name, default_subclass_level)
-        if class_name not in subclass_levels and class_name.title() in subclass_levels:
-             subclass_level = subclass_levels[class_name.title()]
+        
+        if character.ruleset_version == '2024':
+            # In 2024 rules, all standard classes choose subclass at Level 3
+            subclass_level = 3
+        else:
+            subclass_level = subclass_levels_2014.get(class_name, default_subclass_level)
+            if class_name not in subclass_levels_2014 and class_name.title() in subclass_levels_2014:
+                 subclass_level = subclass_levels_2014[class_name.title()]
         
         if new_level >= subclass_level and not character.subclass:
             character.pending_subclass_selection = True
@@ -622,7 +646,10 @@ class CharacterViewSet(viewsets.ModelViewSet):
                 })
         
         # Calculate pending spell choices using helper
-        self._calculate_pending_spells(character, primary_class, new_level, features_gained)
+        try:
+            self._calculate_pending_spells(character, primary_class, new_level, features_gained)
+        except Exception as e:
+            print(f"Error calculating pending spells (Single Class): {str(e)}")
         
         character.save()
         dlog(f"DEBUG: Saved Character {character.id}. Pending field in DB: {character.pending_spell_choices}")
@@ -720,29 +747,44 @@ class CharacterViewSet(viewsets.ModelViewSet):
                     status=status.HTTP_400_BAD_REQUEST
                 )
             
-            # Check if character already has this feat
+            # Get feat config (options/limits)
+            from campaigns.feat_data import get_feat_config
+            feat_config = get_feat_config(feat.name)
+            
+            # Check if character already has this feat (and it's not repeatable)
             if CharacterFeat.objects.filter(character=character, feat=feat).exists():
-                return Response(
-                    {"error": f"Character already has the feat: {feat.name}"},
-                    status=status.HTTP_400_BAD_REQUEST
-                )
+                if not feat_config.get('repeatable'):
+                    return Response(
+                        {"error": f"Character already has the feat: {feat.name}"},
+                        status=status.HTTP_400_BAD_REQUEST
+                    )
             
             # Apply feat
             CharacterFeat.objects.create(
                 character=character,
                 feat=feat,
-                level_taken=level
+                level_taken=level,
+                options=feat_config.get('options', []),
+                choice_limit=feat_config.get('choice_limit', 1)
             )
             
             # Create CharacterFeature instance
-            CharacterFeature.objects.get_or_create(
+            feature_name = feat.name
+            if feat_config.get('repeatable'):
+                # Find next available suffix if duplicates exist
+                base_name = feat.name
+                count = CharacterFeature.objects.filter(character=character, name__startswith=base_name).count()
+                if count > 0:
+                     feature_name = f"{base_name} ({count + 1})"
+            
+            CharacterFeature.objects.create(
                 character=character,
-                name=feat.name,
-                defaults={
-                    'feature_type': 'feat',
-                    'description': feat.description,
-                    'source': f"Feat (Level {level})"
-                }
+                name=feature_name,
+                feature_type='feat',
+                description=feat.description,
+                source=f"Feat (Level {level})",
+                options=feat_config.get('options', []),
+                choice_limit=feat_config.get('choice_limit', 1)
             )
             
             # Apply ability score increase if feat grants one
@@ -971,100 +1013,104 @@ class CharacterViewSet(viewsets.ModelViewSet):
     @action(detail=True, methods=['post'])
     def choose_subclass(self, request, pk=None):
         """Choose a subclass for the character"""
-        character = self.get_object()
-        subclass_name = request.data.get('subclass')
-        
-        if not subclass_name:
-             return Response({"error": "Subclass name is required"}, status=status.HTTP_400_BAD_REQUEST)
-        
-        if not character.pending_subclass_selection and character.subclass:
-            return Response({"error": "Character already has a subclass"}, status=status.HTTP_400_BAD_REQUEST)
+        try:
+            character = self.get_object()
+            subclass_name = request.data.get('subclass')
             
-        # Verify eligibility
-        from campaigns.class_features_data import AVAILABLE_SUBCLASSES_2014, AVAILABLE_SUBCLASSES_2024, get_all_subclass_features_up_to_level
-
-        # Select ruleset data
-        if character.ruleset_version == '2024':
-            AVAILABLE_SUBCLASSES = AVAILABLE_SUBCLASSES_2024
-        else:
-            AVAILABLE_SUBCLASSES = AVAILABLE_SUBCLASSES_2014
-        
-        class_name = character.character_class.name
-        # Handle case mismatch
-        if class_name not in AVAILABLE_SUBCLASSES:
-            if class_name.title() in AVAILABLE_SUBCLASSES:
-                class_name = class_name.title()
-        
-        if class_name not in AVAILABLE_SUBCLASSES or subclass_name not in AVAILABLE_SUBCLASSES[class_name]:
-            return Response({"error": f"Invalid subclass '{subclass_name}' for class '{class_name}'"}, status=status.HTTP_400_BAD_REQUEST)
+            if not subclass_name:
+                 return Response({"error": "Subclass name is required"}, status=status.HTTP_400_BAD_REQUEST)
             
-        # Apply subclass to Character model (Legacy compatibility)
-        character.subclass = subclass_name
-        character.pending_subclass_selection = False
-        character.save()
-        
-        # Sync subclass to CharacterClassLevel (For Multiclassing/Frontend)
-        from .models import CharacterClassLevel
-        if character.character_class:
-            class_level = CharacterClassLevel.objects.filter(
-                character=character, 
-                character_class=character.character_class
-            ).first()
-            if class_level:
-                class_level.subclass = subclass_name
-                class_level.save()
-
-        # Sync selection to the defining Class Feature (e.g. "Martial Archetype")
-        selector_feature_map = {
-            'Fighter': 'Martial Archetype',
-            'Barbarian': 'Primal Path',
-            'Rogue': 'Roguish Archetype',
-            'Sorcerer': 'Sorcerous Origin',
-            'Warlock': 'Otherworldly Patron',
-            'Cleric': 'Divine Domain',
-            'Druid': 'Druid Circle',
-            'Bard': 'Bard College',
-            'Monk': 'Monastic Tradition',
-            'Paladin': 'Sacred Oath',
-            'Ranger': 'Ranger Archetype',
-            'Wizard': 'Arcane Tradition',
-        }
-        
-        # Use Title Case for map lookup to match keys (e.g. 'fighter' -> 'Fighter')
-        selector_name = selector_feature_map.get(character.character_class.name.title())
-        if selector_name:
-            feature = CharacterFeature.objects.filter(character=character, name=selector_name).first()
-            if feature:
-                feature.selection = [subclass_name]
-                feature.save()
-        
-        # Apply retroactive features
-        features_gained = []
-        features_by_level = get_all_subclass_features_up_to_level(subclass_name, character.level, ruleset=character.ruleset_version)
-        
-        for level, features in features_by_level.items():
-            for feature_data in features:
-                if not CharacterFeature.objects.filter(character=character, name=feature_data['name']).exists():
-                    CharacterFeature.objects.create(
+            if not character.pending_subclass_selection and character.subclass:
+                return Response({"error": "Character already has a subclass"}, status=status.HTTP_400_BAD_REQUEST)
+                
+            # Verify eligibility
+            from campaigns.class_features_data import AVAILABLE_SUBCLASSES_2014, AVAILABLE_SUBCLASSES_2024
+    
+            # Select ruleset data
+            if character.ruleset_version == '2024':
+                AVAILABLE_SUBCLASSES = AVAILABLE_SUBCLASSES_2024
+            else:
+                AVAILABLE_SUBCLASSES = AVAILABLE_SUBCLASSES_2014
+            
+            class_name = character.character_class.name
+            # Handle case mismatch
+            if class_name not in AVAILABLE_SUBCLASSES:
+                if class_name.title() in AVAILABLE_SUBCLASSES:
+                    class_name = class_name.title()
+            
+            if class_name not in AVAILABLE_SUBCLASSES or subclass_name not in AVAILABLE_SUBCLASSES[class_name]:
+                return Response({"error": f"Invalid subclass '{subclass_name}' for class '{class_name}'"}, status=status.HTTP_400_BAD_REQUEST)
+                
+            # Apply subclass to Character model
+            character.subclass = subclass_name
+            character.pending_subclass_selection = False
+            character.save()
+            
+            # Sync subclass to CharacterClassLevel
+            from .models import CharacterClassLevel
+            if character.character_class:
+                class_level = CharacterClassLevel.objects.filter(
+                    character=character, 
+                    character_class=character.character_class
+                ).first()
+                if class_level:
+                    class_level.subclass = subclass_name
+                    class_level.save()
+    
+            # Sync selection to the defining Class Feature
+            selector_feature_map = {
+                'Fighter': 'Martial Archetype',
+                'Barbarian': 'Primal Path',
+                'Rogue': 'Roguish Archetype',
+                'Sorcerer': 'Sorcerous Origin',
+                'Warlock': 'Otherworldly Patron',
+                'Cleric': 'Divine Domain',
+                'Druid': 'Druid Circle',
+                'Bard': 'Bard College',
+                'Monk': 'Monastic Tradition',
+                'Paladin': 'Sacred Oath',
+                'Ranger': 'Ranger Archetype',
+                'Wizard': 'Arcane Tradition',
+            }
+            
+            selector_name = selector_feature_map.get(character.character_class.name.title())
+            if selector_name:
+                feature = CharacterFeature.objects.filter(character=character, name=selector_name).first()
+                if feature:
+                    feature.selection = [subclass_name]
+                    feature.save()
+            
+            # Apply subclass features immediately
+            from campaigns.class_features_data import get_all_subclass_features_up_to_level
+            features_by_level = get_all_subclass_features_up_to_level(
+                subclass_name, 
+                character.level, 
+                ruleset=character.ruleset_version
+            )
+            
+            for level, features in features_by_level.items():
+                for feature_data in features:
+                    CharacterFeature.objects.get_or_create(
                         character=character,
                         name=feature_data['name'],
-                        feature_type='subclass',
-                        description=feature_data['description'],
-                        source=f"{subclass_name} Level {level}",
-                        options=feature_data.get('options', []),
-                        choice_limit=feature_data.get('choice_limit', 1)
+                        defaults={
+                            'feature_type': 'class',
+                            'description': feature_data['description'],
+                            'source': f"{subclass_name} Level {level}",
+                            'options': feature_data.get('options', []),
+                            'choice_limit': feature_data.get('choice_limit', 1)
+                        }
                     )
-                    features_gained.append(feature_data['name'])
-        
-        # Calculate pending spells for the new subclass (e.g. Arcane Trickster, Eldritch Knight)
-        self._calculate_pending_spells(character, character.character_class, character.level, [])
-        character.save()
-        
-        return Response({
-            "message": f"Subclass '{subclass_name}' selected!",
-            "features_gained": features_gained,
-            "character": CharacterSerializer(character).data
-        })
+            
+            return Response({
+                "message": f"Subclass '{subclass_name}' selected!",
+                "character": CharacterSerializer(character).data
+            })
+            
+        except Exception as e:
+            import traceback
+            traceback.print_exc()
+            return Response({"error": f"Server Error: {str(e)}"}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
     @action(detail=True, methods=['get'])
     def eligible_languages(self, request, pk=None):
@@ -1238,9 +1284,15 @@ class CharacterViewSet(viewsets.ModelViewSet):
     def take_damage(self, request, pk=None):
         """Apply damage to a character"""
         character = self.get_object()
-        damage = request.data.get('damage', 0)
+        try:
+            damage = int(request.data.get('damage', 0))
+        except (ValueError, TypeError):
+            return Response(
+                {"error": "Damage must be a non-negative integer"},
+                status=status.HTTP_400_BAD_REQUEST
+            )
         
-        if not isinstance(damage, int) or damage < 0:
+        if damage < 0:
             return Response(
                 {"error": "Damage must be a non-negative integer"},
                 status=status.HTTP_400_BAD_REQUEST
@@ -1282,9 +1334,15 @@ class CharacterViewSet(viewsets.ModelViewSet):
     def heal(self, request, pk=None):
         """Heal a character"""
         character = self.get_object()
-        amount = request.data.get('amount', 0)
+        try:
+            amount = int(request.data.get('amount', 0))
+        except (ValueError, TypeError):
+            return Response(
+                {"error": "Heal amount must be a non-negative integer"},
+                status=status.HTTP_400_BAD_REQUEST
+            )
         
-        if not isinstance(amount, int) or amount < 0:
+        if amount < 0:
             return Response(
                 {"error": "Heal amount must be a non-negative integer"},
                 status=status.HTTP_400_BAD_REQUEST
@@ -2303,6 +2361,144 @@ class CharacterViewSet(viewsets.ModelViewSet):
         # Same as add_to_spellbook, but this is for learning from scrolls
         return self.add_to_spellbook(request, pk)
 
+
+    @action(detail=True, methods=['post'])
+    def short_rest(self, request, pk=None):
+        """
+        Perform a Short Rest.
+        - Spend Hit Dice to heal
+        - Recover Warlock spell slots
+        - Reset Short Rest features (Action Surge, etc. - future impl)
+        """
+        character = self.get_object()
+        
+        if not hasattr(character, 'stats'):
+             return Response(
+                {"error": "Character stats not found"},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
+        try:
+            hit_dice_to_spend = int(request.data.get('hit_dice_to_spend', 0))
+        except (ValueError, TypeError):
+             return Response(
+                {"error": "hit_dice_to_spend must be an integer"},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+            
+        stats = character.stats
+        
+        # 1. Spend Hit Dice & Heal
+        hp_recovered = 0
+        dice_spent = 0
+        
+        if hit_dice_to_spend > 0:
+            current_level = character.level
+            # Check availability
+            # "hit_dice_used" tracks how many have been SPENT. 
+            # Available = Total - Used
+            available = current_level - stats.hit_dice_used
+            
+            if hit_dice_to_spend > available:
+                 return Response(
+                    {"error": f"Not enough Hit Dice. Available: {available}"},
+                    status=status.HTTP_400_BAD_REQUEST
+                )
+            
+            # Roll for healing
+            # Determine die size from class
+            hit_die_size = 8 # Default
+            if character.character_class:
+                # "d10" -> 10
+                try:
+                    hit_die_size = int(character.character_class.hit_dice.strip('d'))
+                except:
+                    pass
+            
+            import random
+            con_mod = stats.constitution_modifier
+            
+            for _ in range(hit_dice_to_spend):
+                roll = random.randint(1, hit_die_size)
+                heal_amt = max(0, roll + con_mod) # Minimum 0? PHB says minimum 0.
+                hp_recovered += heal_amt
+                stats.hit_points = min(stats.max_hit_points, stats.hit_points + heal_amt)
+                
+            stats.hit_dice_used += hit_dice_to_spend
+            dice_spent = hit_dice_to_spend
+
+        # 2. Recover Pact Magic slots (Warlock)
+        slots_recovered = {}
+        if character.character_class.name == 'Warlock':
+             # Calculate max slots
+            from campaigns.utils import calculate_spell_slots
+            max_slots = calculate_spell_slots('Warlock', character.level)
+            stats.spell_slots = max_slots
+            slots_recovered = max_slots
+
+        stats.save()
+        
+        return Response({
+            "message": f"Short Rest complete. Regained {hp_recovered} HP using {dice_spent} Hit Dice.",
+            "hp_recovered": hp_recovered,
+            "hit_dice_spent": dice_spent,
+            "current_hp": stats.hit_points,
+            "hit_dice_remaining": character.level - stats.hit_dice_used,
+            "slots_recovered": slots_recovered
+        })
+
+    @action(detail=True, methods=['post'])
+    def long_rest(self, request, pk=None):
+        """
+        Perform a Long Rest.
+        - Restore HP to max
+        - Regain Hit Dice (half max)
+        - Restore all Spell Slots
+        - Reduce Exhaustion (future)
+        """
+        character = self.get_object()
+        
+        if not hasattr(character, 'stats'):
+             return Response(
+                {"error": "Character stats not found"},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+            
+        stats = character.stats
+        
+        # 1. Restore HP
+        hp_gained = stats.max_hit_points - stats.hit_points
+        stats.hit_points = stats.max_hit_points
+        
+        # 2. Regain Hit Dice
+        # Regain up to half of total hit dice (min 1)
+        total_hit_dice = character.level
+        regain_amount = max(1, total_hit_dice // 2)
+        
+        # Reduce "used" count
+        # if used is 5, regain 2 -> used becomes 3
+        stats.hit_dice_used = max(0, stats.hit_dice_used - regain_amount)
+        
+        # 3. Restore Spell Slots
+        from campaigns.utils import calculate_spell_slots
+        from .multiclassing import calculate_multiclass_spell_slots
+        
+        if CharacterClassLevel.objects.filter(character=character).count() > 1:
+            max_slots = calculate_multiclass_spell_slots(character)
+        else:
+            max_slots = calculate_spell_slots(character.character_class.name, character.level)
+            
+        stats.spell_slots = max_slots
+        stats.save()
+        
+        return Response({
+            "message": f"Long Rest complete. HP and Spell Slots fully restored. Regained {regain_amount} Hit Dice.",
+            "hp_gained": hp_gained,
+            "hit_dice_regained": regain_amount,
+            "current_hp": stats.hit_points,
+            "hit_dice_remaining": total_hit_dice - stats.hit_dice_used,
+            "spell_slots": max_slots
+        })
 
 class CharacterClassViewSet(viewsets.ReadOnlyModelViewSet):
     """API endpoint for viewing character classes."""

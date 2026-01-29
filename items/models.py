@@ -92,6 +92,14 @@ class Weapon(Item):
     light = models.BooleanField(default=False, help_text="Light weapon")
     reach = models.BooleanField(default=False, help_text="Has reach")
     
+    # 2024 Weapon Mastery Property
+    mastery_property = models.CharField(
+        max_length=20, 
+        blank=True, 
+        null=True,
+        help_text="Weapon Mastery Property (2024 Rules): Cleave, Graze, Nick, Push, Sap, Slow, Topple, Vex"
+    )
+    
     class Meta:
         ordering = ['name']
     

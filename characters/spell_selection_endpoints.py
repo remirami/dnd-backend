@@ -271,8 +271,15 @@ def add_spell_selection_endpoints(cls):
         
         # Recalculate pending choices (e.g. to see if we now need Cantrips after picking Spells)
         if hasattr(self, '_calculate_pending_spells'):
-            dummy_gained = [] 
-            self._calculate_pending_spells(character, character.character_class, character.level, dummy_gained)
+            try:
+                dummy_gained = [] 
+                self._calculate_pending_spells(character, character.character_class, character.level, dummy_gained)
+            except Exception as e:
+                # Log the error but don't fail the request. The user spells were added successfully.
+                # We just failed to calculate if they need MORE spells.
+                print(f"Error calculating pending spells: {str(e)}")
+                # Optionally append to message?
+                # message += f" (Warning: Could not calculate next steps: {str(e)})"
              
         character.save()
         

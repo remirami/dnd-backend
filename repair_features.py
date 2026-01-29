@@ -1,54 +1,40 @@
-
 import os
 import django
 import sys
 
-sys.path.append(os.getcwd())
+# Set up Django environment
+sys.path.append('c:\\dnd-backend\\dnd-backend')
 os.environ.setdefault('DJANGO_SETTINGS_MODULE', 'dnd_backend.settings')
 django.setup()
 
-from characters.models import Character, CharacterFeature
-from campaigns.class_features_data import CLASS_FEATURES_2024, SUBCLASS_FEATURES_2024
+from characters.models import CharacterFeature
 
-def repair_features():
-    print("--- Repairing Character Features ---")
-    characters = Character.objects.all()
-    count = 0
+def repair_student_of_war():
+    features = CharacterFeature.objects.filter(name="Student of War")
+    print(f"Found {features.count()} 'Student of War' features to repair.")
     
-    for char in characters:
-        # Check standard class features
-        if char.character_class:
-            # We specifically want to fix Fighting Style for Fighter
-            if char.character_class.name == 'Fighter':
-                fs = CharacterFeature.objects.filter(character=char, name="Fighting Style").first()
-                if fs:
-                    # Find data source
-                    # Fighting style is generic to class level 1 usually
-                    fs_data = next((f for f in CLASS_FEATURES_2024['Fighter'][1] if f['name'] == 'Fighting Style'), None)
-                    if fs_data and fs_data.get('options'):
-                        print(f"Updating Fighting Style for {char.name}...")
-                        fs.options = fs_data['options']
-                        fs.choice_limit = fs_data.get('choice_limit', 1)
-                        fs.save()
-                        count += 1
+    artisans_tools = [
+        'Alchemist\'s supplies', 'Brewer\'s supplies', 'Calligrapher\'s supplies', 
+        'Carpenter\'s tools', 'Cartographer\'s tools', 'Cobbler\'s tools', 
+        'Cook\'s utensils', 'Glassblower\'s tools', 'Jeweler\'s tools', 
+        'Leatherworker\'s tools', 'Mason\'s tools', 'Painter\'s supplies', 
+        'Potter\'s tools', 'Smith\'s tools', 'Tinker\'s tools', 
+        'Weaver\'s tools', 'Woodcarver\'s tools'
+    ]
+    
+    updated_count = 0
+    for feature in features:
+        # Check if update is needed
+        if not feature.options:
+            print(f"Updating feature for character: {feature.character.name}")
+            feature.options = artisans_tools
+            feature.choice_limit = 1
+            feature.save()
+            updated_count += 1
+        else:
+            print(f"Feature for {feature.character.name} already has options.")
+            
+    print(f"Successfully repaired {updated_count} features.")
 
-        # Check subclass features
-        if char.subclass:
-            # Battle Master Combat Superiority
-            if char.subclass == 'Battle Master':
-                cs = CharacterFeature.objects.filter(character=char, name="Combat Superiority").first()
-                if cs:
-                    # Find data source
-                    # Battle Master Level 3
-                    cs_data = next((f for f in SUBCLASS_FEATURES_2024['Battle Master'][3] if f['name'] == 'Combat Superiority'), None)
-                    if cs_data and cs_data.get('options'):
-                        print(f"Updating Combat Superiority for {char.name}...")
-                        cs.options = cs_data['options']
-                        cs.choice_limit = cs_data.get('choice_limit', 1)
-                        cs.save()
-                        count += 1
-                        
-    print(f"Repaired {count} features.")
-
-if __name__ == '__main__':
-    repair_features()
+if __name__ == "__main__":
+    repair_student_of_war()

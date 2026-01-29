@@ -2,25 +2,23 @@ import os
 import django
 import sys
 
-# Setup Django environment
-sys.path.append(os.getcwd())
+# Set up Django environment
+sys.path.append('c:\\dnd-backend\\dnd-backend')
 os.environ.setdefault('DJANGO_SETTINGS_MODULE', 'dnd_backend.settings')
 django.setup()
 
 from characters.models import CharacterBackground
 
-def seed_backgrounds():
-    print("Seeding 2024 Backgrounds (SRD 5.2 Strict)...")
-    
-    # 2024 Backgrounds (SRD 5.2 Only)
-    # Acolyte, Criminal, Sage, Soldier
-    
-    backgrounds = [
+def update_srd_backgrounds():
+    print("Enforcing Strict SRD 5.2 Backgrounds...")
+
+    # Allowed List
+    allowed_backgrounds = [
         {
             "name": "Acolyte",
             "description": "You devoted yourself to service in a temple to a god or a pantheon of gods.",
             "asi_stats": ["Intelligence", "Wisdom", "Charisma"],
-            "feat": "Magic Initiate", 
+            "feat": "Magic Initiate", # Generic Magic Initiate
             "skill_proficiencies": "Insight, Religion"
         },
         {
@@ -34,7 +32,7 @@ def seed_backgrounds():
             "name": "Sage",
             "description": "You spent your years learning the lore of the multiverse.",
             "asi_stats": ["Constitution", "Intelligence", "Wisdom"],
-            "feat": "Magic Initiate",
+            "feat": "Magic Initiate", # Generic Magic Initiate
             "skill_proficiencies": "Arcana, History"
         },
         {
@@ -46,8 +44,10 @@ def seed_backgrounds():
         }
     ]
 
-    count = 0
-    for bg in backgrounds:
+    allowed_names = [bg['name'] for bg in allowed_backgrounds]
+
+    # 1. Update/Create Allowed
+    for bg in allowed_backgrounds:
         json_config = {
             "stats": bg['asi_stats'],
             "options": ["+2/+1", "+1/+1/+1"],
@@ -63,13 +63,29 @@ def seed_backgrounds():
                 'ability_score_options': json_config
             }
         )
-        if created:
-            count += 1
-            print(f"Created {bg['name']}")
-        else:
-            print(f"Updated {bg['name']}")
-            
-    print(f"Seeding Complete. {count} new backgrounds created.")
+        action = "Created" if created else "Updated"
+        print(f"{action} Allowed Background: {obj.name}")
 
-if __name__ == '__main__':
-    seed_backgrounds()
+    # 2. Delete Disallowed
+    # Delete all 2024 backgrounds NOT in the allowed list
+    print("Finding disallowed backgrounds...")
+    disallowed_bgs = CharacterBackground.objects.filter(source_ruleset='2024').exclude(name__in=allowed_names)
+    
+    if disallowed_bgs.exists():
+        from characters.models import Character
+        # Fix ProtectedError by setting character backgrounds to NULL first
+        # (or we could reassign them, but NULL is safer for now)
+        print("Detaching disallowed backgrounds from characters...")
+        
+        # We process manually to be safe or use update()
+        characters_to_fix = Character.objects.filter(background__in=disallowed_bgs)
+        updated_chars = characters_to_fix.update(background=None)
+        print(f"Updated {updated_chars} characters to have no background.")
+
+        deleted_count, _ = disallowed_bgs.delete()
+        print(f"Deleted {deleted_count} disallowed 2024 backgrounds.")
+    else:
+        print("No disallowed backgrounds found.")
+
+if __name__ == "__main__":
+    update_srd_backgrounds()

@@ -40,7 +40,18 @@ class SpellViewSet(viewsets.ModelViewSet):
         # Filter by level
         level = self.request.query_params.get('level')
         if level is not None:
-            queryset = queryset.filter(level=level)
+            try:
+                queryset = queryset.filter(level=int(level))
+            except (ValueError, TypeError):
+                pass
+
+        # Filter by max level (level_lte)
+        level_lte = self.request.query_params.get('level_lte')
+        if level_lte is not None:
+            try:
+                queryset = queryset.filter(level__lte=int(level_lte))
+            except (ValueError, TypeError):
+                pass
         
         # Filter by school
         school = self.request.query_params.get('school')

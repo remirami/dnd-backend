@@ -344,10 +344,15 @@ class CharacterSerializer(serializers.ModelSerializer):
                     from .models import Feat, CharacterFeat
                     feat = Feat.objects.filter(name__iexact=origin_feat_name).first()
                     if feat:
+                        from campaigns.feat_data import get_feat_config
+                        feat_config = get_feat_config(feat.name)
+                        
                         CharacterFeat.objects.create(
                             character=character,
                             feat=feat,
-                            level_taken=1
+                            level_taken=1,
+                            options=feat_config.get('options', []),
+                            choice_limit=feat_config.get('choice_limit', 1)
                         )
                         print(f"Granted Origin Feat: {feat.name}")
                 except Exception as e:
@@ -444,6 +449,19 @@ class CharacterSerializer(serializers.ModelSerializer):
                         description=description,
                         source='Race'
                     )
+
+        # Apply Class Skills (New Logic)
+        if character_class and character_class.skill_proficiency_choices:
+            options = [s.strip() for s in character_class.skill_proficiency_choices.split(',')]
+            CharacterFeature.objects.create(
+                character=character,
+                name="Class Skills",
+                feature_type='class',
+                description=f"As a {character_class.name.title()}, you gain proficiency in {character_class.num_skill_choices} skills of your choice.",
+                source=f"{character_class.name.title()} (Level 1)",
+                options=options,
+                choice_limit=character_class.num_skill_choices
+            )
         
         # Apply background skills and features
         background = validated_data.get('background')
@@ -499,6 +517,15 @@ class CharacterSerializer(serializers.ModelSerializer):
                 except Language.DoesNotExist:
                     pass
         
+        
+        # Create initial Class Level entry
+        if character_class:
+            CharacterClassLevel.objects.create(
+                character=character,
+                character_class=character_class,
+                level=1
+            )
+
         # Apply Class Features (Level 1)
         if character_class:
             from campaigns.class_features_data import get_class_features
@@ -626,33 +653,67 @@ class CharacterFeatSerializer(serializers.ModelSerializer):
         from .models import CharacterFeat
         model = CharacterFeat
         fields = '__all__'
-        read_only_fields = ('character', 'taken_at')
+        read_only_fields = ('character', 'taken_at', 'options', 'choice_limit')
         
     def validate(self, data):
-        """Check for duplicates and provide helpful error message"""
+        """Check for duplicates and validate selection"""
         character = self.context.get('character')
         # If character not in context (creation via nested?), try to get from data (not usually present in nested)
         
+        # 1. Duplicate Check
         feat_id = data.get('feat_id')
         if not feat_id and self.instance:
             feat_id = self.instance.feat_id
             
         if character and feat_id:
             from .models import CharacterFeat, Feat
-            # Check if likely duplicate
-            if CharacterFeat.objects.filter(character=character, feat_id=feat_id).exists():
+            # Check if likely duplicate, unless it's repeatable
+            from campaigns.feat_data import get_feat_config
+
+            duplicate_exists = not self.instance and CharacterFeat.objects.filter(character=character, feat_id=feat_id).exists()
+            
+            if duplicate_exists:
+                # Check config
                 try:
                     feat = Feat.objects.get(pk=feat_id)
-                    feat_name = feat.name
-                except:
-                    feat_name = "this feat"
-                    
-                error_msg = f"You already have {feat_name}."
-                
-                # Add context if it's an auto-granted feat
-                if feat_name == "Tough" and "Farmer" in character.background.name:
-                     error_msg += " It was granted automatically by your Farmer background."
-                
-                raise serializers.ValidationError(error_msg)
+                    feat_config = get_feat_config(feat.name)
+                    if feat_config.get('repeatable'):
+                        # Allowed to duplicate
+                        pass
+                    else:
+                        # Error out
+                        error_msg = f"You already have {feat.name}."
+                        # Add context if it's an auto-granted feat
+                        if feat.name == "Tough" and character.background and "Farmer" in character.background.name:
+                             error_msg += " It was granted automatically by your Farmer background."
+                        raise serializers.ValidationError(error_msg)
+                except Feat.DoesNotExist:
+                     pass
+
+        # 2. Selection Validation
+        selection = data.get('selection')
+        if selection is not None:
+            # Get options and limit from instance or data (instance preferred as options usually pre-set)
+            options = self.instance.options if self.instance else data.get('options', [])
+            choice_limit = self.instance.choice_limit if self.instance else data.get('choice_limit', 1)
+            
+            if not isinstance(selection, list):
+                raise serializers.ValidationError({"selection": "Selection must be a list."})
+            
+            if len(selection) > choice_limit:
+                raise serializers.ValidationError({
+                    "selection": f"You can only choose {choice_limit} options (selected {len(selection)})."
+                })
+            
+            # Validate each selection is in options
+            # If options are empty, selection should probably be empty unless it's free-form (unlikely for strict mode)
+            if options:
+                # Options can be strings or dicts? heavily depends on usage. 
+                # Assuming strings for now as per Feature selection.
+                invalid_choices = [s for s in selection if s not in options]
+                if invalid_choices:
+                     raise serializers.ValidationError({
+                        "selection": f"Invalid choices: {', '.join(invalid_choices)}. Must be from available options."
+                    })
                 
         return data

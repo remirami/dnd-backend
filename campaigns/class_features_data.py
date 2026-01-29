@@ -1699,7 +1699,9 @@ def get_class_features(class_name, level, ruleset='2014'):
         return []
     
     if level not in features_source[target_class]:
-        return []
+         if ruleset == '2024':
+             return get_class_features(class_name, level, '2014')
+         return []
     
     return features_source[target_class][level]
 
@@ -1821,7 +1823,9 @@ SUBCLASS_FEATURES_2014 = {
             },
             {
                 'name': 'Student of War',
-                'description': 'At 3rd level, you gain proficiency with one type of artisan\'s tools of your choice.'
+                'description': 'At 3rd level, you gain proficiency with one type of artisan\'s tools of your choice.',
+                'options': ['Alchemist\'s supplies', 'Brewer\'s supplies', 'Calligrapher\'s supplies', 'Carpenter\'s tools', 'Cartographer\'s tools', 'Cobbler\'s tools', 'Cook\'s utensils', 'Glassblower\'s tools', 'Jeweler\'s tools', 'Leatherworker\'s tools', 'Mason\'s tools', 'Painter\'s supplies', 'Potter\'s tools', 'Smith\'s tools', 'Tinker\'s tools', 'Weaver\'s tools', 'Woodcarver\'s tools'],
+                'choice_limit': 1
             },
         ],
         7: [
@@ -2213,6 +2217,34 @@ SUBCLASS_FEATURES_2014 = {
     },
 }
 
+
+# 2024 Epic Boon Options
+EPIC_BOON_OPTIONS = [
+    'Boon of Combat Prowess',
+    'Boon of Dimensional Travel',
+    'Boon of Energy Resistance',
+    'Boon of Fate',
+    'Boon of Fortitude',
+    'Boon of Irresistible Offense',
+    'Boon of Recovery',
+    'Boon of Speed',
+    'Boon of Spell Recall',
+    'Boon of the Night Spirit',
+    'Boon of Truesight',
+    'Boon of Undetectability'
+]
+
+# 2024 Weapon Mastery Options
+WEAPON_MASTERY_OPTIONS = [
+    'Battleaxe', 'Blowgun', 'Club', 'Crossbow, hand', 'Crossbow, heavy', 
+    'Crossbow, light', 'Dagger', 'Dart', 'Flail', 'Glaive', 'Greataxe', 
+    'Greatclub', 'Greatsword', 'Halberd', 'Handaxe', 'Javelin', 'Lance', 
+    'Light hammer', 'Longbow', 'Longsword', 'Mace', 'Maul', 'Morningstar', 
+    'Musket', 'Pike', 'Pistol', 'Quarterstaff', 'Rapier', 'Scimitar', 
+    'Shortbow', 'Shortsword', 'Sickle', 'Sling', 'Spear', 'Trident', 
+    'War pick', 'Warhammer', 'Whip'
+]
+
 # 2024 Class Features
 CLASS_FEATURES_2024 = {
     'Fighter': {
@@ -2220,31 +2252,495 @@ CLASS_FEATURES_2024 = {
             {
                 'name': 'Fighting Style', 
                 'description': 'You adopt a particular style of fighting as your specialty. Choose one Fighting Style feat.',
-                'options': ['Archery', 'Defense', 'Dueling', 'Great Weapon Fighting', 'Protection', 'Two-Weapon Fighting', 'Blind Fighting', 'Interception', 'Thrown Weapon Fighting', 'Unarmed Fighting']
+                # SRD 5.2 Compliant List
+                'options': ['Archery', 'Defense', 'Great Weapon Fighting', 'Two-Weapon Fighting']
             },
-            {'name': 'Second Wind', 'description': 'Bonus Action: Regain 1d10 + Fighter Level HP. 2 uses.'}
+            {'name': 'Second Wind', 'description': 'Bonus Action: Regain 1d10 + Fighter Level HP. 2 uses.'},
+            {
+                'name': 'Weapon Mastery', 
+                'description': 'Choose 3 weapons to master. You can use their mastery properties.',
+                'options': WEAPON_MASTERY_OPTIONS,
+                'choice_limit': 3
+            }
         ],
         2: [
             {'name': 'Action Surge', 'description': 'Take one additional Action on your turn (once per Short Rest).'},
             {'name': 'Tactical Mind', 'description': 'Spend Second Wind use to add 1d10 to a failed Ability Check.'}
         ],
-        3: [{'name': 'Martial Archetype', 'description': 'Choose a Martial Archetype (Champion, Battle Master, etc.).'}],
-        4: [{'name': 'Ability Score Improvement', 'description': 'Increase one score by 2 or two by 1, or choose a Feat.'}],
+        3: [{'name': 'Martial Archetype', 'description': 'Choose a Martial Archetype (Champion, etc).'}],
+        4: [{'name': 'Ability Score Improvement', 'description': 'Increase Ability Scores or choose a Feat.'}],
         5: [
             {'name': 'Extra Attack', 'description': 'You can attack twice whenever you take the Attack action on your turn.'},
             {'name': 'Tactical Shift', 'description': 'Move up to half your speed without provoking Opportunity Attacks when you use Second Wind.'}
         ],
-        6: [{'name': 'Ability Score Improvement', 'description': 'Increase one score by 2 or two by 1, or choose a Feat.'}],
-        9: [{'name': 'Indomitable', 'description': 'Reroll a failed saving throw with a bonus equal to Fighter Level.'}],
+        6: [{'name': 'Ability Score Improvement', 'description': 'Increase Ability Scores or choose a Feat.'}],
+        7: [{'name': 'Subclass Feature', 'description': 'You gain a feature from your Martial Archetype.'}],
+        8: [{'name': 'Ability Score Improvement', 'description': 'Increase Ability Scores or choose a Feat.'}],
+        9: [
+            {'name': 'Indomitable', 'description': 'Reroll a failed saving throw with a bonus equal to Fighter Level.'},
+            {'name': 'Tactical Master', 'description': 'When you attack with a weapon you mastered, you can swap its mastery property for Push, Sap, or Slow for that attack.'}
+        ],
+        10: [{'name': 'Subclass Feature', 'description': 'You gain a feature from your Martial Archetype. (Champion: Additional Fighting Style)'}],
         11: [
             {'name': 'Two Extra Attacks', 'description': 'You can attack three times whenever you take the Attack action on your turn.'}
         ],
-        13: [{'name': 'Indomitable (2 uses)', 'description': 'You can use Indomitable twice between Long Rests.'}],
+        12: [{'name': 'Ability Score Improvement', 'description': 'Increase Ability Scores or choose a Feat.'}],
+        13: [
+            {'name': 'Indomitable (2 uses)', 'description': 'You can use Indomitable twice between Long Rests.'},
+            {'name': 'Studied Attacks', 'description': 'If you make an attack against a creature and miss, you have Advantage on your next attack against that creature before the end of your next turn.'}
+        ],
+        14: [{'name': 'Ability Score Improvement', 'description': 'Increase Ability Scores or choose a Feat.'}],
+        15: [{'name': 'Subclass Feature', 'description': 'You gain a feature from your Martial Archetype.'}],
+        16: [{'name': 'Ability Score Improvement', 'description': 'Increase Ability Scores or choose a Feat.'}],
         17: [
             {'name': 'Action Surge (2 uses)', 'description': 'You can use Action Surge twice before a rest.'},
             {'name': 'Indomitable (3 uses)', 'description': 'You can use Indomitable three times between Long Rests.'}
         ],
+        18: [{'name': 'Subclass Feature', 'description': 'You gain a feature from your Martial Archetype.'}],
+        19: [{'name': 'Epic Boon', 'description': 'Choose an Epic Boon feat.', 'options': EPIC_BOON_OPTIONS, 'choice_limit': 1}],
         20: [{'name': 'Three Extra Attacks', 'description': 'You can attack four times whenever you take the Attack action on your turn.'}]
+    },
+    'Monk': {
+        1: [
+            {'name': 'Unarmored Defense', 'description': 'AC = 10 + Dex + Wis.'},
+            {'name': 'Martial Arts', 'description': 'Use Dex for Unarmed/Monk Weapons. D4 damage die (scales). Bonus Action Unarmed Strike.'}
+        ],
+        2: [
+            {'name': 'Monk\'s Discipline', 'description': 'Ki/Focus Points equal to Level. Flurry of Blows, Patient Defense, Step of the Wind.'},
+            {'name': 'Unarmored Movement', 'description': 'Speed increase (starting +10 ft).'}
+        ],
+        3: [
+            {'name': 'Deflect Attacks', 'description': 'Reaction to reduce damage from melee/ranged attacks.'},
+            {'name': 'Monastic Tradition', 'description': 'Choose a Monastic Tradition.'}
+        ],
+        4: [
+            {'name': 'Ability Score Improvement', 'description': 'Increase Ability Scores or choose a Feat.'},
+            {'name': 'Slow Fall', 'description': 'Reaction to reduce falling damage.'}
+        ],
+        5: [
+            {'name': 'Extra Attack', 'description': 'Attack twice when taking the Attack action.'},
+            {'name': 'Stunning Strike', 'description': 'Spend Point to stun target on hit.'}
+        ],
+        6: [
+            {'name': 'Empowered Strikes', 'description': 'Unarmed strikes count as magical.'},
+            {'name': 'Subclass Feature', 'description': 'You gain a feature from your Monastic Tradition.'}
+        ],
+        7: [
+            {'name': 'Evasion', 'description': 'Take no damage on successful Dex save for half, half on fail.'},
+            {'name': 'Acclimated', 'description': 'Use Action to end Charm/Frighten. Poison resistance check advantage/immunity? (SRD 5.2 check required - simplified here).'}
+        ],
+        8: [{'name': 'Ability Score Improvement', 'description': 'Increase Ability Scores or choose a Feat.'}],
+        9: [{'name': 'Unarmored Movement Improvement', 'description': 'Move along vertical surfaces/liquids.'}],
+        10: [
+            {'name': 'Heightened Focus', 'description': 'Reduced cost/Improved effect for Flurry, Patient Defense, Step of the Wind? (Placeholder for 2024 improvement).'},
+            {'name': 'Self-Restoration', 'description': 'Bonus Action to remove Charm/Frighten/Poisoned. No food/water.'}
+        ],
+        11: [{'name': 'Subclass Feature', 'description': 'You gain a feature from your Monastic Tradition.'}],
+        12: [{'name': 'Ability Score Improvement', 'description': 'Increase Ability Scores or choose a Feat.'}],
+        13: [{'name': 'Deflect Energy', 'description': 'Deflect Attacks works on all damage types?'}],
+        14: [{'name': 'Disciplined Survivor', 'description': 'Proficiency in all Saving Throws. Reroll failed save for 1 Point.'}],
+        15: [{'name': 'Perfect Focus', 'description': 'Regain focus/ki if low when rolling initiative?'}],
+        16: [{'name': 'Ability Score Improvement', 'description': 'Increase Ability Scores or choose a Feat.'}],
+        17: [{'name': 'Subclass Feature', 'description': 'You gain a feature from your Monastic Tradition.'}],
+        18: [{'name': 'Superior Defense', 'description': 'Action + Points for resistance to all damage/invisibility?'}],
+        19: [{'name': 'Epic Boon', 'description': 'Choose an Epic Boon feat.', 'options': EPIC_BOON_OPTIONS, 'choice_limit': 1}],
+        20: [{'name': 'Body and Mind', 'description': '+4 Dex/Wis (max 26).'}] 
+    },
+    'Paladin': {
+        1: [
+            {'name': 'Lay on Hands', 'description': 'Pool of healing (5 * Level). Action to heal or cure poison.'},
+            {'name': 'Spellcasting', 'description': 'Charisma-based spellcasting.'},
+            {
+                'name': 'Weapon Mastery', 
+                'description': 'Choose 2 weapons to master.',
+                'options': WEAPON_MASTERY_OPTIONS,
+                'choice_limit': 2
+            }
+        ],
+        2: [
+            {
+                'name': 'Fighting Style', 
+                'description': 'Choose one Fighting Style feat (Defense, Dueling, Great Weapon, Protection).',
+                'options': ['Defense', 'Dueling', 'Great Weapon Fighting', 'Protection']
+            }, 
+            {'name': 'Paladin\'s Smite', 'description': 'Know Divine Smite spell. Can cast it without slot once per Long Rest.'}
+        ],
+        3: [
+            {'name': 'Channel Divinity', 'description': 'Subclass specific channel options.'},
+            {'name': 'Sacred Oath', 'description': 'Choose a Paladin subclass.'}
+        ],
+        4: [{'name': 'Ability Score Improvement', 'description': 'Increase Ability Scores or choose a Feat.'}],
+        5: [
+            {'name': 'Extra Attack', 'description': 'Attack twice when taking the Attack action.'},
+            {'name': 'Faithful Steed', 'description': 'Find Steed always prepared, cast once without slot.'}
+        ],
+        6: [{'name': 'Aura of Protection', 'description': 'Add Charisma modifier to saves for you and nearby allies.'}],
+        7: [{'name': 'Subclass Feature', 'description': 'You gain a feature from your Sacred Oath (Aura).'}],
+        8: [{'name': 'Ability Score Improvement', 'description': 'Increase Ability Scores or choose a Feat.'}],
+        9: [{'name': 'Abjure Foes', 'description': 'Channel Divinity to Frighten/Stun fees.'}], # Verify name/mech
+        10: [{'name': 'Aura of Courage', 'description': 'Immunity to Frightened for you and nearby allies.'}],
+        11: [{'name': 'Radiant Strikes', 'description': 'Melee attacks deal extra 1d8 Radiant damage.'}],
+        12: [{'name': 'Ability Score Improvement', 'description': 'Increase Ability Scores or choose a Feat.'}],
+        13: [], # Spells
+        14: [{'name': 'Restoring Touch', 'description': 'Lay on Hands cures more conditions?'}], # 2024 update check
+        15: [{'name': 'Subclass Feature', 'description': 'You gain a feature from your Sacred Oath.'}],
+        16: [{'name': 'Ability Score Improvement', 'description': 'Increase Ability Scores or choose a Feat.'}],
+        17: [{'name': 'Aura Expansion', 'description': 'Auras range increases to 30 ft.'}],
+        18: [{'name': 'Subclass Feature', 'description': 'You gain a feature from your Sacred Oath.'}],
+        19: [{'name': 'Epic Boon', 'description': 'Choose an Epic Boon feat.', 'options': EPIC_BOON_OPTIONS, 'choice_limit': 1}],
+        20: [{'name': 'Subclass Feature (Capstone)', 'description': 'Powerful avatar transformation or similar.'}]
+    },
+    'Ranger': {
+        1: [
+            {'name': 'Spellcasting', 'description': 'Wisdom-based spellcasting.'},
+            {'name': 'Favored Enemy', 'description': 'Hunter\'s Mark always prepared. Non-concentration duration increases.'},
+            {
+                'name': 'Weapon Mastery', 
+                'description': 'Choose 2 weapons to master.',
+                'options': WEAPON_MASTERY_OPTIONS,
+                'choice_limit': 2
+            }
+        ],
+        2: [
+            {'name': 'Deft Explorer', 'description': 'Expertise in one skill. Languages/Terrain benefits.'},
+            {
+                'name': 'Fighting Style', 
+                'description': 'Choose one Fighting Style feat (Archery, Defense, Druidic Warrior, Two-Weapon).',
+                'options': ['Archery', 'Defense', 'Two-Weapon Fighting']
+            }
+        ],
+        3: [
+            {'name': 'Ranger Archetype', 'description': 'Choose a Ranger subclass.'},
+            {'name': 'Primeval Awareness', 'description': 'Commune with nature/sense creatures logic? (2024 updated)'}
+        ],
+        4: [{'name': 'Ability Score Improvement', 'description': 'Increase Ability Scores or choose a Feat.'}],
+        5: [
+            {'name': 'Extra Attack', 'description': 'Attack twice when taking the Attack action.'}
+        ],
+        6: [
+            {'name': 'Roving', 'description': '+10 ft speed. Climbing/Swimming speeds.'},
+            {'name': 'Subclass Feature', 'description': 'You gain a feature from your Ranger Archetype.'}
+        ],
+        7: [{'name': 'Subclass Feature', 'description': 'You gain a feature from your Ranger Archetype.'}],
+        8: [{'name': 'Ability Score Improvement', 'description': 'Increase Ability Scores or choose a Feat.'}],
+        9: [{'name': 'Expertise', 'description': 'Expertise in two more skills.'}], # 2024 check
+        10: [
+            {'name': 'Nature\'s Veil', 'description': 'Bonus Action to become Invisible until next turn.'},
+            {'name': 'Subclass Feature', 'description': 'You gain a feature from your Ranger Archetype.'}
+        ],
+        11: [{'name': 'Subclass Feature', 'description': 'You gain a feature from your Ranger Archetype.'}],
+        12: [{'name': 'Ability Score Improvement', 'description': 'Increase Ability Scores or choose a Feat.'}],
+        13: [{'name': 'Relentless Hunter', 'description': 'Taking damage doesn\'t break concentration on Hunter\'s Mark?'}],
+        14: [{'name': 'Nature\'s Veil Improvement', 'description': 'More uses or duration?'}],
+        15: [{'name': 'Subclass Feature', 'description': 'You gain a feature from your Ranger Archetype.'}],
+        16: [{'name': 'Ability Score Improvement', 'description': 'Increase Ability Scores or choose a Feat.'}],
+        17: [{'name': 'Precise Hunter', 'description': 'Advantage on attacks against Hunter\'s Mark target?'}],
+        18: [{'name': 'Feral Senses', 'description': 'No disadvantage vs invisible creatures. Aware adjacent hidden.'}],
+        19: [{'name': 'Epic Boon', 'description': 'Choose an Epic Boon feat.', 'options': EPIC_BOON_OPTIONS, 'choice_limit': 1}],
+        20: [{'name': 'Foe Slayer', 'description': 'Hunter\'s Mark damage increases to d10. Add Wis to hit/damage once per turn?'}]
+    },
+    'Barbarian': {
+        1: [
+             {'name': 'Rage', 'description': 'Enter a rage for advantage on STR checks/saves, bonus damage, and resistance to B/P/S damage.'},
+             {'name': 'Unarmored Defense', 'description': 'AC = 10 + Dex mod + Con mod while unarmored.'},
+             {
+                'name': 'Weapon Mastery', 
+                'description': 'Choose 2 weapons to master.',
+                'options': WEAPON_MASTERY_OPTIONS,
+                'choice_limit': 2
+            }
+        ],
+        2: [
+            {'name': 'Reckless Attack', 'description': 'Gain advantage on STR attacks, but enemies gain advantage against you.'},
+            {'name': 'Danger Sense', 'description': 'Advantage on DEX saves against seen effects.'}
+        ],
+        3: [
+            {'name': 'Primal Path', 'description': 'Choose a Primal Path subclass.'},
+            {'name': 'Primal Knowledge', 'description': 'Gain proficiency in one skill from the Barbarian list.'} 
+        ],
+        4: [{'name': 'Ability Score Improvement', 'description': 'Increase Ability Scores or choose a Feat.'}],
+        5: [
+            {'name': 'Extra Attack', 'description': 'Attack twice when taking the Attack action.'},
+            {'name': 'Fast Movement', 'description': '+10 ft speed while not in heavy armor.'}
+        ],
+        6: [{'name': 'Subclass Feature', 'description': 'You gain a feature from your Primal Path.'}],
+        7: [
+            {'name': 'Feral Instinct', 'description': 'Advantage on Initiative. Cannot be surprised if you Rage immediately.'},
+            {'name': 'Instinctive Pounce', 'description': 'As part of the Bonus Action to Rage, move up to half your speed.'}
+        ],
+        8: [{'name': 'Ability Score Improvement', 'description': 'Increase Ability Scores or choose a Feat.'}],
+        9: [{'name': 'Brutal Strike', 'description': 'Forgo Advantage on Reckless Attack to deal extra damage + effect.'}], 
+        10: [{'name': 'Subclass Feature', 'description': 'You gain a feature from your Primal Path.'}],
+        11: [{'name': 'Relentless Rage', 'description': 'Constitution save to stay at 1 HP instead of dropping to 0 while raging.'}],
+        12: [{'name': 'Ability Score Improvement', 'description': 'Increase Ability Scores or choose a Feat.'}],
+        13: [{'name': 'Improved Brutal Strike', 'description': 'Brutal Strike extra damage increases to 2d10.'}],
+        14: [{'name': 'Subclass Feature', 'description': 'You gain a feature from your Primal Path.'}],
+        15: [{'name': 'Persistent Rage', 'description': 'Rage only ends if you choose to end it or fall Unconscious; restores uses on Short Rest.'}],
+        16: [{'name': 'Ability Score Improvement', 'description': 'Increase Ability Scores or choose a Feat.'}],
+        17: [{'name': 'Improved Brutal Strike', 'description': 'Brutal Strike extra damage increases to 3d10.'}],
+        18: [{'name': 'Indomitable Might', 'description': 'If a Strength check total is less than your Strength score, use your score.'}],
+        19: [{'name': 'Epic Boon', 'description': 'Choose an Epic Boon feat.', 'options': EPIC_BOON_OPTIONS, 'choice_limit': 1}],
+        20: [{'name': 'Primal Champion', 'description': '+4 Str/Con (max 24).'}]
+    },
+    'Bard': {
+        1: [
+            {'name': 'Bardic Inspiration', 'description': 'Bonus Action: Give a d6 to ally for checks/attacks/saves.'},
+            {'name': 'Spellcasting', 'description': 'Charisma-based spellcasting.'}
+        ],
+        2: [
+            {'name': 'Jack of All Trades', 'description': 'Add half proficiency to non-proficient ability checks.'},
+            {'name': 'Song of Rest', 'description': 'Allies regain extra HP during Short Rest.'} # Note: 2024 might vary, sticking to SRD core if ambiguous or provided list. User list implies Song of Rest Improvement.
+            # SRD 5.2 update check: User list says "Song of Rest Improvement / Feature". 
+        ],
+        3: [
+            {'name': 'Bard College', 'description': 'Choose a Bard College subclass.'},
+            {'name': 'Expertise', 'description': 'Double proficiency in 2 skills.'}
+        ],
+        4: [{'name': 'Ability Score Improvement', 'description': 'Increase Ability Scores or choose a Feat.'}],
+        5: [
+            {'name': 'Bardic Inspiration (d8)', 'description': 'Die increases to d8.'},
+            {'name': 'Font of Inspiration', 'description': 'Regain Inspiration on Short Rest.'}
+        ],
+        6: [
+            {'name': 'Subclass Feature', 'description': 'You gain a feature from your Bard College.'}, 
+            {'name': 'Countercharm', 'description': 'Action/Reaction to disrupt charm/frighten effects.'}
+        ],
+        7: [], # Spells
+        8: [{'name': 'Ability Score Improvement', 'description': 'Increase Ability Scores or choose a Feat.'}],
+        9: [{'name': 'Song of Rest (d8)', 'description': 'Die increases to d8.'}],
+        10: [
+            {'name': 'Bardic Inspiration (d10)', 'description': 'Die increases to d10.'},
+            {'name': 'Expertise', 'description': 'Double proficiency in 2 more skills.'},
+            {'name': 'Magical Secrets', 'description': 'Learn 2 spells from any class list.'}
+        ],
+        11: [], # Spells
+        12: [{'name': 'Ability Score Improvement', 'description': 'Increase Ability Scores or choose a Feat.'}],
+        13: [{'name': 'Song of Rest (d10)', 'description': 'Die increases to d10.'}],
+        14: [
+            {'name': 'Magical Secrets', 'description': 'Learn 2 more spells from any class list.'},
+            {'name': 'Subclass Feature', 'description': 'You gain a feature from your Bard College.'}
+        ],
+        15: [{'name': 'Bardic Inspiration (d12)', 'description': 'Die increases to d12.'}],
+        16: [{'name': 'Ability Score Improvement', 'description': 'Increase Ability Scores or choose a Feat.'}],
+        17: [{'name': 'Song of Rest (d12)', 'description': 'Die increases to d12.'}],
+        18: [{'name': 'Magical Secrets', 'description': 'Learn 2 more spells from any class list.'}],
+        19: [{'name': 'Epic Boon', 'description': 'Choose an Epic Boon feat.', 'options': EPIC_BOON_OPTIONS, 'choice_limit': 1}],
+        20: [{'name': 'Superior Inspiration', 'description': 'Regain 1 Inspiration if you have none when rolling Initiative.'}]
+    },
+    'Cleric': {
+        1: [
+            {'name': 'Spellcasting', 'description': 'Wisdom-based spellcasting.'},
+            {'name': 'Divine Order', 'description': 'Choose Protector (Heavy Armor/Martial Weapons) or Thaumaturge (Extra Cantrip/Religion check bonus).'} 
+        ],
+        2: [
+            {'name': 'Channel Divinity', 'description': 'Use divine power for effects (Turn Undead, etc).'},
+            {'name': 'Turn Undead', 'description': 'Action to turn undead creatures.'}
+        ],
+        3: [{'name': 'Divine Domain', 'description': 'Choose a Divine Domain subclass.'}],
+        4: [{'name': 'Ability Score Improvement', 'description': 'Increase Ability Scores or choose a Feat.'}],
+        5: [{'name': 'Destroy Undead (CR 1/2)', 'description': 'Turn Undead destroys low CR undead.'}],
+        6: [
+             {'name': 'Subclass Feature', 'description': 'You gain a feature from your Divine Domain.'},
+             {'name': 'Channel Divinity (2/rest)', 'description': 'Use twice between rests.'}
+        ],
+        7: [], # Spells
+        8: [{'name': 'Ability Score Improvement', 'description': 'Increase Ability Scores or choose a Feat.'}],
+        9: [], # Spells
+        10: [{'name': 'Divine Intervention', 'description': 'Call on your deity for aid (Action).'}],
+        11: [{'name': 'Destroy Undead (CR 2)', 'description': 'Destroy higher CR undead.'}], 
+        12: [{'name': 'Ability Score Improvement', 'description': 'Increase Ability Scores or choose a Feat.'}],
+        13: [], # Spells
+        14: [{'name': 'Destroy Undead (CR 3)', 'description': 'Destroy higher CR undead.'}],
+        15: [{'name': 'Subclass Feature', 'description': 'You gain a feature from your Divine Domain.'}],
+        16: [{'name': 'Ability Score Improvement', 'description': 'Increase Ability Scores or choose a Feat.'}],
+        17: [
+            {'name': 'Destroy Undead (CR 4)', 'description': 'Destroy higher CR undead.'},
+            {'name': 'Subclass Feature', 'description': 'You gain a feature from your Divine Domain.'}
+        ],
+        18: [{'name': 'Channel Divinity (3/rest)', 'description': 'Use three times between rests.'}],
+        19: [{'name': 'Epic Boon', 'description': 'Choose an Epic Boon feat.', 'options': EPIC_BOON_OPTIONS, 'choice_limit': 1}],
+        20: [{'name': 'Divine Intervention Improvement', 'description': 'Divine Intervention automatically succeeds.'}]
+    },
+    'Druid': {
+        1: [
+            {'name': 'Druidic', 'description': 'Secret language.'},
+            {'name': 'Spellcasting', 'description': 'Wisdom-based spellcasting.'},
+            {'name': 'Primal Order', 'description': 'Choose Warden (Armor/Weapon) or Magician (Cantrip/Nature bonus).'}
+        ],
+        2: [
+            {'name': 'Wild Shape', 'description': 'Transform into beasts (Bonus Action).'},
+            {'name': 'Wild Companion', 'description': 'Use Wild Shape to cast Find Familiar.'}
+        ],
+        3: [{'name': 'Druid Circle', 'description': 'Choose a Druid Circle subclass.'}],
+        4: [{'name': 'Ability Score Improvement', 'description': 'Increase Ability Scores or choose a Feat.'}],
+        5: [{'name': 'Wild Resurgence', 'description': 'Convert spell slot to Wild Shape or vice versa.'}],
+        6: [{'name': 'Subclass Feature', 'description': 'You gain a feature from your Druid Circle.'}],
+        7: [{'name': 'Elemental Fury', 'description': 'Add elemental damage to attacks or cantrips.'}],
+        8: [{'name': 'Ability Score Improvement', 'description': 'Increase Ability Scores or choose a Feat.'}],
+        9: [], # Spells
+        10: [{'name': 'Subclass Feature', 'description': 'You gain a feature from your Druid Circle.'}],
+        11: [], # Spells
+        12: [{'name': 'Ability Score Improvement', 'description': 'Increase Ability Scores or choose a Feat.'}],
+        13: [], # Spells
+        14: [{'name': 'Subclass Feature', 'description': 'You gain a feature from your Druid Circle.'}],
+        15: [{'name': 'Improved Elemental Fury', 'description': 'Elemental damage increases.'}],
+        16: [{'name': 'Ability Score Improvement', 'description': 'Increase Ability Scores or choose a Feat.'}],
+        17: [], # Spells
+        18: [{'name': 'Beast Spells', 'description': 'Cast spells while in Wild Shape.'}],
+        19: [{'name': 'Epic Boon', 'description': 'Choose an Epic Boon feat.', 'options': EPIC_BOON_OPTIONS, 'choice_limit': 1}],
+        20: [{'name': 'Archdruid', 'description': 'Unlimited Wild Shape usage; ignore subtle spell components.'}]
+    },
+    'Monk': {
+        19: [{'name': 'Epic Boon', 'description': 'Choose an Epic Boon feat.', 'options': EPIC_BOON_OPTIONS, 'choice_limit': 1}]
+    },
+    'Paladin': {
+        1: [
+            {'name': 'Lay on Hands', 'description': 'Pool of healing power (5 x Paladin level).'},
+            {'name': 'Spellcasting', 'description': 'Prepare spells equal to Level/2 + CHA mod.'},
+             {
+                'name': 'Weapon Mastery', 
+                'description': 'Choose 2 weapons to master.',
+                'options': WEAPON_MASTERY_OPTIONS,
+                'choice_limit': 2
+            }
+        ],
+        19: [{'name': 'Epic Boon', 'description': 'Choose an Epic Boon feat.', 'options': EPIC_BOON_OPTIONS, 'choice_limit': 1}]
+    },
+    'Ranger': {
+        1: [
+            {'name': 'Spellcasting', 'description': 'Wisdom-based spellcasting.'},
+            {'name': 'Favored Enemy', 'description': 'You always have Hunter\'s Mark prepared.'},
+             {
+                'name': 'Weapon Mastery', 
+                'description': 'Choose 2 weapons to master.',
+                'options': WEAPON_MASTERY_OPTIONS,
+                'choice_limit': 2
+            }
+        ],
+        19: [{'name': 'Epic Boon', 'description': 'Choose an Epic Boon feat.', 'options': EPIC_BOON_OPTIONS, 'choice_limit': 1}]
+    },
+    'Rogue': {
+        1: [
+            {'name': 'Expertise', 'description': 'Double proficiency in 2 skills (or 1 skill + Thieves\' Tools).'},
+            {'name': 'Sneak Attack', 'description': 'Deal extra damage (1d6) once per turn on Advantage/Ally strictures.'},
+            {'name': 'Thieves\' Cant', 'description': 'Secret language.'},
+            {
+                'name': 'Weapon Mastery', 
+                'description': 'Choose 2 weapons to master.',
+                'options': WEAPON_MASTERY_OPTIONS,
+                'choice_limit': 2
+            }
+        ],
+        2: [{'name': 'Cunning Action', 'description': 'Bonus Action to Dash, Disengage, or Hide.'}], 
+        3: [
+            {'name': 'Roguish Archetype', 'description': 'Choose a Rogue subclass.'},
+            {'name': 'Steady Aim', 'description': 'Bonus Action: Give self Advantage on next attack. Speed 0 for turn.'}
+        ], 
+        4: [{'name': 'Ability Score Improvement', 'description': 'Increase Ability Scores or choose a Feat.'}],
+        5: [
+            {'name': 'Uncanny Dodge', 'description': 'Reaction to halve damage from an attack.'},
+            {'name': 'Cunning Strike', 'description': 'Trade Sneak Attack dice for effects (Disarm, Poison, Trip, Withdraw).'}
+        ],
+        6: [
+            {'name': 'Expertise', 'description': 'Expertise in two more skills.'},
+            {'name': 'Subclass Feature', 'description': 'You gain a feature from your Roguish Archetype.'}
+        ],
+        7: [
+            {'name': 'Evasion', 'description': 'Take no damage on successful Dex save for half, half on fail.'},
+            {'name': 'Reliable Talent', 'description': 'Treat d20 roll of 9 or lower as 10 for proficient skills.'}
+        ],
+        8: [{'name': 'Ability Score Improvement', 'description': 'Increase Ability Scores or choose a Feat.'}],
+        9: [{'name': 'Subclass Feature', 'description': 'You gain a feature from your Roguish Archetype.'}],
+        10: [{'name': 'Ability Score Improvement', 'description': 'Increase Ability Scores or choose a Feat.'}],
+        11: [{'name': 'Improved Cunning Strike', 'description': 'Add second effect to Cunning Strike.'}],
+        12: [{'name': 'Ability Score Improvement', 'description': 'Increase Ability Scores or choose a Feat.'}],
+        13: [{'name': 'Subclass Feature', 'description': 'You gain a feature from your Roguish Archetype.'}],
+        14: [
+            {'name': 'Blindsense', 'description': 'Aware of hidden creatures within 10 ft.'}, 
+            {'name': 'Slippery Mind', 'description': 'Proficiency in Wisdom and Charisma saves.'} # 2024 verification needed on saves
+        ],
+        15: [{'name': 'Subclass Feature', 'description': 'You gain a feature from your Roguish Archetype.'}],
+        16: [{'name': 'Ability Score Improvement', 'description': 'Increase Ability Scores or choose a Feat.'}],
+        17: [{'name': 'Subclass Feature', 'description': 'You gain a feature from your Roguish Archetype.'}],
+        18: [{'name': 'Elusive', 'description': 'No advantage on attack rolls against you.'}],
+        19: [{'name': 'Epic Boon', 'description': 'Choose an Epic Boon feat.', 'options': EPIC_BOON_OPTIONS, 'choice_limit': 1}],
+        20: [{'name': 'Stroke of Luck', 'description': 'Turn miss/fail into hit/20 once per short rest.'}]
+    },
+    'Sorcerer': {
+        1: [
+            {'name': 'Spellcasting', 'description': 'Charisma-based spellcasting.'},
+            {'name': 'Innate Sorcery', 'description': 'Bonus Action: Advantage on spell attacks, +1 DC for 1 minute.'}, 
+            {'name': 'Font of Magic', 'description': 'Sorcery points (Level count). Convert slots/points.'}
+        ],
+        2: [
+            {'name': 'Metamagic', 'description': 'Choose 2 Metamagic options.'}
+        ],
+        3: [
+            {'name': 'Sorcerous Origin', 'description': 'Choose a Sorcerer subclass.'}, 
+            {'name': 'Metamagic (Second Choice)', 'description': 'Choose more Metamagic options.'} # 2024 Check progression
+        ],
+        4: [{'name': 'Ability Score Improvement', 'description': 'Increase Ability Scores or choose a Feat.'}],
+        5: [{'name': 'Sorcerous Restoration', 'description': 'Regain Sorcery Points on Short Rest.'}],
+        6: [{'name': 'Subclass Feature', 'description': 'You gain a feature from your Sorcerous Origin.'}],
+        7: [{'name': 'Sorcery Incarnate', 'description': 'While Innate Sorcery is active, use 2 Metamagic options on a spell.'}],
+        8: [{'name': 'Ability Score Improvement', 'description': 'Increase Ability Scores or choose a Feat.'}],
+        9: [], # Spells
+        10: [
+             {'name': 'Metamagic (Third Choice)', 'description': 'Choose more Metamagic options.'},
+             {'name': 'Subclass Feature', 'description': 'You gain a feature from your Sorcerous Origin.'}
+        ],
+        11: [], # Spells
+        12: [{'name': 'Ability Score Improvement', 'description': 'Increase Ability Scores or choose a Feat.'}],
+        13: [], # Spells
+        14: [{'name': 'Subclass Feature', 'description': 'You gain a feature from your Sorcerous Origin.'}],
+        15: [{'name': 'Sorcerous Restoration Improvement', 'description': 'Regain more points?'}],
+        16: [{'name': 'Ability Score Improvement', 'description': 'Increase Ability Scores or choose a Feat.'}],
+        17: [{'name': 'Metamagic (Final)', 'description': 'Gain all Metamagic options? (Capstone check).'}], 
+        18: [{'name': 'Subclass Feature', 'description': 'You gain a feature from your Sorcerous Origin.'}],
+        19: [{'name': 'Epic Boon', 'description': 'Choose an Epic Boon feat.', 'options': EPIC_BOON_OPTIONS, 'choice_limit': 1}],
+        20: [{'name': 'Arcane Apotheosis', 'description': 'Use Metamagic without spending points once per turn?'}]
+    },
+    'Warlock': {
+        1: [
+            {'name': 'Pact Magic', 'description': 'Charisma-based spellcasting (Recharge on Short Rest).'},
+            {'name': 'Eldritch Invocations', 'description': 'Choose 1 Invocation.'} # 2024 starts Lv 1
+        ],
+        2: [
+            {'name': 'Magical Cunning', 'description': 'Action: Regain half pact slots once per Long Rest.'},
+            {'name': 'Eldritch Invocations (2)', 'description': 'Total Invocations: 2 (or 3?).'}
+        ],
+        3: [
+            {'name': 'Otherworldly Patron', 'description': 'Choose a Warlock Patron subclass.'},
+            {'name': 'Pact Boon', 'description': 'Choose Pact (Blade, Chain, Tome, Talisman becomes Invocation?).'}
+        ], 
+        4: [{'name': 'Ability Score Improvement', 'description': 'Increase Ability Scores or choose a Feat.'}],
+        5: [
+             {'name': 'Eldritch Invocations', 'description': 'Gain another Invocation.'}
+        ], 
+        6: [{'name': 'Subclass Feature', 'description': 'You gain a feature from your Patron.'}],
+        7: [{'name': 'Eldritch Invocations', 'description': 'Gain another Invocation.'}],
+        8: [{'name': 'Ability Score Improvement', 'description': 'Increase Ability Scores or choose a Feat.'}],
+        9: [
+            {'name': 'Eldritch Invocations', 'description': 'Gain another Invocation.'},
+            {'name': 'Contact Patron', 'description': 'Contact patron for information.'}
+        ],
+        10: [{'name': 'Subclass Feature', 'description': 'You gain a feature from your Patron.'}],
+        11: [{'name': 'Mystic Arcanum (6th)', 'description': 'Choose one 6th-level spell. Cast once per Long Rest.'}],
+        12: [
+            {'name': 'Ability Score Improvement', 'description': 'Increase Ability Scores or choose a Feat.'},
+            {'name': 'Eldritch Invocations', 'description': 'Gain another Invocation.'}
+        ],
+        13: [{'name': 'Mystic Arcanum (7th)', 'description': 'Choose one 7th-level spell.'}],
+        14: [{'name': 'Subclass Feature', 'description': 'You gain a feature from your Patron.'}],
+        15: [
+            {'name': 'Eldritch Invocations', 'description': 'Gain another Invocation.'},
+            {'name': 'Mystic Arcanum (8th)', 'description': 'Choose one 8th-level spell.'}
+        ],
+        16: [{'name': 'Ability Score Improvement', 'description': 'Increase Ability Scores or choose a Feat.'}],
+        17: [{'name': 'Mystic Arcanum (9th)', 'description': 'Choose one 9th-level spell.'}],
+        18: [{'name': 'Eldritch Invocations', 'description': 'Gain another Invocation.'}],
+        19: [{'name': 'Epic Boon', 'description': 'Choose an Epic Boon feat.', 'options': EPIC_BOON_OPTIONS, 'choice_limit': 1}],
+        20: [{'name': 'Eldritch Master', 'description': 'Regain all Pact Magic slots (Action) once per Long Rest.'}]
     },
     'Wizard': {
         1: [
@@ -2254,8 +2750,22 @@ CLASS_FEATURES_2024 = {
         ],
         2: [{'name': 'Scholar', 'description': 'Gain Expertise in one skill (Arcana, History, Nature, or Religion).'}],
         3: [{'name': 'Arcane Tradition', 'description': 'Choose an Arcane Tradition.'}],
+        4: [{'name': 'Ability Score Improvement', 'description': 'Increase Ability Scores or choose a Feat.'}],
         5: [{'name': 'Memorize Spell', 'description': 'Replace one prepared spell on a Short Rest.'}],
+        6: [{'name': 'Subclass Feature', 'description': 'You gain a feature from your Arcane Tradition.'}], 
+        7: [], # Spear progression
+        8: [{'name': 'Ability Score Improvement', 'description': 'Increase Ability Scores or choose a Feat.'}], 
+        9: [],
+        10: [{'name': 'Subclass Feature', 'description': 'You gain a feature from your Arcane Tradition.'}],
+        11: [],
+        12: [{'name': 'Ability Score Improvement', 'description': 'Increase Ability Scores or choose a Feat.'}],
+        13: [],
+        14: [{'name': 'Subclass Feature', 'description': 'You gain a feature from your Arcane Tradition.'}],
+        15: [], 
+        16: [{'name': 'Ability Score Improvement', 'description': 'Increase Ability Scores or choose a Feat.'}],
+        17: [],
         18: [{'name': 'Spell Mastery', 'description': 'Cast a 1st and 2nd level spell at will.'}],
+        19: [{'name': 'Epic Boon', 'description': 'Choose an Epic Boon feat.', 'options': EPIC_BOON_OPTIONS, 'choice_limit': 1}],
         20: [{'name': 'Signature Spells', 'description': 'Two 3rd level spells always prepared and cast once/rest without slot.'}]
     }
 }
@@ -2270,7 +2780,8 @@ SUBCLASS_FEATURES_2024 = {
         7: [{'name': 'Additional Fighting Style', 'description': 'You can choose a second option from the Fighting Style class feature.'}],
         10: [{'name': 'Heroic Warrior', 'description': 'During combat, you can give yourself Heroic Inspiration whenever you start your turn without it.'}],
         15: [{'name': 'Superior Critical', 'description': 'Your weapon attacks score a critical hit on a roll of 18-20.'}],
-        18: [{'name': 'Survivor', 'description': 'At the start of each of your turns, you regain 5 + CON modifier HP if you have no more than half your HP left.'}]
+        18: [{'name': 'Survivor', 'description': 'At the start of each of your turns, you regain 5 + CON modifier HP if you have no more than half your HP left.'}],
+
     },
     'Battle Master': {
         3: [
@@ -2280,18 +2791,25 @@ SUBCLASS_FEATURES_2024 = {
                 'options': ['Commander\'s Strike', 'Disarming Attack', 'Distracting Strike', 'Evasive Footwork', 'Feinting Attack', 'Goading Attack', 'Lunging Attack', 'Maneuvering Attack', 'Menacing Attack', 'Parry', 'Precision Attack', 'Pushing Attack', 'Rally', 'Riposte', 'Sweeping Attack', 'Trip Attack', 'Ambush', 'Bait and Switch', 'Brace', 'Commanding Presence', 'Grappling Strike', 'Quick Toss', 'Tactical Assessment'],
                 'choice_limit': 3
             },
-            {'name': 'Student of War', 'description': 'Gain proficiency with one artisan\'s tool.'}
+            {
+                'name': 'Student of War',
+                'description': 'Gain proficiency with one artisan\'s tool.',
+                'options': ['Alchemist\'s supplies', 'Brewer\'s supplies', 'Calligrapher\'s supplies', 'Carpenter\'s tools', 'Cartographer\'s tools', 'Cobbler\'s tools', 'Cook\'s utensils', 'Glassblower\'s tools', 'Jeweler\'s tools', 'Leatherworker\'s tools', 'Mason\'s tools', 'Painter\'s supplies', 'Potter\'s tools', 'Smith\'s tools', 'Tinker\'s tools', 'Weaver\'s tools', 'Woodcarver\'s tools'],
+                'choice_limit': 1
+            }
         ],
         7: [{'name': 'Know Your Enemy', 'description': 'Learn capabilities of a creature by observing it.'}],
         10: [{'name': 'Improved Combat Superiority', 'description': 'Superiority dice turn into d10s.'}],
         15: [{'name': 'Relentless', 'description': 'Regain 1 superiority die if you have none when rolling initiative.'}],
-        18: [{'name': 'Improved Combat Superiority', 'description': 'Superiority dice turn into d12s.'}]
+        18: [{'name': 'Improved Combat Superiority', 'description': 'Superiority dice turn into d12s.'}],
+
     },
     'Path of the Berserker': {
         3: [{'name': 'Frenzy', 'description': 'If you use Reckless Attack while raging, you can deal extra damage equal to your Rage Damage bonus.'}],
         6: [{'name': 'Mindless Rage', 'description': 'You can\'t be Charmed or Frightened while Raging. Immunity to these conditions if you enter rage while affected.'}],
         10: [{'name': 'Retaliation', 'description': 'When you take damage from a creature within 5 feet, you can use your Reaction to make a melee weapon attack against that creature.'}],
-        14: [{'name': 'Intimidating Presence', 'description': 'As a Bonus Action, you can shout to frighten enemies within 30 feet (Wisdom save). Effect lasts 1 turn, can be extended.'}]
+        14: [{'name': 'Intimidating Presence', 'description': 'As a Bonus Action, you can shout to frighten enemies within 30 feet (Wisdom save). Effect lasts 1 turn, can be extended.'}],
+
     },
     'College of Lore': {
         3: [
@@ -2299,7 +2817,8 @@ SUBCLASS_FEATURES_2024 = {
             {'name': 'Cutting Words', 'description': 'Use reaction and Bardic Inspiration to reduce an attack roll, ability check, or damage roll of a creature you see.'}
         ],
         6: [{'name': 'Magical Discoveries', 'description': 'Learn two spells from any class list (Magical Secrets).'}],
-        14: [{'name': 'Peerless Skill', 'description': 'Expend Bardic Inspiration to add to your own ability check.'}]
+        14: [{'name': 'Peerless Skill', 'description': 'Expend Bardic Inspiration to add to your own ability check.'}],
+
     },
     'Life Domain': {
         3: [
@@ -2307,7 +2826,8 @@ SUBCLASS_FEATURES_2024 = {
             {'name': 'Preserve Life', 'description': 'Channel Divinity: Restore 5 x Cleric level HP to creatures within 30 feet (max half HP).'}
         ],
         6: [{'name': 'Blessed Healer', 'description': 'When you cast a healing spell on another, you regain 2 + spell level HP.'}],
-        17: [{'name': 'Supreme Healing', 'description': 'Use max possible roll for healing dice.'}]
+        17: [{'name': 'Supreme Healing', 'description': 'Use max possible roll for healing dice.'}],
+
     },
     'Circle of the Land': {
         3: [
@@ -2316,13 +2836,15 @@ SUBCLASS_FEATURES_2024 = {
         ],
         6: [{'name': 'Natural Recovery', 'description': 'Recover spell slots during a Short Rest (once per Long Rest).'}],
         10: [{'name': 'Nature\'s Ward', 'description': 'Immunity to Poison and Disease; resistance to Poison damage. Cannot be Charmed/Frightened by Elementals/Fey.'}],
-        14: [{'name': 'Nature\'s Sanctuary', 'description': 'Spectral vines grant Half Cover; immunity to difficult terrain; resistance to elemental damage types.'}]
+        14: [{'name': 'Nature\'s Sanctuary', 'description': 'Spectral vines grant Half Cover; immunity to difficult terrain; resistance to elemental damage types.'}],
+
     },
     'Warrior of the Open Hand': {
         3: [{'name': 'Open Hand Technique', 'description': 'Flurry of Blows adds effects: Knock prone, Push 15ft, or Deny reactions.'}],
         6: [{'name': 'Wholeness of Body', 'description': 'Bonus Action: Regain HP equal to Martial Arts die roll + Wis mod. Use number of times equal to Wis mod.'}],
         11: [{'name': 'Fleet Step', 'description': 'Bonus Action: Step of the Wind allows you to take Dash or Disengage anytime you take a Bonus Action.'}],
-        17: [{'name': 'Quivering Palm', 'description': 'Lethal vibrational strike (3 Ki points). 10d10 necrotic damage or drop to 0 HP.'}]
+        17: [{'name': 'Quivering Palm', 'description': 'Lethal vibrational strike (3 Ki points). 10d10 necrotic damage or drop to 0 HP.'}],
+
     },
     'Oath of Devotion': {
         3: [
@@ -2331,13 +2853,15 @@ SUBCLASS_FEATURES_2024 = {
         ],
         7: [{'name': 'Aura of Devotion', 'description': 'You and friendly creatures within 10 feet can\'t be Charmed.'}],
         15: [{'name': 'Smite of Protection', 'description': 'Using Divine Smite grants Half Cover to you and allies within 10 feet.'}],
-        20: [{'name': 'Holy Nimbus', 'description': 'Radiant sunlight aura damages enemies and grants advantage against spells from Fiends/Undead.'}]
+        20: [{'name': 'Holy Nimbus', 'description': 'Radiant sunlight aura damages enemies and grants advantage against spells from Fiends/Undead.'}],
+
     },
     'Hunter': {
         3: [{'name': 'Hunter\'s Prey', 'description': 'Choose: Colossus Slayer (extra damage to injured), Giant Killer (reaction attack vs Large), or Horde Breaker (extra attack vs adjacent).'}],
         7: [{'name': 'Defensive Tactics', 'description': 'Choose: Escape the Horde (OA disadvantage), Multiattack Defense (+4 AC after hit), or Steel Will (Frightened advantage).'}],
         11: [{'name': 'Multiattack', 'description': 'Choose: Volley (Area ranged attack) or Whirlwind Attack (Area melee attack).'}],
-        15: [{'name': 'Superior Hunter\'s Defense', 'description': 'Choose: Evasion, Stand Against the Tide, or Uncanny Dodge.'}]
+        15: [{'name': 'Superior Hunter\'s Defense', 'description': 'Choose: Evasion, Stand Against the Tide, or Uncanny Dodge.'}],
+
     },
     'Thief': {
         3: [
@@ -2346,7 +2870,8 @@ SUBCLASS_FEATURES_2024 = {
         ],
         9: [{'name': 'Supreme Sneak', 'description': 'Advantage on Stealth checks if moved no more than half speed. Attack rolls against you have disadvantage if you are hidden.'}],
         13: [{'name': 'Use Magic Device', 'description': 'Attune to 4 magic items. Ignore class/race/level requirements for items. Use Spell Scrolls.'}],
-        17: [{'name': 'Thief\'s Reflexes', 'description': 'Two turns in the first round of combat (Initiative and Initiative - 10).'}]
+        17: [{'name': 'Thief\'s Reflexes', 'description': 'Two turns in the first round of combat (Initiative and Initiative - 10).'}],
+
     },
     'Draconic Sorcery': {
         3: [
@@ -2356,12 +2881,14 @@ SUBCLASS_FEATURES_2024 = {
         6: [{'name': 'Elemental Affinity', 'description': 'Add Cha mod to damage of associated type. Resist associated damage type (1 SP).'}],
         14: [{'name': 'Dragon Wings', 'description': 'Manifest wings (Fly speed).'}],
         18: [{'name': 'Draconic Presence', 'description': 'Aura of Awe or Fear (5 SP).'}],
+
     },
     'Fiend Patron': {
         3: [{'name': 'Dark One\'s Blessing', 'description': 'Reduce hostile to 0 HP: Gain THP = Cha mod + Warlock level.'}],
         6: [{'name': 'Dark One\'s Own Luck', 'description': 'Add d10 to an ability check or saving throw (once per Short/Long Rest).'}],
         10: [{'name': 'Fiendish Resilience', 'description': 'Choose resistance to one damage type (change on Short/Long Rest).'}],
-        14: [{'name': 'Hurl Through Hell', 'description': 'Hit with attack: Banish target to Lower Planes (10d10 psychic damage on return). Once per Long Rest.'}]
+        14: [{'name': 'Hurl Through Hell', 'description': 'Hit with attack: Banish target to Lower Planes (10d10 psychic damage on return). Once per Long Rest.'}],
+
     },
     'School of Evocation': {
         3: [
@@ -2441,3 +2968,34 @@ def get_all_subclass_features_up_to_level(subclass_name, level, ruleset='2014'):
                 features_by_level[lvl] = features
     
     return features_by_level
+
+# Available Subclasses by Ruleset
+AVAILABLE_SUBCLASSES_2014 = {
+    'Barbarian': ['Path of the Berserker', 'Path of the Totem Warrior'],
+    'Bard': ['College of Lore', 'College of Valor'],
+    'Cleric': ['Knowledge Domain', 'Life Domain', 'Light Domain', 'Nature Domain', 'Tempest Domain', 'Trickery Domain', 'War Domain'],
+    'Druid': ['Circle of the Land', 'Circle of the Moon'],
+    'Fighter': ['Champion', 'Battle Master', 'Eldritch Knight'],
+    'Monk': ['Way of the Open Hand', 'Way of Shadow', 'Way of the Four Elements'],
+    'Paladin': ['Oath of Devotion', 'Oath of the Ancients', 'Oath of Vengeance'],
+    'Ranger': ['Hunter', 'Beast Master'],
+    'Rogue': ['Thief', 'Assassin', 'Arcane Trickster'],
+    'Sorcerer': ['Draconic Bloodline', 'Wild Magic'],
+    'Warlock': ['The Archfey', 'The Fiend', 'The Great Old One'],
+    'Wizard': ['School of Abjuration', 'School of Conjuration', 'School of Divination', 'School of Enchantment', 'School of Evocation', 'School of Illusion', 'School of Necromancy', 'School of Transmutation']
+}
+
+AVAILABLE_SUBCLASSES_2024 = {
+    'Barbarian': ['Path of the Berserker'],
+    'Bard': ['College of Lore'],
+    'Cleric': ['Life Domain'],
+    'Druid': ['Circle of the Land'],
+    'Fighter': ['Champion', 'Battle Master'],
+    'Monk': ['Warrior of the Open Hand'],
+    'Paladin': ['Oath of Devotion'],
+    'Ranger': ['Hunter'],
+    'Rogue': ['Thief'],
+    'Sorcerer': ['Draconic Sorcery'],
+    'Warlock': ['Fiend Patron'],
+    'Wizard': ['School of Evocation']
+}
