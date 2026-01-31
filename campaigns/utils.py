@@ -69,7 +69,7 @@ def calculate_spell_slots(character_class_name, level):
         return {}
     
     # Get spell slot table for this class
-    table = SPELL_SLOT_TABLES.get(character_class_name, {})
+    table = SPELL_SLOT_TABLES.get(character_class_name.lower(), {})
     
     # Find the appropriate level (cap at 20)
     level = min(level, 20)

@@ -58,7 +58,13 @@ APPROVED_SPELLS = [
     # Level 9
     "Astral Projection", "Foresight", "Gate", "Mass Polymorph", 
     "Power Word Heal", "Power Word Kill", "Prismatic Wall", 
-    "Shapechange", "Storm of Vengeance", "Time Stop"
+    "Shapechange", "Storm of Vengeance", "Time Stop", "Imprisonment", "True Polymorph",
+
+    # Warlock / Missing SRD Additions
+    "Hellish Rebuke", "Armor of Agathys", "Arms of Hadar", "Hunger of Hadar", # Verify SRD status (Hellish Rebuke is SRD, others might not be)
+    "Vampiric Touch", "Counterspell", "Hallucinatory Terrain", 
+    "Contact Other Plane", "Dream", "Conjure Fey", "Create Undead", "Flesh to Stone",
+    "Forcecage", "Demiplane", "Feeblemind", "Glibness", "Power Word Stun"
 ]
 
 class Command(BaseCommand):

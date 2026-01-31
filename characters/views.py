@@ -380,9 +380,28 @@ class CharacterViewSet(viewsets.ModelViewSet):
             total_level = get_total_level(character)
             character.level = total_level
             
-            # Use multiclass spell slot calculation
+            # Determine correct spell slot calculation
             from .multiclassing import calculate_multiclass_spell_slots
-            new_slots = calculate_multiclass_spell_slots(character)
+            from campaigns.utils import calculate_spell_slots
+            
+            # Check if character is truly multiclass (has levels in > 1 class)
+            class_count = CharacterClassLevel.objects.filter(character=character).count()
+            
+            if class_count > 1:
+                # Multiclass calculation
+                new_slots = calculate_multiclass_spell_slots(character)
+                
+                # Special handling for Warlock in multiclass (Pact Magic is additive)
+                # If we have Warlock levels, we need to ADD Pact Magic slots to the multiclass slots
+                warlock_level = next((cl.level for cl in CharacterClassLevel.objects.filter(character=character) if cl.character_class.name.lower() == 'warlock'), 0)
+                if warlock_level > 0:
+                     pact_slots = calculate_spell_slots('warlock', warlock_level)
+                     # Merge pact_slots into new_slots
+                     for lvl, count in pact_slots.items():
+                         new_slots[lvl] = new_slots.get(lvl, 0) + count
+            else:
+                # Single class calculation (ensures Warlock works correctly)
+                new_slots = calculate_spell_slots(target_class.name, new_class_level)
             
             # Calculate HP increase for this class level
             hp_gain = 0
@@ -505,6 +524,8 @@ class CharacterViewSet(viewsets.ModelViewSet):
                 character.stats.save()
             
             # Calculate pending spells for the leveled-up class
+            # Refresh character to ensure latest stats
+            character.refresh_from_db()
             try:
                 self._calculate_pending_spells(character, target_class, new_class_level, features_gained)
             except Exception as e:
@@ -646,6 +667,8 @@ class CharacterViewSet(viewsets.ModelViewSet):
                 })
         
         # Calculate pending spell choices using helper
+        # Refresh character from DB to ensure we have latest stats (spell slots)
+        character.refresh_from_db()
         try:
             self._calculate_pending_spells(character, primary_class, new_level, features_gained)
         except Exception as e:
@@ -2581,6 +2604,7 @@ class CharacterProficiencyViewSet(viewsets.ModelViewSet):
         return CharacterProficiency.objects.filter(character__user=self.request.user)
 
 
+
 class CharacterFeatureViewSet(viewsets.ModelViewSet):
     """API endpoint for managing character features."""
     serializer_class = CharacterFeatureSerializer
@@ -2589,6 +2613,69 @@ class CharacterFeatureViewSet(viewsets.ModelViewSet):
     def get_queryset(self):
         """Filter character features to only show those for characters owned by the current user"""
         return CharacterFeature.objects.filter(character__user=self.request.user)
+
+    def perform_update(self, serializer):
+        feature = serializer.save()
+        self._sync_proficiencies(feature)
+        
+    def _sync_proficiencies(self, feature):
+        """
+        Syncs selected options to CharacterProficiency model.
+        Handles 'Class Skills', 'Skilled' feat, etc.
+        """
+        from characters.models import CharacterProficiency
+        
+        # 1. Identify if this feature grants proficiencies
+        # Heuristic: Check if 'Skills' or 'Proficiency' is in the name, or if it's a known ID/source
+        # For now, we'll assume ANY feature with a selection might be a skill selection 
+        # IF the selection matches a valid skill name.
+        
+        if not feature.selection:
+            # If selection is cleared, remove associated proficiencies
+            CharacterProficiency.objects.filter(
+                character=feature.character,
+                source=f"Feature: {feature.name}"
+            ).delete()
+            return
+
+        # 2. Clear old proficiencies from this source to avoid duplicates/stale data
+        CharacterProficiency.objects.filter(
+            character=feature.character,
+            source=f"Feature: {feature.name}"
+        ).delete()
+        
+        # 3. Add new proficiencies
+        # We need to know if it's a Skill, Tool, or Language.
+        # This is tricky without metadata. 
+        # We will try to match against known Skill names first.
+        
+        ALL_SKILLS = {
+            'Acrobatics', 'Animal Handling', 'Arcana', 'Athletics', 'Deception', 'History', 
+            'Insight', 'Intimidation', 'Investigation', 'Medicine', 'Nature', 'Perception', 
+            'Performance', 'Persuasion', 'Religion', 'Sleight of Hand', 'Stealth', 'Survival'
+        }
+        
+        for item in feature.selection:
+            if item in ALL_SKILLS:
+                # Check if already exists to avoid unique constraint violation
+                if not CharacterProficiency.objects.filter(
+                    character=feature.character,
+                    proficiency_type='skill',
+                    skill_name=item
+                ).exists():
+                    CharacterProficiency.objects.create(
+                        character=feature.character,
+                        proficiency_type='skill',
+                        skill_name=item,
+                        proficiency_level='proficient',
+                        source=f"Feature: {feature.name}"
+                    )
+            else:
+                # Fallback: Assume it's a tool or language if not a skill? 
+                # Or maybe the item name is just the tool name.
+                # For now, let's just create it as a 'tool' if it's not a skill, 
+                # unless we have a better way to distinguish.
+                pass
 
 
 class CharacterSpellViewSet(viewsets.ModelViewSet):

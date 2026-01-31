@@ -220,10 +220,115 @@ class CharacterSerializer(serializers.ModelSerializer):
     
     # Computed fields
     proficiency_bonus = serializers.ReadOnlyField()
+    saving_throws = serializers.SerializerMethodField()
+    skills = serializers.SerializerMethodField()
     
     # Multiclass info
     total_level = serializers.SerializerMethodField()
     multiclass_info = serializers.SerializerMethodField()
+    
+    def get_saving_throws(self, obj):
+        """Calculate saving throws with bonuses"""
+        try:
+            if not hasattr(obj, 'stats'):
+                return {}
+                
+            stats = obj.stats
+            prof_bonus = obj.proficiency_bonus
+            saves = {}
+            abilities = ['strength', 'dexterity', 'constitution', 'intelligence', 'wisdom', 'charisma']
+            
+            # Get proficient saves
+            proficient_saves = set(obj.proficiencies.filter(
+                proficiency_type='saving_throw'
+            ).values_list('ability', flat=True))
+            
+            for ability in abilities:
+                # Get modifier
+                mod = getattr(stats, f"{ability}_modifier", 0)
+                is_proficient = ability in proficient_saves
+                bonus = mod + (prof_bonus if is_proficient else 0)
+                
+                saves[ability] = {
+                    'modifier': mod,
+                    'proficient': is_proficient,
+                    'bonus': bonus
+                }
+                
+            return saves
+        except Exception as e:
+            print(f"Error calculating saves for character {obj.id}: {e}")
+            return {}
+
+    def get_skills(self, obj):
+        """Calculate skill bonuses"""
+        try:
+            if not hasattr(obj, 'stats'):
+                return {}
+            
+            stats = obj.stats
+            prof_bonus = obj.proficiency_bonus
+            skills = {}
+            
+            # Standard 5e Skills Map
+            skill_map = {
+                'Acrobatics': 'dexterity',
+                'Animal Handling': 'wisdom',
+                'Arcana': 'intelligence',
+                'Athletics': 'strength',
+                'Deception': 'charisma',
+                'History': 'intelligence',
+                'Insight': 'wisdom',
+                'Intimidation': 'charisma',
+                'Investigation': 'intelligence',
+                'Medicine': 'wisdom',
+                'Nature': 'intelligence',
+                'Perception': 'wisdom',
+                'Performance': 'charisma',
+                'Persuasion': 'charisma',
+                'Religion': 'intelligence',
+                'Sleight of Hand': 'dexterity',
+                'Stealth': 'dexterity',
+                'Survival': 'wisdom'
+            }
+            
+            # Get proficient skills
+            # proficiency_level: 'proficient' (x1) or 'expertise' (x2) or 'jack' (x0.5 - Bard)
+            # For simplicity, getting raw objects to check level
+            proficiencies = {
+                p.skill_name: p.proficiency_level 
+                for p in obj.proficiencies.filter(proficiency_type='skill')
+            }
+            
+            for skill_name, ability in skill_map.items():
+                mod = getattr(stats, f"{ability}_modifier", 0)
+                prof_level = proficiencies.get(skill_name)
+                
+                is_proficient = prof_level is not None
+                
+                # Calculate bonus based on proficiency level
+                bonus_add = 0
+                if prof_level == 'expertise':
+                    bonus_add = prof_bonus * 2
+                elif prof_level == 'proficient':
+                    bonus_add = prof_bonus
+                elif prof_level == 'jack_of_all_trades': # Future proofing
+                    bonus_add = prof_bonus // 2
+                    
+                total_bonus = mod + bonus_add
+                
+                skills[skill_name] = {
+                    'ability': ability,
+                    'modifier': mod,
+                    'proficient': is_proficient,
+                    'expertise': prof_level == 'expertise',
+                    'bonus': total_bonus
+                }
+                
+            return skills
+        except Exception as e:
+            print(f"Error calculating skills for character {obj.id}: {e}")
+            return {}
     
     def get_total_level(self, obj):
         """Get total character level (sum of all class levels)"""
@@ -373,6 +478,12 @@ class CharacterSerializer(serializers.ModelSerializer):
         # Get race speed if available
         speed = race.speed if race else 30
         
+        # Calculate initial spell slots (Level 1)
+        from campaigns.utils import calculate_spell_slots
+        initial_slots = {}
+        if character_class:
+            initial_slots = calculate_spell_slots(character_class.name, 1)
+
         CharacterStats.objects.create(
             character=character,
             **ability_scores,
@@ -384,6 +495,7 @@ class CharacterSerializer(serializers.ModelSerializer):
             passive_perception=10 + ((ability_scores['wisdom'] - 10) // 2),
             passive_investigation=10 + ((ability_scores['intelligence'] - 10) // 2),
             passive_insight=10 + ((ability_scores['wisdom'] - 10) // 2),
+            spell_slots=initial_slots
         )
         
         # Apply racial skills and traits
