@@ -1,8 +1,8 @@
 # 🎲 SRD5 Roguelike Gauntlet
 
-A comprehensive Django REST API backend with a **Next.js frontend** for **SRD 5.1 (Fantasy RPG)** featuring a roguelike gauntlet campaign system, complete character progression, advanced combat mechanics, and full bestiary integration.
+A comprehensive Django REST API backend with a **Next.js frontend** for **SRD 5.2 (Fantasy RPG)** featuring a roguelike gauntlet campaign system, complete character progression, advanced combat mechanics, and full bestiary integration.
 
-> **Legal Disclaimer**: This project is based on the System Reference Document 5.1 ("SRD 5.1") by Wizards of the Coast LLC and available at https://dnd.wizards.com/resources/systems-reference-document. The SRD 5.1 is licensed under the Creative Commons Attribution 4.0 International License available at https://creativecommons.org/licenses/by/4.0/legalcode. This project is not affiliated with or endorsed by Wizards of the Coast.
+> **Legal Disclaimer**: This project is based on the System Reference Document 5.2 ("SRD 5.2") by Wizards of the Coast LLC and available at https://www.dndbeyond.com/resources/1781-systems-reference-document-52. The SRD 5.2 is licensed under the Creative Commons Attribution 4.0 International License available at https://creativecommons.org/licenses/by/4.0/legalcode. This project is not affiliated with or endorsed by Wizards of the Coast.
 
 ## 🚀 Features
 
@@ -17,7 +17,7 @@ A comprehensive Django REST API backend with a **Next.js frontend** for **SRD 5.
 - **Campaign Management**: Create gauntlet-style campaigns with sequential encounters
 - **Starting Level Selection**: Begin campaigns at any level (1-20)
 - **XP Tracking**: Automatic experience point calculation and level-up
-- **Treasure Rooms**: Procedurally generated loot with real D&D items and gold rewards
+- **Treasure Rooms**: Procedurally generated loot with SRD items and gold rewards
 - **Merchant System**: Random merchant encounters with rarity-based item selection tied to gauntlet progress
 - **Gold Economy**: Earn gold from treasure and encounters, spend at merchants
 - **Rest Management**: Limited short and long rests for strategic resource management
@@ -25,20 +25,19 @@ A comprehensive Django REST API backend with a **Next.js frontend** for **SRD 5.
 - **Encounter Progression**: Sequential encounter completion with rewards
 
 ### 📖 Spell Library System
-- **1,400+ Spells**: Comprehensive D&D 5e spell database imported from Open5e
 - **Advanced Filtering**: Search by level, school, concentration, ritual, class availability
 - **Complete Spell Data**: Casting time, range, components, duration, damage progression
-- **Open5e Integration**: Auto-import spells with management command
+- **Open5e Integration**: Auto-import SRD spells with management command
 
 ### 👤 Complete Character System
-- **Character Creation**: Full D&D 5e character creation with all classes and races
+- **Character Creation**: Full SRD 5.2 character creation with all classes and races
 - **Level Progression**: Automatic level-up with class features (levels 1-20)
 - **Multiclassing**: Full multiclass support with spell slot calculation
 - **Ability Score Increases**: ASI selection at appropriate levels
 - **Subclass Selection**: All major subclasses with features
 - **Racial Features**: Complete racial trait implementation
 - **Background Features**: Background-specific abilities
-- **Feat System**: 40+ feats with prerequisites
+- **Feat System**: 5+ feats with prerequisites
 
 ### 🎯 Advanced Combat System (Phases 1-3)
 - **Phase 1 - Core Combat**: Initiative, attacks, damage, turn management
@@ -63,7 +62,7 @@ A comprehensive Django REST API backend with a **Next.js frontend** for **SRD 5.
 
 ### 📚 Complete Bestiary System
 - **3,200+ Monsters**: Full creature database from Open5e with automatic spell import
-- **Full D&D 5e Stat Blocks**: All ability scores, skills, saving throws, and combat stats
+- **Full SRD Stat Blocks**: All ability scores, skills, saving throws, and combat stats
 - **Spellcaster Support**: Automatic spell parsing from Open5e with usage limits
 - **Combat Mechanics**: Attacks, abilities, spells, legendary actions
 - **Resistances & Immunities**: Damage types and condition immunities
@@ -178,7 +177,7 @@ dnd-backend/
    python manage.py populate_conditions_environments
    ```
 
-5. **Import content from Open5e API** (Optional but recommended)
+5. **Import SRD content from Open5e API** (Optional but recommended)
    ```bash
    python manage.py import_monsters_from_api --source open5e
    python manage.py import_items_from_api --source open5e
