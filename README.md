@@ -13,7 +13,7 @@ A comprehensive Django REST API backend with a **Next.js frontend** for **SRD 5.
 - **Modern UI**: Built with Radix UI, Tailwind CSS 4, and Lucide icons
 - **State Management**: Zustand for client-side state
 
-### 🎮 Roguelike Gauntlet Campaign System
+### FUTURE: (🎮 Roguelike Gauntlet Campaign System)
 - **Campaign Management**: Create gauntlet-style campaigns with sequential encounters
 - **Starting Level Selection**: Begin campaigns at any level (1-20)
 - **XP Tracking**: Automatic experience point calculation and level-up
