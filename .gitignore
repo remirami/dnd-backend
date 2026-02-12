@@ -105,13 +105,10 @@ test_monster.json
 comprehensive_monsters.json
 sample_monsters.csv
 
-# Documentation (internal)
+# Documentation (generated/temporary)
 docs/user_authentication_guide.md
-
-# Status documentation (generated/temporary)
 *_STATUS.md
-CHARACTER_SYSTEM_STATUS.md
-ENCOUNTERS_SYSTEM_STATUS.md
-CAMPAIGNS_SYSTEM_STATUS.md
-COMBAT_SYSTEM_STATUS.md
-BESTIARY_ITEMS_STATUS.md
+API_REFERENCE.md
+MODELS_REFERENCE.md
+PROJECT_SUMMARY.md
+FRONTEND_IMPLEMENTATION_PLAN.md
