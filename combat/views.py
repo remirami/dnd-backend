@@ -85,6 +85,13 @@ class CombatSessionViewSet(viewsets.ModelViewSet):
                 status=status.HTTP_400_BAD_REQUEST
             )
         
+        if not participants.filter(participant_type='enemy').exists():
+            logger.warning(f"Cannot start combat {pk}: no enemies")
+            return Response(
+                {"error": "Cannot start combat without at least one enemy"},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+        
         session.status = 'active'
         session.current_round = 1
         session.current_turn_index = 0
@@ -234,7 +241,12 @@ class CombatSessionViewSet(viewsets.ModelViewSet):
     
     @action(detail=True, methods=['post'])
     def roll_initiative(self, request, pk=None):
-        """Roll initiative for all participants"""
+        """Roll initiative for participants.
+        
+        Accepts optional 'overrides' dict: {participant_id: initiative_value}
+        for manually set values. Auto-rolls (d20 + DEX mod) only for
+        participants whose initiative is still 0 after applying overrides.
+        """
         session = self.get_object()
         participants = session.participants.filter(is_active=True)
         
@@ -244,11 +256,43 @@ class CombatSessionViewSet(viewsets.ModelViewSet):
                 status=status.HTTP_400_BAD_REQUEST
             )
         
+        # Apply manual overrides first
+        overrides = request.data.get('overrides', {})
+        for pid_str, value in overrides.items():
+            try:
+                pid = int(pid_str)
+                val = int(value)
+                if val != 0:
+                    participant = participants.get(pk=pid)
+                    participant.initiative = val
+                    participant.save()
+            except (ValueError, participants.model.DoesNotExist):
+                continue
+        
+        # Re-fetch to get updated values
+        participants = session.participants.filter(is_active=True)
+        
         results = []
         for participant in participants:
+            if participant.initiative != 0:
+                # Already set manually — keep it
+                results.append({
+                    'participant_id': participant.id,
+                    'name': participant.get_name(),
+                    'roll': None,
+                    'modifier': None,
+                    'initiative': participant.initiative,
+                    'source': 'manual',
+                })
+                continue
+            
+            # Auto-roll for this participant
             roll, _ = roll_d20()
             modifier = participant.get_ability_modifier('DEX')
             initiative = roll + modifier
+            # Ensure we don't land on exactly 0 (would look unset)
+            if initiative == 0:
+                initiative = 1
             participant.initiative = initiative
             participant.save()
             results.append({
@@ -256,7 +300,8 @@ class CombatSessionViewSet(viewsets.ModelViewSet):
                 'name': participant.get_name(),
                 'roll': roll,
                 'modifier': modifier,
-                'initiative': initiative
+                'initiative': initiative,
+                'source': 'auto',
             })
         
         serializer = self.get_serializer(session)
@@ -328,6 +373,13 @@ class CombatSessionViewSet(viewsets.ModelViewSet):
         if current != attacker:
             return Response(
                 {"error": f"It is not {attacker.get_name()}'s turn"},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+        
+        # Check if attacker has already used their action this turn
+        if attacker.action_used:
+            return Response(
+                {"error": f"{attacker.get_name()} has already used their action this turn"},
                 status=status.HTTP_400_BAD_REQUEST
             )
         
@@ -1609,6 +1661,128 @@ class CombatSessionViewSet(viewsets.ModelViewSet):
             return Response(
                 {"error": f"Unsupported format: {format_type}. Supported: json, csv"},
                 status=status.HTTP_400_BAD_REQUEST
+            )
+
+    @action(detail=True, methods=['post'])
+    def ai_turn(self, request, pk=None):
+        """
+        Resolve the current enemy's turn using AI.
+        The AI selects targets, executes attacks, then advances the turn.
+        """
+        from .combat_ai import resolve_enemy_turn
+        
+        session = self.get_object()
+        
+        if session.status != 'active':
+            return Response(
+                {"error": "Combat is not active"},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+        
+        current = session.get_current_participant()
+        if not current:
+            return Response(
+                {"error": "No active participants"},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+        
+        if current.participant_type != 'enemy':
+            return Response(
+                {"error": f"It is {current.get_name()}'s turn (a player character). AI only controls enemies."},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+        
+        try:
+            # Resolve the enemy's turn
+            actions = resolve_enemy_turn(session, current)
+            
+            # Advance to next turn
+            next_participant = session.next_turn()
+            
+            serializer = self.get_serializer(session)
+            return Response({
+                "message": f"{current.get_name()}'s turn resolved by AI",
+                "actor": current.get_name(),
+                "actor_id": current.id,
+                "actions": actions,
+                "next_turn": next_participant.get_name() if next_participant else None,
+                "session": serializer.data,
+            })
+        except Exception as e:
+            logger.exception(f"AI turn error for {current.get_name()}: {e}")
+            return Response(
+                {"error": f"AI turn failed: {str(e)}"},
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR
+            )
+
+    @action(detail=True, methods=['post'])
+    def auto_enemy_turns(self, request, pk=None):
+        """
+        Automatically resolve all consecutive enemy turns.
+        Stops when it's a player character's turn or combat ends.
+        """
+        from .combat_ai import resolve_enemy_turn
+        
+        session = self.get_object()
+        
+        if session.status != 'active':
+            return Response(
+                {"error": "Combat is not active"},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+        
+        try:
+            all_actions = []
+            turns_resolved = 0
+            max_turns = 20  # Safety limit
+            
+            while turns_resolved < max_turns:
+                current = session.get_current_participant()
+                if not current:
+                    break
+                
+                # Stop if it's a player's turn
+                if current.participant_type != 'enemy':
+                    break
+                
+                # Resolve this enemy's turn
+                actions = resolve_enemy_turn(session, current)
+                all_actions.append({
+                    "actor": current.get_name(),
+                    "actor_id": current.id,
+                    "actions": actions,
+                })
+                turns_resolved += 1
+                
+                # Advance turn
+                next_participant = session.next_turn()
+                if not next_participant:
+                    break
+                
+                # Check if all players are dead (combat should end)
+                living_players = session.participants.filter(
+                    participant_type='character',
+                    is_active=True,
+                    current_hp__gt=0,
+                ).count()
+                if living_players == 0:
+                    break
+            
+            serializer = self.get_serializer(session)
+            current = session.get_current_participant()
+            
+            return Response({
+                "message": f"Resolved {turns_resolved} enemy turn(s)",
+                "turns_resolved": turns_resolved,
+                "enemy_turns": all_actions,
+                "current_turn": current.get_name() if current else None,
+                "session": serializer.data,
+            })
+        except Exception as e:
+            logger.exception(f"Auto enemy turns error: {e}")
+            return Response(
+                {"error": f"Auto enemy turns failed: {str(e)}"},
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR
             )
 
 

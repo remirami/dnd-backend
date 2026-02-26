@@ -126,13 +126,14 @@ def calculate_damage(
     
     # Roll the dice
     rolls = [random.randint(1, die_size) for _ in range(num_dice)]
-    total = sum(rolls) + modifier
+    total_modifier = modifier + ability_modifier
+    total = sum(rolls) + total_modifier
     
     rolls_str = ', '.join(map(str, rolls))
-    if modifier > 0:
-        breakdown_parts.append(f"{rolls_str} + {modifier} = {total}")
-    elif modifier < 0:
-        breakdown_parts.append(f"{rolls_str} {modifier} = {total}")
+    if total_modifier > 0:
+        breakdown_parts.append(f"{rolls_str} + {total_modifier} = {total}")
+    elif total_modifier < 0:
+        breakdown_parts.append(f"{rolls_str} {total_modifier} = {total}")
     else:
         breakdown_parts.append(f"{rolls_str} = {total}")
     

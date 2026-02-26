@@ -975,7 +975,7 @@ class CombatAction(models.Model):
     created_at = models.DateTimeField(auto_now_add=True)
     
     class Meta:
-        ordering = ['-round_number', '-turn_number', '-created_at']
+        ordering = ['round_number', 'turn_number', 'created_at']
     
     def __str__(self):
         return f"{self.actor.get_name()} - {self.get_action_type_display()} (Round {self.round_number})"

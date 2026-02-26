@@ -63,6 +63,7 @@ class CombatActionSerializer(serializers.ModelSerializer):
     action_type_display = serializers.CharField(source='get_action_type_display', read_only=True)
     actor_name = serializers.SerializerMethodField()
     target_name = serializers.SerializerMethodField()
+    is_ai = serializers.SerializerMethodField()
     damage_type = DamageTypeSerializer(read_only=True, allow_null=True)
     
     class Meta:
@@ -74,6 +75,9 @@ class CombatActionSerializer(serializers.ModelSerializer):
     
     def get_target_name(self, obj):
         return obj.target.get_name() if obj.target else None
+    
+    def get_is_ai(self, obj):
+        return obj.actor.participant_type == 'enemy' if obj.actor else False
 
 
 class CombatSessionSerializer(serializers.ModelSerializer):

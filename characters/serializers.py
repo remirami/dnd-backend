@@ -241,7 +241,7 @@ class CharacterSerializer(serializers.ModelSerializer):
             # Get proficient saves
             proficient_saves = set(obj.proficiencies.filter(
                 proficiency_type='saving_throw'
-            ).values_list('ability', flat=True))
+            ).values_list('ability_score', flat=True))
             
             for ability in abilities:
                 # Get modifier

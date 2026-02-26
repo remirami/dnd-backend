@@ -55,6 +55,11 @@ class Command(BaseCommand):
             type=str,
             help='Maximum challenge rating (e.g., "5", "10", "20")'
         )
+        parser.add_argument(
+            '--no-srd-filter',
+            action='store_true',
+            help='Import ALL monsters from Open5e, not just SRD (use with caution - may include copyrighted content)'
+        )
 
     def handle(self, *args, **options):
         source = options['source']
@@ -63,27 +68,33 @@ class Command(BaseCommand):
         limit = options.get('limit')
         cr_min = options.get('cr_min')
         cr_max = options.get('cr_max')
+        srd_only = not options.get('no_srd_filter', False)
 
         if not REQUESTS_AVAILABLE and source == 'open5e':
             raise CommandError('Requests library not available. Install with: pip install requests')
 
         try:
             if source == 'open5e':
-                self.import_from_open5e(dry_run, update_existing, limit, cr_min, cr_max)
+                self.import_from_open5e(dry_run, update_existing, limit, cr_min, cr_max, srd_only)
             elif source == 'json':
                 self.import_from_json(options['file'], dry_run, update_existing)
         except Exception as e:
             raise CommandError(f'Import failed: {str(e)}')
 
-    def import_from_open5e(self, dry_run, update_existing, limit=None, cr_min=None, cr_max=None):
+    def import_from_open5e(self, dry_run, update_existing, limit=None, cr_min=None, cr_max=None, srd_only=True):
         """Import monsters from Open5e API"""
-        self.stdout.write('Fetching monsters from Open5e API...')
+        if srd_only:
+            self.stdout.write('Fetching SRD-only monsters from Open5e API...')
+        else:
+            self.stdout.write(self.style.WARNING('Fetching ALL monsters from Open5e API (including non-SRD)...'))
         
         # Open5e API endpoint
         url = 'https://api.open5e.com/monsters/'
         
-        # Add CR filters if provided
+        # Add filters
         params = {}
+        if srd_only:
+            params['document__slug'] = 'wotc-srd'
         if cr_min:
             params['challenge_rating_min'] = cr_min
         if cr_max:

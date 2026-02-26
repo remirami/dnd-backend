@@ -385,7 +385,7 @@ class CharacterViewSet(viewsets.ModelViewSet):
             character.level = total_level
             
             # Determine correct spell slot calculation
-            from .multiclassing import calculate_multiclass_spell_slots
+            from ..multiclassing import calculate_multiclass_spell_slots
             from campaigns.utils import calculate_spell_slots
             
             # Check if character is truly multiclass (has levels in > 1 class)
@@ -730,7 +730,7 @@ class CharacterViewSet(viewsets.ModelViewSet):
             "feat_id": 5  // ID of the feat to take
         }
         """
-        from .models import Feat, CharacterFeat
+        from ..models import Feat, CharacterFeat
         
         character = self.get_object()
         level = request.data.get('level')
@@ -1074,7 +1074,6 @@ class CharacterViewSet(viewsets.ModelViewSet):
             character.save()
             
             # Sync subclass to CharacterClassLevel
-            from .models import CharacterClassLevel
             if character.character_class:
                 class_level = CharacterClassLevel.objects.filter(
                     character=character, 
@@ -1174,7 +1173,7 @@ class CharacterViewSet(viewsets.ModelViewSet):
             return Response({"error": f"You can only choose {character.pending_language_choices} languages"}, status=status.HTTP_400_BAD_REQUEST)
             
         from bestiary.models import Language
-        from .models import CharacterProficiency
+        from ..models import CharacterProficiency
         
         languages = Language.objects.filter(id__in=language_ids)
         if len(languages) != len(language_ids):
@@ -1203,8 +1202,8 @@ class CharacterViewSet(viewsets.ModelViewSet):
     @action(detail=True, methods=['get'])
     def available_feats(self, request, pk=None):
         """List all available feats with eligibility checking for this character"""
-        from .models import Feat
-        from .serializers import FeatSerializer
+        from ..models import Feat
+        from ..serializers import FeatSerializer
         
         character = self.get_object()
         all_feats = Feat.objects.all().order_by('name')
@@ -1350,7 +1349,7 @@ class CharacterViewSet(viewsets.ModelViewSet):
         
         Returns everything needed to display a complete character sheet.
         """
-        from .character_sheet_serializer import CharacterSheetSerializer
+        from ..character_sheet_serializer import CharacterSheetSerializer
         
         character = self.get_object()
         serializer = CharacterSheetSerializer(character)
@@ -1703,7 +1702,7 @@ class CharacterViewSet(viewsets.ModelViewSet):
                 character.stats.save()
         else:
             # Create new stats if they don't exist
-            from .models import CharacterStats
+            from ..models import CharacterStats
             stats = CharacterStats.objects.create(
                 strength=int(stats_data.get('strength', 10)),
                 dexterity=int(stats_data.get('dexterity', 10)),
@@ -1716,7 +1715,7 @@ class CharacterViewSet(viewsets.ModelViewSet):
             character.save()
         
         # Recalculate derived stats
-        from .inventory_management import recalculate_armor_class
+        from ..inventory_management import recalculate_armor_class
         recalculate_armor_class(character)
         
         # Return updated character
@@ -1829,7 +1828,7 @@ class CharacterViewSet(viewsets.ModelViewSet):
         else:
             # Calculate spell slots based on class and level
             from campaigns.utils import calculate_spell_slots
-            from .multiclassing import calculate_multiclass_spell_slots
+            from ..multiclassing import calculate_multiclass_spell_slots
             
             # Check if multiclass
             if CharacterClassLevel.objects.filter(character=character).count() > 1:
@@ -2011,7 +2010,7 @@ class CharacterViewSet(viewsets.ModelViewSet):
         
         # Calculate max spell slots
         from campaigns.utils import calculate_spell_slots
-        from .multiclassing import calculate_multiclass_spell_slots
+        from ..multiclassing import calculate_multiclass_spell_slots
         
         if CharacterClassLevel.objects.filter(character=character).count() > 1:
             max_slots = calculate_multiclass_spell_slots(character)
@@ -2180,7 +2179,7 @@ class CharacterViewSet(viewsets.ModelViewSet):
             )
         
         # Validate spell level based on character's spellcasting ability
-        from .multiclassing import get_total_level
+        from ..multiclassing import get_total_level
         total_level = get_total_level(character)
         
         # Determine max spell level based on character level
@@ -2508,7 +2507,7 @@ class CharacterViewSet(viewsets.ModelViewSet):
         
         # 3. Restore Spell Slots
         from campaigns.utils import calculate_spell_slots
-        from .multiclassing import calculate_multiclass_spell_slots
+        from ..multiclassing import calculate_multiclass_spell_slots
         
         if CharacterClassLevel.objects.filter(character=character).count() > 1:
             max_slots = calculate_multiclass_spell_slots(character)
