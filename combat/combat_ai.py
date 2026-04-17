@@ -77,13 +77,22 @@ def resolve_enemy_turn(session, participant):
     return actions
 
 
+def _resolve_enemy(participant):
+    """Resolve the Enemy model for a participant (encounter or practice mode)."""
+    if participant.encounter_enemy:
+        return participant.encounter_enemy.enemy
+    elif participant.participant_type == 'enemy' and participant.name:
+        from bestiary.models import Enemy as EnemyModel
+        return EnemyModel.objects.filter(name=participant.name).first()
+    return None
+
+
 def _get_enemy_attacks(participant):
     """Get available attacks for an enemy participant."""
     attacks = []
     
-    # If linked to an encounter enemy with a bestiary entry
-    if participant.encounter_enemy:
-        enemy = participant.encounter_enemy.enemy
+    enemy = _resolve_enemy(participant)
+    if enemy:
         for atk in enemy.attacks.all():
             attacks.append({
                 'name': atk.name,
@@ -104,10 +113,9 @@ def _get_enemy_attacks(participant):
 
 def _check_multiattack(participant):
     """Check if enemy has multiattack ability."""
-    if not participant.encounter_enemy:
+    enemy = _resolve_enemy(participant)
+    if not enemy:
         return False, 1
-    
-    enemy = participant.encounter_enemy.enemy
     
     # Check abilities for Multiattack
     for ability in enemy.abilities.all():

@@ -32,7 +32,7 @@ class CombatParticipantSerializer(serializers.ModelSerializer):
                 'is_dead': instance.death_save_failures >= 3
             }
         
-        # Add equipped items info
+        # Add equipped items info for characters
         if instance.character:
             equipped_weapon = instance.get_equipped_weapon()
             equipped_armor = instance.get_equipped_armor()
@@ -54,6 +54,81 @@ class CombatParticipantSerializer(serializers.ModelSerializer):
                 } if equipped_shield else None,
             }
             data['effective_ac'] = effective_ac
+        
+        # Add enemy stat block for enemy participants
+        enemy = None
+        if instance.encounter_enemy:
+            enemy = instance.encounter_enemy.enemy
+        elif instance.participant_type == 'enemy' and instance.name:
+            # Practice mode enemy — try to find by name
+            from bestiary.models import Enemy as EnemyModel
+            enemy = EnemyModel.objects.filter(name=instance.name).first()
+        
+        if enemy:
+            # Ability scores
+            if hasattr(enemy, 'stats'):
+                stats = enemy.stats
+                data['enemy_stats'] = {
+                    'ability_scores': {
+                        'strength': {'score': stats.strength, 'modifier': stats.strength_modifier},
+                        'dexterity': {'score': stats.dexterity, 'modifier': stats.dexterity_modifier},
+                        'constitution': {'score': stats.constitution, 'modifier': stats.constitution_modifier},
+                        'intelligence': {'score': stats.intelligence, 'modifier': stats.intelligence_modifier},
+                        'wisdom': {'score': stats.wisdom, 'modifier': stats.wisdom_modifier},
+                        'charisma': {'score': stats.charisma, 'modifier': stats.charisma_modifier},
+                    },
+                    'saving_throws': {
+                        'str': stats.str_save,
+                        'dex': stats.dex_save,
+                        'con': stats.con_save,
+                        'int': stats.int_save,
+                        'wis': stats.wis_save,
+                        'cha': stats.cha_save,
+                    },
+                    'speed': stats.speed,
+                    'proficiency_bonus': stats.proficiency_bonus,
+                    'senses': {
+                        'darkvision': stats.darkvision,
+                        'blindsight': stats.blindsight,
+                        'tremorsense': stats.tremorsense,
+                        'truesight': stats.truesight,
+                        'passive_perception': stats.passive_perception,
+                    },
+                }
+            
+            # Attacks
+            attacks = enemy.attacks.all()
+            if attacks.exists():
+                data['enemy_attacks'] = [
+                    {
+                        'name': atk.name,
+                        'bonus': atk.bonus,
+                        'damage': atk.damage,
+                    }
+                    for atk in attacks
+                ]
+            
+            # Abilities (Multiattack, special traits, etc.)
+            abilities = enemy.abilities.all()
+            if abilities.exists():
+                data['enemy_abilities'] = [
+                    {
+                        'name': ab.name,
+                        'description': ab.description,
+                    }
+                    for ab in abilities
+                ]
+            
+            # Resistances/immunities
+            resistances = enemy.resistances.all()
+            if resistances.exists():
+                data['enemy_resistances'] = [
+                    {
+                        'damage_type': r.damage_type.name,
+                        'type': r.resistance_type,
+                    }
+                    for r in resistances
+                ]
         
         return data
 

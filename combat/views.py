@@ -376,10 +376,10 @@ class CombatSessionViewSet(viewsets.ModelViewSet):
                 status=status.HTTP_400_BAD_REQUEST
             )
         
-        # Check if attacker has already used their action this turn
-        if attacker.action_used:
+        # Check if attacker has attacks remaining this turn
+        if attacker.attacks_remaining <= 0:
             return Response(
-                {"error": f"{attacker.get_name()} has already used their action this turn"},
+                {"error": f"{attacker.get_name()} has no attacks remaining this turn"},
                 status=status.HTTP_400_BAD_REQUEST
             )
         
@@ -394,6 +394,14 @@ class CombatSessionViewSet(viewsets.ModelViewSet):
         equipped_weapon = None
         damage_string = "1d4"  # Default unarmed
         use_ability = 'STR'  # Default to STR
+        
+        # Resolve enemy model (either from encounter or by name for practice mode)
+        resolved_enemy = None
+        if attacker.encounter_enemy:
+            resolved_enemy = attacker.encounter_enemy.enemy
+        elif attacker.participant_type == 'enemy' and attacker.name:
+            from bestiary.models import Enemy as EnemyModel
+            resolved_enemy = EnemyModel.objects.filter(name=attacker.name).first()
         
         if attacker.character:
             # Try to get equipped weapon
@@ -411,12 +419,14 @@ class CombatSessionViewSet(viewsets.ModelViewSet):
                     use_ability = 'STR'
             else:
                 attack_name = attack_name or 'Unarmed Strike'
-        elif attacker.encounter_enemy:
-            # Try to find enemy attack
-            enemy = attacker.encounter_enemy.enemy
-            attacks = enemy.attacks.all()
+        elif resolved_enemy:
+            # Try to find enemy attack — match by name if provided, else use best
+            attacks = resolved_enemy.attacks.all()
             if attacks.exists():
-                enemy_attack = attacks.first()
+                if attack_name:
+                    enemy_attack = attacks.filter(name__iexact=attack_name).first() or attacks.first()
+                else:
+                    enemy_attack = attacks.first()
                 attack_name = attack_name or enemy_attack.name
                 damage_string = enemy_attack.damage
         
@@ -425,12 +435,28 @@ class CombatSessionViewSet(viewsets.ModelViewSet):
         
         # Calculate attack modifier
         ability_mod = attacker.get_ability_modifier(use_ability)
+        damage_ability_mod = ability_mod  # Separate tracker for damage (may differ from attack bonus for enemies)
         if attacker.character:
             proficiency_bonus = attacker.character.proficiency_bonus
             # Check weapon proficiency (simplified - check if character has weapon proficiency)
             proficiency = True  # TODO: Check actual weapon proficiency
+        elif resolved_enemy:
+            # Use enemy's actual attack bonus directly (includes prof + ability mod)
+            enemy_atk = resolved_enemy.attacks.filter(name__iexact=attack_name).first() if attack_name else resolved_enemy.attacks.first()
+            if enemy_atk:
+                # EnemyAttack.bonus already includes proficiency + ability modifier
+                # Keep damage_ability_mod as the raw ability modifier for damage calculation
+                damage_ability_mod = ability_mod
+                ability_mod = enemy_atk.bonus
+                proficiency_bonus = 0
+                proficiency = False
+            else:
+                try:
+                    proficiency_bonus = resolved_enemy.stats.proficiency_bonus or 2
+                except Exception:
+                    proficiency_bonus = 2
+                proficiency = True
         else:
-            # For enemies, use a default proficiency bonus (simplified)
             proficiency_bonus = 2
             proficiency = True
         
@@ -533,7 +559,7 @@ class CombatSessionViewSet(viewsets.ModelViewSet):
         concentration_broken = False
         if hit:
             # Add magic item damage bonus
-            damage_modifier = ability_mod + magic_bonuses['to_damage']
+            damage_modifier = damage_ability_mod + magic_bonuses['to_damage']
             damage_amount, damage_breakdown = calculate_damage(
                 damage_string, damage_modifier, critical
             )
@@ -557,8 +583,10 @@ class CombatSessionViewSet(viewsets.ModelViewSet):
             description=f"{roll_breakdown} | {attack_breakdown}"
         )
         
-        # Mark action as used
-        attacker.action_used = True
+        # Decrement attacks remaining
+        attacker.attacks_remaining -= 1
+        if attacker.attacks_remaining <= 0:
+            attacker.action_used = True
         attacker.save()
         
         return Response({
@@ -574,6 +602,7 @@ class CombatSessionViewSet(viewsets.ModelViewSet):
             "critical": critical,
             "damage": damage_amount if hit else 0,
             "target_hp": target.current_hp,
+            "attacks_remaining": attacker.attacks_remaining,
             "environmental_effects": {
                 "cover": cover_bonus > 0,
                 "cover_type": target_cover_type,

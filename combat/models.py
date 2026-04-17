@@ -401,6 +401,7 @@ class CombatParticipant(models.Model):
     bonus_action_used = models.BooleanField(default=False)
     reaction_used = models.BooleanField(default=False)
     movement_used = models.IntegerField(default=0)  # Feet moved this turn
+    attacks_remaining = models.IntegerField(default=1)  # Attacks left this turn (Extra Attack, Multiattack)
     
     # Conditions (many-to-many for multiple conditions)
     conditions = models.ManyToManyField(Condition, blank=True, related_name='combat_participants')
@@ -865,7 +866,51 @@ class CombatParticipant(models.Model):
         self.bonus_action_used = False
         self.reaction_used = False
         self.movement_used = 0
+        self.attacks_remaining = self._calculate_attacks_per_action()
         self.save()
+    
+    def _calculate_attacks_per_action(self):
+        """
+        Calculate how many attacks this participant gets per Attack action.
+        - Characters: based on Extra Attack class feature
+        - Enemies: based on Multiattack ability
+        """
+        if self.character:
+            from characters.models import CharacterFeature
+            features = CharacterFeature.objects.filter(
+                character=self.character
+            ).values_list('name', flat=True)
+            
+            feature_names = [f.lower() for f in features]
+            
+            # Fighter level 20: 4 attacks
+            if any('extra attack (3)' in f or 'three extra attack' in f for f in feature_names):
+                return 4
+            # Fighter level 11: 3 attacks
+            if any('extra attack (2)' in f or 'two extra attack' in f for f in feature_names):
+                return 3
+            # Most martial classes level 5: 2 attacks
+            if any('extra attack' in f for f in feature_names):
+                return 2
+            return 1
+        
+        elif self.encounter_enemy:
+            # Reuse multiattack parsing logic
+            enemy = self.encounter_enemy.enemy
+            for ability in enemy.abilities.all():
+                if 'multiattack' in ability.name.lower():
+                    desc = ability.description.lower()
+                    number_words = {
+                        'two': 2, 'three': 3, 'four': 4, 'five': 5,
+                        '2': 2, '3': 3, '4': 4, '5': 5,
+                    }
+                    for word, count in number_words.items():
+                        if word in desc:
+                            return count
+                    return 2  # Default multiattack = 2
+            return 1
+        
+        return 1
     
     def reset_reaction(self):
         """Reset reaction at start of round (reactions reset each round)"""
