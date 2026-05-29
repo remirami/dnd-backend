@@ -32,6 +32,7 @@ from campaigns.utils import calculate_spell_slots
 from ..inventory_management import (
     equip_item, unequip_item, get_equipped_items,
     calculate_total_weight, get_encumbrance_level, get_encumbrance_effects,
+    calculate_carrying_capacity,
     get_equipped_weapon, get_equipped_armor, get_equipped_shield
 )
 from ..equipment_endpoints import add_equipment_endpoints_to_viewset
@@ -1596,6 +1597,117 @@ class CharacterViewSet(viewsets.ModelViewSet):
             }
         })
     
+    @action(detail=True, methods=['post'], url_path='attune_item')
+    def attune_item(self, request, pk=None):
+        """
+        Attune to an item. Max 3 attuned items at once.
+        Item must have requires_attunement=True on the base Item.
+
+        Request body: { "character_item_id": <int> }
+        """
+        character = self.get_object()
+        character_item_id = request.data.get('character_item_id')
+
+        if not character_item_id:
+            return Response(
+                {"error": "Missing 'character_item_id'"},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
+        try:
+            char_item = CharacterItem.objects.get(pk=character_item_id, character=character)
+        except CharacterItem.DoesNotExist:
+            return Response(
+                {"error": "Item not found in character's inventory"},
+                status=status.HTTP_404_NOT_FOUND
+            )
+
+        # Check item requires attunement
+        if not char_item.item.requires_attunement:
+            return Response(
+                {"error": f"{char_item.item.name} does not require attunement"},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
+        # Already attuned?
+        if char_item.is_attuned:
+            return Response(
+                {"error": f"Already attuned to {char_item.item.name}"},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
+        # Enforce max 3 attuned items
+        attuned_count = CharacterItem.objects.filter(
+            character=character, is_attuned=True
+        ).count()
+        if attuned_count >= 3:
+            return Response(
+                {"error": "Cannot attune to more than 3 items at once (D&D 5e rule)"},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
+        char_item.is_attuned = True
+        char_item.save(update_fields=['is_attuned'])
+
+        return Response({
+            "message": f"Attuned to {char_item.item.name}",
+            "character_item": {
+                "id": char_item.id,
+                "item": char_item.item.name,
+                "is_attuned": char_item.is_attuned,
+            },
+            "attunement_slots_used": attuned_count + 1,
+            "attunement_slots_max": 3,
+        })
+
+    @action(detail=True, methods=['post'], url_path='unattune_item')
+    def unattune_item(self, request, pk=None):
+        """
+        Remove attunement from an item.
+
+        Request body: { "character_item_id": <int> }
+        """
+        character = self.get_object()
+        character_item_id = request.data.get('character_item_id')
+
+        if not character_item_id:
+            return Response(
+                {"error": "Missing 'character_item_id'"},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
+        try:
+            char_item = CharacterItem.objects.get(pk=character_item_id, character=character)
+        except CharacterItem.DoesNotExist:
+            return Response(
+                {"error": "Item not found in character's inventory"},
+                status=status.HTTP_404_NOT_FOUND
+            )
+
+        if not char_item.is_attuned:
+            return Response(
+                {"error": f"Not currently attuned to {char_item.item.name}"},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
+        char_item.is_attuned = False
+        char_item.save(update_fields=['is_attuned'])
+
+        attuned_count = CharacterItem.objects.filter(
+            character=character, is_attuned=True
+        ).count()
+
+        return Response({
+            "message": f"Removed attunement from {char_item.item.name}",
+            "character_item": {
+                "id": char_item.id,
+                "item": char_item.item.name,
+                "is_attuned": char_item.is_attuned,
+            },
+            "attunement_slots_used": attuned_count,
+            "attunement_slots_max": 3,
+        })
+
     @action(detail=True, methods=['post'], url_path='remove_item')
     def remove_item(self, request, pk=None):
         """Remove an item from character's inventory"""

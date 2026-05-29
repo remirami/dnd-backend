@@ -126,7 +126,7 @@ def can_equip_item(character, item, slot):
     
     else:
         # Other items can go in various slots
-        valid_slots = ['ring', 'amulet', 'boots', 'gloves', 'helmet', 'cloak']
+        valid_slots = ['ring', 'ring_2', 'amulet', 'boots', 'gloves', 'helmet', 'cloak']
         if slot not in valid_slots and slot != 'inventory':
             return False, f"Item cannot be equipped in {slot}"
     
@@ -188,7 +188,13 @@ def equip_item(character, item, slot='main_hand'):
             if 'amulet' in item_name_lower or 'necklace' in item_name_lower or 'pendant' in item_name_lower:
                 slot = 'amulet'
             elif 'ring' in item_name_lower:
-                slot = 'ring'
+                # Use ring_2 if ring slot is already occupied
+                ring_taken = CharacterItem.objects.filter(
+                    character=character,
+                    equipment_slot='ring',
+                    is_equipped=True
+                ).exists()
+                slot = 'ring_2' if ring_taken else 'ring'
             elif 'boot' in item_name_lower or 'shoe' in item_name_lower:
                 slot = 'boots'
             elif 'glove' in item_name_lower or 'gauntlet' in item_name_lower:

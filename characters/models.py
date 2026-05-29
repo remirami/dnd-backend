@@ -561,6 +561,7 @@ class CharacterItem(models.Model):
         ('armor', 'Armor'),
         ('shield', 'Shield'),
         ('ring', 'Ring'),
+        ('ring_2', 'Ring 2'),
         ('amulet', 'Amulet'),
         ('boots', 'Boots'),
         ('gloves', 'Gloves'),
@@ -573,6 +574,7 @@ class CharacterItem(models.Model):
     item = models.ForeignKey('items.Item', on_delete=models.CASCADE, related_name='character_items')
     quantity = models.IntegerField(default=1, validators=[MinValueValidator(1)])
     is_equipped = models.BooleanField(default=False)
+    is_attuned = models.BooleanField(default=False)
     equipment_slot = models.CharField(max_length=20, choices=EQUIPMENT_SLOTS, default='inventory')
     notes = models.TextField(blank=True)
     
