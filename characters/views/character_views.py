@@ -1566,8 +1566,10 @@ class CharacterViewSet(viewsets.ModelViewSet):
                 status=status.HTTP_404_NOT_FOUND
             )
         
-        # Use inventory management utility
-        success, message = unequip_item(character, character_item.item)
+        # Use inventory management utility — pass the CharacterItem directly so
+        # the function knows exactly which row to touch (critical for dual-wield
+        # stacks where two CharacterItems share the same underlying Item).
+        success, message = unequip_item(character, character_item)
         
         if not success:
             return Response(
@@ -1575,7 +1577,18 @@ class CharacterViewSet(viewsets.ModelViewSet):
                 status=status.HTTP_400_BAD_REQUEST
             )
         
-        character_item.refresh_from_db()
+        # After a dual-wield merge the off-hand CharacterItem is deleted;
+        # re-fetch safely so the response doesn't blow up.
+        try:
+            character_item.refresh_from_db()
+            item_response = {
+                'id': character_item.id,
+                'item': character_item.item.name,
+                'equipment_slot': character_item.equipment_slot,
+                'is_equipped': character_item.is_equipped,
+            }
+        except CharacterItem.DoesNotExist:
+            item_response = {'id': None, 'merged': True}
         
         # Get encumbrance info
         total_weight = calculate_total_weight(character)
@@ -1584,12 +1597,7 @@ class CharacterViewSet(viewsets.ModelViewSet):
         
         return Response({
             "message": message,
-            "character_item": {
-                'id': character_item.id,
-                'item': character_item.item.name,
-                'equipment_slot': character_item.equipment_slot,
-                'is_equipped': character_item.is_equipped,
-            },
+            "character_item": item_response,
             "encumbrance": {
                 'level': encumbrance,
                 'total_weight': total_weight,

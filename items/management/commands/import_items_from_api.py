@@ -277,6 +277,14 @@ class Command(BaseCommand):
             except:
                 range_normal = 5
         
+        # Parse boolean weapon properties from properties text/list
+        properties_raw = data.get('properties', '')
+        if isinstance(properties_raw, list):
+            properties_text = ', '.join(properties_raw)
+        else:
+            properties_text = properties_raw or ''
+        properties_lower = properties_text.lower()
+
         weapon_data = {
             **item_data,
             'damage_dice': damage_dice,
@@ -284,6 +292,16 @@ class Command(BaseCommand):
             'weapon_type': data.get('category', 'simple'),
             'range_normal': range_normal,
             'range_long': range_long,
+            # Sync boolean fields from the properties text so that validation
+            # logic (two_handed conflict checks) works correctly.
+            'two_handed': 'two-handed' in properties_lower,
+            'light':      'light'       in properties_lower,
+            'heavy':      'heavy'       in properties_lower,
+            'finesse':    'finesse'     in properties_lower,
+            'thrown':     'thrown'      in properties_lower,
+            'ammunition': 'ammunition'  in properties_lower,
+            'loading':    'loading'     in properties_lower,
+            'reach':      'reach'       in properties_lower,
         }
         
         try:
@@ -297,7 +315,7 @@ class Command(BaseCommand):
         except Weapon.DoesNotExist:
             weapon = Weapon.objects.create(**weapon_data)
             
-            # Add properties
+            # Add properties to M2M relation (for display)
             self._add_weapon_properties(weapon, data)
             
             return weapon, True

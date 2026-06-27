@@ -158,11 +158,22 @@ def equip_item(character, item, slot='main_hand'):
     Equip an item to a character.
     Returns (success, message, character_item)
     """
-    char_item, created = CharacterItem.objects.get_or_create(
-        character=character,
-        item=item,
-        defaults={'equipment_slot': slot}
-    )
+    # Safe lookup — use filter() so that having two rows (dual-wield split)
+    # never raises MultipleObjectsReturned.  Prefer an unequipped/inventory
+    # row so we don't accidentally move an already-equipped item.
+    qs = CharacterItem.objects.filter(character=character, item=item)
+    unequipped_qs = qs.filter(is_equipped=False)
+    if unequipped_qs.exists():
+        char_item = unequipped_qs.order_by('id').first()
+        created = False
+    elif qs.exists():
+        char_item = qs.order_by('id').first()
+        created = False
+    else:
+        char_item = CharacterItem.objects.create(
+            character=character, item=item, equipment_slot=slot
+        )
+        created = True
 
     # Auto-detect slot for armor/shields (always, not just when slot='main_hand')
     # This is needed because shields might have been incorrectly set to 'armor' slot previously
@@ -182,32 +193,82 @@ def equip_item(character, item, slot='main_hand'):
         else:
             slot = 'armor'
     elif slot == 'main_hand':
-        # Only do accessory detection if slot is still main_hand
-            # Check for accessories based on item name
-            item_name_lower = item.name.lower()
-            if 'amulet' in item_name_lower or 'necklace' in item_name_lower or 'pendant' in item_name_lower:
-                slot = 'amulet'
-            elif 'ring' in item_name_lower:
-                # Use ring_2 if ring slot is already occupied
-                ring_taken = CharacterItem.objects.filter(
-                    character=character,
-                    equipment_slot='ring',
-                    is_equipped=True
-                ).exists()
-                slot = 'ring_2' if ring_taken else 'ring'
-            elif 'boot' in item_name_lower or 'shoe' in item_name_lower:
-                slot = 'boots'
-            elif 'glove' in item_name_lower or 'gauntlet' in item_name_lower:
-                slot = 'gloves'
-            elif 'helmet' in item_name_lower or 'helm' in item_name_lower or 'crown' in item_name_lower or 'circlet' in item_name_lower:
-                slot = 'helmet'
-            elif 'cloak' in item_name_lower or 'cape' in item_name_lower or 'mantle' in item_name_lower:
-                slot = 'cloak'
+        # Check for accessories based on item name
+        item_name_lower = item.name.lower()
+        if 'amulet' in item_name_lower or 'necklace' in item_name_lower or 'pendant' in item_name_lower:
+            slot = 'amulet'
+        elif 'ring' in item_name_lower:
+            # Use ring_2 if ring slot is already occupied
+            ring_taken = CharacterItem.objects.filter(
+                character=character,
+                equipment_slot='ring',
+                is_equipped=True
+            ).exists()
+            slot = 'ring_2' if ring_taken else 'ring'
+        elif 'boot' in item_name_lower or 'shoe' in item_name_lower:
+            slot = 'boots'
+        elif 'glove' in item_name_lower or 'gauntlet' in item_name_lower:
+            slot = 'gloves'
+        elif 'helmet' in item_name_lower or 'helm' in item_name_lower or 'crown' in item_name_lower or 'circlet' in item_name_lower:
+            slot = 'helmet'
+        elif 'cloak' in item_name_lower or 'cape' in item_name_lower or 'mantle' in item_name_lower:
+            slot = 'cloak'
+        elif hasattr(item, 'weapon_type') and not item.two_handed:
+            # item is already a Weapon subclass object (downcast earlier)
+            # One-handed weapon: auto-route to off_hand if main_hand is already occupied
+            main_hand_taken = CharacterItem.objects.filter(
+                character=character,
+                equipment_slot='main_hand',
+                is_equipped=True
+            ).exclude(id=char_item.id).exists()
+            if main_hand_taken:
+                slot = 'off_hand'
+        else:
+            # item is a base Item — check Weapon table directly to detect one-handed weapons
+            from items.models import Weapon as WeaponModel
+            try:
+                weapon_obj = WeaponModel.objects.get(pk=item.pk)
+                if not weapon_obj.two_handed:
+                    main_hand_taken = CharacterItem.objects.filter(
+                        character=character,
+                        equipment_slot='main_hand',
+                        is_equipped=True
+                    ).exclude(id=char_item.id).exists()
+                    if main_hand_taken:
+                        slot = 'off_hand'
+            except WeaponModel.DoesNotExist:
+                pass  # Not a weapon — leave slot as main_hand
     
     # Check if can equip
     can_equip, error_msg = can_equip_item(character, item, slot)
     if not can_equip:
         return False, error_msg, None
+    
+    # ── DUAL-WIELD STACK SPLIT ───────────────────────────────────────────────
+    # If the character has e.g. "Handaxe ×2" as a single CharacterItem row
+    # (quantity ≥ 2) that is already equipped in main_hand, and we now want
+    # to equip one copy to off_hand, we cannot just move the row — that would
+    # unequip main_hand.  Instead, decrement the stack by 1 and create a fresh
+    # CharacterItem row (quantity=1) for the off_hand slot.
+    if (
+        slot == 'off_hand'
+        and not created                          # item was already in inventory
+        and char_item.is_equipped
+        and char_item.equipment_slot == 'main_hand'
+        and char_item.quantity >= 2
+    ):
+        char_item.quantity -= 1
+        char_item.save(update_fields=['quantity'])
+        off_hand_char_item = CharacterItem.objects.create(
+            character=character,
+            item=item,
+            quantity=1,
+            equipment_slot='off_hand',
+            is_equipped=True,
+        )
+        recalculate_armor_class(character)
+        return True, f"Equipped {item.name} in off_hand (split from stack)", off_hand_char_item
+    # ────────────────────────────────────────────────────────────────────────
     
     # Unequip any item currently in this slot
     CharacterItem.objects.filter(
@@ -227,23 +288,85 @@ def equip_item(character, item, slot='main_hand'):
     return True, f"Equipped {item.name} in {slot}", char_item
 
 
-def unequip_item(character, item):
+def unequip_item(character, char_item_or_item):
     """
     Unequip an item from a character.
+
+    Accepts either:
+      - A CharacterItem instance  (preferred — unambiguous when dual-wielding)
+      - A base Item object        (legacy; picks the first equipped match)
+
     Returns (success, message)
     """
-    try:
-        char_item = CharacterItem.objects.get(character=character, item=item, is_equipped=True)
-        char_item.is_equipped = False
-        char_item.equipment_slot = 'inventory'
-        char_item.save()
-        
-        # Recalculate stats (AC)
-        recalculate_armor_class(character)
-        
-        return True, f"Unequipped {item.name}"
-    except CharacterItem.DoesNotExist:
-        return False, f"{item.name} is not equipped"
+    # Resolve to a concrete CharacterItem
+    if isinstance(char_item_or_item, CharacterItem):
+        char_item = char_item_or_item
+        if not char_item.is_equipped:
+            return False, f"{char_item.item.name} is not equipped"
+    else:
+        # Legacy path: bare Item passed in — find an equipped CharacterItem
+        item_obj = char_item_or_item
+        qs = CharacterItem.objects.filter(
+            character=character, item=item_obj, is_equipped=True
+        )
+        if not qs.exists():
+            return False, f"{item_obj.name} is not equipped"
+        # Prefer off_hand when dual-wielding (so main_hand stays equipped)
+        char_item = qs.order_by('equipment_slot').first()  # 'main_hand' > 'off_hand' alpha
+
+    item = char_item.item
+
+    # ── DUAL-WIELD STACK MERGE (bidirectional) ──────────────────────────────
+    # Case A — unequipping the off_hand half of a split stack:
+    #   merge it back into the main_hand row (restores the ×2 stack).
+    if (
+        char_item.quantity == 1
+        and char_item.equipment_slot == 'off_hand'
+        and char_item.is_equipped
+    ):
+        main_sibling = CharacterItem.objects.filter(
+            character=character,
+            item=item,
+            equipment_slot='main_hand',
+            is_equipped=True,
+        ).first()
+        if main_sibling:
+            main_sibling.quantity += 1
+            main_sibling.save(update_fields=['quantity'])
+            char_item.delete()
+            recalculate_armor_class(character)
+            return True, f"Unequipped {item.name} from off-hand (merged back to stack)"
+
+    # Case B — unequipping the main_hand half while an off_hand sibling exists:
+    #   absorb the off_hand row into this one, unequip both, restore the stack.
+    if (
+        char_item.quantity == 1
+        and char_item.equipment_slot == 'main_hand'
+        and char_item.is_equipped
+    ):
+        off_sibling = CharacterItem.objects.filter(
+            character=character,
+            item=item,
+            equipment_slot='off_hand',
+            is_equipped=True,
+        ).first()
+        if off_sibling:
+            char_item.quantity += 1
+            char_item.is_equipped = False
+            char_item.equipment_slot = 'inventory'
+            char_item.save()
+            off_sibling.delete()
+            recalculate_armor_class(character)
+            return True, f"Unequipped {item.name} (dual-wield ended, stack \u00d72 restored)"
+    # ────────────────────────────────────────────────────────────────────────
+
+    char_item.is_equipped = False
+    char_item.equipment_slot = 'inventory'
+    char_item.save()
+
+    recalculate_armor_class(character)
+
+    return True, f"Unequipped {item.name}"
 
 
 def get_equipped_items(character):
@@ -253,17 +376,21 @@ def get_equipped_items(character):
 
 def get_equipped_weapon(character, slot='main_hand'):
     """Get equipped weapon in specified slot"""
+    from items.models import Weapon
     try:
         char_item = CharacterItem.objects.get(
             character=character,
             equipment_slot=slot,
             is_equipped=True
         )
-        if hasattr(char_item.item, 'weapon'):
-            return char_item.item.weapon
+        # Query Weapon table directly by pk — more reliable than the hasattr
+        # reverse-accessor on a base Item object (which can silently return None).
+        try:
+            return Weapon.objects.get(pk=char_item.item.pk)
+        except Weapon.DoesNotExist:
+            return None
     except CharacterItem.DoesNotExist:
-        pass
-    return None
+        return None
 
 
 def get_equipped_armor(character):
