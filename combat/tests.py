@@ -298,7 +298,7 @@ class CombatAPITests(TestCase):
     
     def test_start_combat(self):
         """Test starting combat"""
-        # Add participant first
+        # Add character participant
         CombatParticipant.objects.create(
             combat_session=self.combat_session,
             participant_type='character',
@@ -307,6 +307,16 @@ class CombatAPITests(TestCase):
             current_hp=45,
             max_hp=45,
             armor_class=18
+        )
+        # Add enemy participant (required by start endpoint)
+        CombatParticipant.objects.create(
+            combat_session=self.combat_session,
+            participant_type='enemy',
+            encounter_enemy=self.encounter_enemy,
+            initiative=12,
+            current_hp=7,
+            max_hp=7,
+            armor_class=15
         )
         
         response = self.client.post(

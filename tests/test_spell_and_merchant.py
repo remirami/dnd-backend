@@ -58,7 +58,7 @@ class SpellLibraryTests(TransactionTestCase):
         
         response = self.client.get('/api/spells/')
         self.assertEqual(response.status_code, 200)
-        self.assertEqual(len(response.data['results']), 1)
+        self.assertEqual(len(response.data), 1)
     
     def test_spell_filtering(self):
         """Test filtering spells by level and school"""
@@ -88,12 +88,12 @@ class SpellLibraryTests(TransactionTestCase):
         # Filter by level
         response = self.client.get('/api/spells/?level=1')
         self.assertEqual(response.status_code, 200)
-        self.assertEqual(len(response.data['results']), 1)
+        self.assertEqual(len(response.data), 1)
         
         # Filter by school
         response = self.client.get('/api/spells/?school=evocation')
         self.assertEqual(response.status_code, 200)
-        self.assertEqual(len(response.data['results']), 2)
+        self.assertEqual(len(response.data), 2)
 
 
 class MerchantRarityTests(TestCase):

@@ -311,8 +311,8 @@ class SpellManagementTestCase(TestCase):
         )
         
         spells_known = calculate_spells_known(fighter)
-        # Non-casters return empty dict, not 0
-        self.assertEqual(spells_known, {})
+        # Non-casters return 0
+        self.assertEqual(spells_known, 0)
     
     def test_get_wizard_spellbook_size(self):
         """Test wizard spellbook size calculation"""

@@ -8,7 +8,7 @@ from django.contrib.auth.models import User
 from rest_framework.test import APIClient
 from rest_framework import status
 
-from characters.models import Character, CharacterClass, CharacterRace, CharacterStats, CharacterSpell
+from characters.models import Character, CharacterClass, CharacterRace, CharacterStats, CharacterSpell, CharacterClassLevel
 from characters.spell_management import is_prepared_caster, is_known_caster, calculate_spells_prepared
 
 
@@ -42,6 +42,12 @@ class SpellPreparationTests(TestCase):
             max_hit_points=30,
             hit_points=30,
             armor_class=12
+        )
+        
+        CharacterClassLevel.objects.create(
+            character=self.wizard,
+            character_class=self.wizard_class,
+            level=5
         )
         
         # Add some spells to the wizard
@@ -167,6 +173,12 @@ class KnownSpellsTests(TestCase):
             hit_points=30,
             armor_class=12
         )
+        
+        CharacterClassLevel.objects.create(
+            character=self.sorcerer,
+            character_class=self.sorcerer_class,
+            level=5
+        )
     
     def test_learn_new_spell(self):
         """Test learning a new spell"""
@@ -176,7 +188,8 @@ class KnownSpellsTests(TestCase):
                 'spell_name': 'Fireball',
                 'spell_level': 3,
                 'school': 'Evocation'
-            }
+            },
+            format='json'
         )
         
         self.assertEqual(response.status_code, status.HTTP_200_OK)
@@ -207,7 +220,8 @@ class KnownSpellsTests(TestCase):
             {
                 'spell_name': 'Fireball',
                 'spell_level': 3
-            }
+            },
+            format='json'
         )
         
         # Should fail or handle gracefully

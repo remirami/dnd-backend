@@ -11,6 +11,7 @@ from rest_framework import status
 from combat.models import CombatSession, CombatParticipant
 from characters.models import Character, CharacterClass, CharacterRace, CharacterStats
 from bestiary.models import Enemy, EnemyStats
+from encounters.models import Encounter, EncounterEnemy
 
 
 class CombatSessionAPITests(TestCase):
@@ -41,6 +42,26 @@ class CombatSessionAPITests(TestCase):
             max_hit_points=45,
             hit_points=45,
             armor_class=18
+        )
+        
+        # Create enemy for combat tests
+        self.enemy = Enemy.objects.create(
+            name='Test Goblin',
+            challenge_rating='1/4'
+        )
+        EnemyStats.objects.create(
+            enemy=self.enemy,
+            strength=8, dexterity=14, constitution=10,
+            intelligence=10, wisdom=8, charisma=8,
+            hit_points=7, armor_class=15
+        )
+        self.encounter = Encounter.objects.create(name='Test Encounter')
+        self.encounter_enemy = EncounterEnemy.objects.create(
+            encounter=self.encounter,
+            enemy=self.enemy,
+            name='Goblin 1',
+            current_hp=7,
+            initiative=12
         )
     
     def test_create_combat_session(self):
@@ -88,9 +109,12 @@ class CombatSessionAPITests(TestCase):
     
     def test_start_combat_with_participants(self):
         """Test starting combat with participants"""
-        session = CombatSession.objects.create(status='preparing')
+        session = CombatSession.objects.create(
+            status='preparing',
+            encounter=self.encounter
+        )
         
-        # Add participant
+        # Add character participant
         CombatParticipant.objects.create(
             combat_session=session,
             participant_type='character',
@@ -99,6 +123,16 @@ class CombatSessionAPITests(TestCase):
             current_hp=45,
             max_hp=45,
             armor_class=18
+        )
+        # Add enemy participant (required by start endpoint)
+        CombatParticipant.objects.create(
+            combat_session=session,
+            participant_type='enemy',
+            encounter_enemy=self.encounter_enemy,
+            initiative=12,
+            current_hp=7,
+            max_hp=7,
+            armor_class=15
         )
         
         response = self.client.post(f'/api/combat/sessions/{session.id}/start/')

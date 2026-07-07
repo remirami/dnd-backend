@@ -673,7 +673,14 @@ class CharacterViewSet(viewsets.ModelViewSet):
         
         # Calculate pending spell choices using helper
         # Refresh character from DB to ensure we have latest stats (spell slots)
+        # but preserve fields we've already set
+        saved_level = new_level
+        saved_pending_asi = list(character.pending_asi_levels)
+        saved_pending_subclass = character.pending_subclass_selection
         character.refresh_from_db()
+        character.level = saved_level
+        character.pending_asi_levels = saved_pending_asi
+        character.pending_subclass_selection = saved_pending_subclass
         try:
             self._calculate_pending_spells(character, primary_class, new_level, features_gained)
         except Exception as e:
