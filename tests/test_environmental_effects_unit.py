@@ -14,7 +14,6 @@ from combat.environmental_effects import (
     calculate_cover_save_bonus,
     has_full_cover,
     get_lighting_attack_modifier,
-    get_lighting_perception_modifier,
     get_weather_ranged_modifier,
     calculate_hazard_damage,
     can_see_target,

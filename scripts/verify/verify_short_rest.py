@@ -2,7 +2,6 @@
 import os
 import django
 import sys
-import json
 
 # Setup Django environment
 sys.path.append(os.getcwd())
@@ -55,7 +54,7 @@ def run_verification():
     stats.hit_dice_used = 0
     stats.save()
     
-    print(f"\n[Test 1] Warlock Short Rest (Slot Reset)")
+    print("\n[Test 1] Warlock Short Rest (Slot Reset)")
     print(f"Initial Slots Used: {stats.expended_spell_slots}")
     
     factory = APIRequestFactory()
@@ -96,7 +95,7 @@ def run_verification():
     w_stats.hit_dice_used = 0
     w_stats.save()
     
-    print(f"\n[Test 2] Wizard Short Rest (No Slot Reset, spending HD)")
+    print("\n[Test 2] Wizard Short Rest (No Slot Reset, spending HD)")
     print(f"Initial HP: {w_stats.hit_points}/{w_stats.max_hit_points}")
     print(f"Initial Slots Used: {w_stats.expended_spell_slots}")
     

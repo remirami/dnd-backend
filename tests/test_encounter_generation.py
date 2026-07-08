@@ -6,8 +6,7 @@ Tests the encounter and biome generation logic, including distribution percentag
 from django.test import TestCase
 
 from encounters.models import (
-    EncounterTheme, EnemyThemeAssociation, ThemeIncompatibility,
-    BiomeEncounterWeight, Encounter
+    EncounterTheme, EnemyThemeAssociation, BiomeEncounterWeight
 )
 from encounters.services import EncounterGenerator, BiomeEncounterGenerator
 from bestiary.models import Enemy, EnemyStats

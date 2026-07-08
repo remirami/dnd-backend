@@ -1,5 +1,5 @@
 from django.core.management.base import BaseCommand
-from items.models import Weapon, ItemProperty
+from items.models import Weapon
 
 
 # Map ItemProperty names → Weapon boolean field names

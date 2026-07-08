@@ -271,7 +271,7 @@ Time Stop
             spell.delete()
             deleted_count += 1
 
-    print(f"\nCleanup Complete.")
+    print("\nCleanup Complete.")
     print(f"Kept: {kept_count}")
     print(f"Deleted: {deleted_count}")
 

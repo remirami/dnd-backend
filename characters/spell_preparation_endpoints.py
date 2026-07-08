@@ -4,13 +4,11 @@ Spell Preparation endpoints for CharacterViewSet
 from rest_framework.decorators import action
 from rest_framework.response import Response
 from rest_framework import status
-from django.db import transaction
 
 from characters.models import CharacterSpell
 from characters.spell_management import (
     is_prepared_caster,
-    calculate_spells_prepared,
-    can_prepare_spell
+    calculate_spells_prepared
 )
 from characters.serializers import CharacterSpellSerializer
 

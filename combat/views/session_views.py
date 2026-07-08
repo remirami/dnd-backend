@@ -18,7 +18,6 @@ from combat.serializers import CombatSessionSerializer, CombatParticipantSeriali
 from combat.utils import roll_d20
 from encounters.models import Encounter, EncounterEnemy
 from characters.models import Character
-from bestiary.models import EnemyAttack, DamageType
 
 from .combat_action_views import CombatActionMixin
 from .reaction_views import CombatReactionMixin

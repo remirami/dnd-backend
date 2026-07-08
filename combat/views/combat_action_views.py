@@ -8,8 +8,8 @@ from rest_framework.response import Response
 from rest_framework import status
 import logging
 
-from combat.models import CombatSession, CombatParticipant, CombatAction, ConditionApplication, EnvironmentalEffect, ParticipantPosition
-from combat.condition_effects import auto_apply_condition_from_spell, get_condition_for_spell
+from combat.models import CombatParticipant, CombatAction, ConditionApplication, EnvironmentalEffect, ParticipantPosition
+from combat.condition_effects import auto_apply_condition_from_spell
 from combat.environmental_effects import (
     calculate_cover_ac_bonus, has_full_cover,
     get_lighting_attack_modifier, get_weather_ranged_modifier,
@@ -19,9 +19,8 @@ from combat.serializers import (
 )
 from combat.utils import (
     roll_d20, calculate_attack_roll, calculate_damage, check_hit,
-    is_critical_hit, apply_resistance, calculate_saving_throw
+    calculate_saving_throw
 )
-from bestiary.models import EnemyAttack, DamageType
 
 logger = logging.getLogger('combat')
 
@@ -338,7 +337,7 @@ class CombatActionMixin:
         save_type = data.get('save_type', '')
         save_dc = data.get('save_dc')
         damage_string = data.get('damage_string', '')
-        damage_type_id = data.get('damage_type')
+        data.get('damage_type')
         requires_concentration = request.data.get('requires_concentration', False)
         
         try:

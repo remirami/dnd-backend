@@ -282,7 +282,7 @@ def grant_encounter_xp(campaign_encounter, campaign_characters):
             )
             
             old_level = campaign_char.character.level
-            result = xp_tracking.add_xp(xp_per_character, source="encounter_completion")
+            xp_tracking.add_xp(xp_per_character, source="encounter_completion")
             new_level = campaign_char.character.level
             
             level_gained = new_level > old_level
@@ -319,7 +319,7 @@ class TreasureGenerator:
             TreasureRoom object
         """
         from .models import TreasureRoom
-        from items.models import Item, ItemCategory
+        from items.models import Item
         
         # Determine room type (weighted random)
         room_type = TreasureGenerator._select_room_type(encounter_number, campaign.total_encounters)
@@ -675,7 +675,7 @@ class RecruitmentGenerator:
         dex_mod = calculate_ability_modifier(dex_score)
         base_ac = 10 + dex_mod
         
-        stats = CharacterStats.objects.create(
+        CharacterStats.objects.create(
             character=character,
             strength=stats_data.get('strength', 10),
             dexterity=dex_score,
@@ -690,7 +690,7 @@ class RecruitmentGenerator:
         )
         
         # Create CampaignCharacter
-        from .models import CampaignCharacter, CharacterXP
+        from .models import CampaignCharacter
         campaign_char = CampaignCharacter.objects.create(
             campaign=campaign,
             character=character
@@ -720,9 +720,9 @@ class CampaignGenerator:
         Returns:
             dict: Summary of what was created
         """
-        from .models import CampaignEncounter, TreasureRoom
+        from .models import CampaignEncounter
         from encounters.models import Encounter, EncounterEnemy
-        from bestiary.models import Enemy, EnemyStats
+        from bestiary.models import Enemy
         
         summary = {
             'encounters_created': 0,
@@ -784,7 +784,7 @@ class CampaignGenerator:
                 # Generate treasure room (every 2-3 encounters or random 30% chance)
                 if auto_treasure and (i % 3 == 0 or random.random() < 0.3):
                     try:
-                        treasure_room = TreasureGenerator.generate_treasure_room(
+                        TreasureGenerator.generate_treasure_room(
                             campaign,
                             i
                         )

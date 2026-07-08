@@ -118,7 +118,7 @@ if 4 in xp_tracking.pending_asi_levels:
     
     # Show current stats
     stats.refresh_from_db()
-    print(f"\nCurrent Stats:")
+    print("\nCurrent Stats:")
     print(f"  STR: {stats.strength}")
     print(f"  DEX: {stats.dexterity}")
     print(f"  CON: {stats.constitution}")
@@ -131,12 +131,12 @@ if 4 in xp_tracking.pending_asi_levels:
     xp_tracking.save()
     
     stats.refresh_from_db()
-    print(f"\nNew Stats:")
+    print("\nNew Stats:")
     print(f"  STR: {stats.strength} (+2)")
     print(f"  DEX: {stats.dexterity}")
     print(f"  CON: {stats.constitution}")
     
-    print(f"\n[PASS] ASI applied successfully!")
+    print("\n[PASS] ASI applied successfully!")
     print(f"Remaining pending ASI: {xp_tracking.pending_asi_levels}")
 else:
     print("\n[FAIL] ASI should be pending for level 4!")
@@ -158,7 +158,7 @@ if 8 in xp_tracking.pending_asi_levels:
     
     # Show current stats
     stats.refresh_from_db()
-    print(f"\nCurrent Stats:")
+    print("\nCurrent Stats:")
     print(f"  STR: {stats.strength}")
     print(f"  DEX: {stats.dexterity}")
     print(f"  CON: {stats.constitution}")
@@ -172,12 +172,12 @@ if 8 in xp_tracking.pending_asi_levels:
     xp_tracking.save()
     
     stats.refresh_from_db()
-    print(f"\nNew Stats:")
+    print("\nNew Stats:")
     print(f"  STR: {stats.strength}")
     print(f"  DEX: {stats.dexterity} (+1)")
     print(f"  CON: {stats.constitution} (+1)")
     
-    print(f"\n[PASS] ASI applied successfully!")
+    print("\n[PASS] ASI applied successfully!")
     print(f"Remaining pending ASI: {xp_tracking.pending_asi_levels}")
 else:
     print("\n[FAIL] ASI should be pending for level 8!")
@@ -194,7 +194,7 @@ print(f"Character: {character.name}")
 print(f"Level: {character.level}")
 print(f"Class: {character.character_class.name}")
 print(f"Subclass: {character.subclass}")
-print(f"\nFinal Stats:")
+print("\nFinal Stats:")
 print(f"  STR: {stats.strength} (started at 15)")
 print(f"  DEX: {stats.dexterity} (started at 14)")
 print(f"  CON: {stats.constitution} (started at 13)")

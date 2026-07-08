@@ -24,9 +24,7 @@ from characters.models import Character, CharacterClass, CharacterRace, Characte
 from encounters.models import Encounter
 from combat.models import CombatSession, CombatParticipant, EnvironmentalEffect, ParticipantPosition
 from combat.environmental_effects import (
-    calculate_movement_cost, calculate_cover_ac_bonus, calculate_cover_save_bonus,
-    has_full_cover, get_lighting_attack_modifier, get_weather_ranged_modifier,
-    get_environmental_effects_summary
+    calculate_movement_cost, calculate_cover_ac_bonus, has_full_cover, get_lighting_attack_modifier, get_weather_ranged_modifier
 )
 
 # Configure stdout for Unicode

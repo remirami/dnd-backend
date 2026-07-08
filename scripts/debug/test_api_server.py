@@ -1,6 +1,5 @@
 import requests
 import os
-import json
 
 # Try to get existing auth token? 
 # Or just login?
@@ -18,7 +17,7 @@ def test_api():
     
     # login
     try:
-        resp = requests.post(f"{SERVER_URL}/api/token/", data={'username': 'test_creator', 'password': 'password123'})
+        requests.post(f"{SERVER_URL}/api/token/", data={'username': 'test_creator', 'password': 'password123'})
         # Wait, I need a valid user.
     except Exception:
         print("Authenticating...")

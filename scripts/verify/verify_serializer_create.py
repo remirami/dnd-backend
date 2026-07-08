@@ -1,5 +1,5 @@
 from django.contrib.auth.models import User
-from characters.models import Character, CharacterRace, CharacterClass, CharacterBackground
+from characters.models import CharacterRace, CharacterClass, CharacterBackground
 from characters.serializers import CharacterSerializer
 
 def verify_serializer():

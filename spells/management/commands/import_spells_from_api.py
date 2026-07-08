@@ -1,9 +1,8 @@
 import requests
 from django.core.management.base import BaseCommand
 from django.utils.text import slugify
-from spells.models import Spell, SpellDamage
+from spells.models import Spell
 from characters.models import CharacterClass
-from bestiary.models import DamageType
 
 
 class Command(BaseCommand):

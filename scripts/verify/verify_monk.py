@@ -8,7 +8,7 @@ sys.path.append('c:/dnd-backend/dnd-backend')
 os.environ.setdefault('DJANGO_SETTINGS_MODULE', 'dnd_backend.settings')
 django.setup()
 
-from characters.models import CharacterClass, Character, CharacterFeature, CharacterRace, CharacterBackground
+from characters.models import CharacterClass, CharacterFeature, CharacterRace, CharacterBackground
 from django.contrib.auth.models import User
 from characters.serializers import CharacterSerializer
 
@@ -45,7 +45,6 @@ def verify_monk_skills():
     # We need a request context usually, but checking if we can mock it or valid without
     # Actually simpler to just call .create() directly if validation isn't needed or duplicate the logic?
     # No, better to use serializer to test the actual logic path.
-    from rest_framework.request import Request
     from rest_framework.test import APIRequestFactory
     factory = APIRequestFactory()
     request = factory.post('/characters/')
@@ -60,7 +59,7 @@ def verify_monk_skills():
         features = CharacterFeature.objects.filter(character=char, name="Class Skills")
         if features.exists():
             f = features.first()
-            print(f"SUCCESS: Found 'Class Skills' feature.")
+            print("SUCCESS: Found 'Class Skills' feature.")
             print(f"Options: {f.options}")
             print(f"Limit: {f.choice_limit}")
             

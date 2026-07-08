@@ -7,7 +7,7 @@ sys.path.append(os.getcwd())
 os.environ.setdefault('DJANGO_SETTINGS_MODULE', 'dnd_backend.settings')
 django.setup()
 
-from characters.models import CharacterRace, CharacterClass, CharacterBackground, Feat
+from characters.models import CharacterRace, CharacterBackground, Feat
 
 def seed_2024_data():
     print("Seeding 2024 Data...")

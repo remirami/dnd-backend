@@ -2,7 +2,6 @@ from rest_framework import serializers
 from .models import Spell, SpellDamage
 from characters.serializers import CharacterClassSerializer
 from characters.models import CharacterClass
-from bestiary.serializers import DamageTypeSerializer
 
 
 class SpellDamageSerializer(serializers.ModelSerializer):

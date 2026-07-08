@@ -4,7 +4,6 @@ Multiclassing System for D&D 5e Characters
 Handles multiclass prerequisites, spell slot calculation, and feature progression.
 """
 
-from .models import Character, CharacterClass
 
 
 # Multiclass prerequisites (ability score requirements)

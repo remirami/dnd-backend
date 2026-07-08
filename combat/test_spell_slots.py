@@ -73,7 +73,7 @@ class EnemySpellSlotEnforcementTests(TestCase):
         )
         
         # Add Ray of Frost (at will - no slot limit)
-        ray = EnemySpell.objects.create(
+        EnemySpell.objects.create(
             enemy=self.lich,
             name="Ray of Frost",
             save_dc=None

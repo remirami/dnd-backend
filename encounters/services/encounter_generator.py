@@ -4,11 +4,9 @@ Encounter Generator Service
 Generates themed encounters with 95% thematic coherence / 5% chaotic mix
 """
 import random
-from django.db.models import Q
 
 from encounters.models import (
-    Encounter, EncounterEnemy, EncounterTheme,
-    EnemyThemeAssociation, ThemeIncompatibility
+    Encounter, EncounterEnemy, EncounterTheme
 )
 
 
@@ -282,7 +280,7 @@ class EncounterGenerator:
         
         narratives = [
             f"A strange magical accident brought these unlikely foes together: {theme_names}",
-            f"An ancient curse binds these natural enemies",
+            "An ancient curse binds these natural enemies",
             "A mad wizard's experiment forced these foes into uneasy cooperation",
             "A planar convergence created this bizarre alliance",
             "Desperate circumstances forced unusual cooperation between natural enemies",

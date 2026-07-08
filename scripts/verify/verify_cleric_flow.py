@@ -3,8 +3,7 @@ import django
 os.environ.setdefault('DJANGO_SETTINGS_MODULE', 'dnd_backend.settings')
 django.setup()
 
-from characters.models import Character, CharacterClass, CharacterClassLevel, CharacterFeature, CharacterRace, CharacterBackground
-from spells.models import Spell
+from characters.models import Character, CharacterClass, CharacterFeature, CharacterRace, CharacterBackground
 from rest_framework.test import APIRequestFactory, force_authenticate
 from characters.views import CharacterViewSet
 from django.contrib.auth.models import User

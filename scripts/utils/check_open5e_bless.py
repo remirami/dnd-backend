@@ -1,5 +1,4 @@
 import requests
-import json
 
 try:
     print("Fetching 'Bless' from Open5e...")

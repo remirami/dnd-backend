@@ -9,7 +9,7 @@ except ImportError:
     REQUESTS_AVAILABLE = False
 
 from items.models import (
-    Item, ItemCategory, ItemProperty, Weapon, Armor, Consumable, MagicItem, DamageType
+    Item, ItemCategory, ItemProperty, Weapon, Armor, MagicItem, DamageType
 )
 
 

@@ -1,6 +1,5 @@
 import os
 import django
-import sys
 
 # Setup Django environment
 os.environ.setdefault('DJANGO_SETTINGS_MODULE', 'dnd_backend.settings')
@@ -73,7 +72,7 @@ def test_unequip_item():
         
         # 5. Verify state
         equipped_item.refresh_from_db()
-        print(f"\nAfter unequip:")
+        print("\nAfter unequip:")
         print(f"  - Is Equipped: {equipped_item.is_equipped}")
         print(f"  - Equipment Slot: {equipped_item.equipment_slot}")
         

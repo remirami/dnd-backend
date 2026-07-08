@@ -8,7 +8,7 @@ sys.path.append(os.getcwd())
 os.environ.setdefault('DJANGO_SETTINGS_MODULE', 'dnd_backend.settings')
 django.setup()
 
-from characters.models import Character, CharacterClass, CharacterFeature, CharacterRace
+from characters.models import CharacterClass, CharacterFeature, CharacterRace
 from characters.serializers import CharacterSerializer
 
 def verify_features():
@@ -43,7 +43,7 @@ def verify_features():
     }
     # Mock request for serializer context
     from unittest.mock import Mock
-    request = Mock(user=user)
+    Mock(user=user)
     
     # Serializer 'create' needs context? No, perform_create usually handles user. 
     # But serializer.save(user=user) works.

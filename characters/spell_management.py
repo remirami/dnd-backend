@@ -4,7 +4,7 @@ Spell Management Utilities for D&D 5e Characters
 Handles spell preparation, learning, and spellbook management.
 """
 
-from .models import Character, CharacterSpell
+from .models import CharacterSpell
 
 
 # Spellcasting types

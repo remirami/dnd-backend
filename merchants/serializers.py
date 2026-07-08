@@ -1,7 +1,6 @@
 from rest_framework import serializers
 from .models import MerchantEncounter, MerchantInventoryItem, MerchantTransaction
 from items.serializers import ItemSerializer
-from campaigns.serializers import CampaignCharacterSerializer
 
 
 class MerchantInventoryItemSerializer(serializers.ModelSerializer):

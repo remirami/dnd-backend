@@ -191,7 +191,7 @@ def test_feat_system():
             name=gwm.name,
             feature_type='feat',
             description=gwm.description,
-            source=f"Feat (Level 4)"
+            source="Feat (Level 4)"
         )
         
         print(f"\n[PASS] Feat '{gwm.name}' successfully taken")

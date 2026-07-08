@@ -6,17 +6,12 @@ Tests condition application, duration tracking, effects, and removal.
 from django.test import TestCase
 from django.contrib.auth.models import User
 from rest_framework.test import APIClient
-from rest_framework import status
 
 from combat.models import CombatSession, CombatParticipant, ConditionApplication
 from combat.condition_effects import (
     get_condition_for_spell,
     get_condition_effects,
-    apply_condition_effects,
-    auto_apply_condition_from_spell,
-    calculate_effective_speed,
-    has_attack_disadvantage,
-    has_attack_advantage_against
+    auto_apply_condition_from_spell
 )
 from characters.models import Character, CharacterClass, CharacterRace, CharacterStats
 from bestiary.models import Condition
@@ -155,7 +150,7 @@ class ConditionApplicationTests(TestCase):
     
     def test_multiple_conditions_on_participant(self):
         """Test applying multiple conditions to one participant"""
-        blinded = ConditionApplication.objects.create(
+        ConditionApplication.objects.create(
             participant=self.participant,
             condition=self.blinded_condition,
             applied_round=1,
@@ -164,7 +159,7 @@ class ConditionApplicationTests(TestCase):
         )
         
         prone_condition = Condition.objects.create(name="Prone", description="Lying down")
-        prone = ConditionApplication.objects.create(
+        ConditionApplication.objects.create(
             participant=self.participant,
             condition=prone_condition,
             applied_round=1,

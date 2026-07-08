@@ -189,7 +189,7 @@ def test_integration():
         # Show first encounter
         first_encounter = campaign.campaign_encounters.first()
         if first_encounter:
-            print(f"First Encounter:")
+            print("First Encounter:")
             for ee in first_encounter.encounter.enemies.all():
                 print(f"  - {ee.enemy.name}")
         

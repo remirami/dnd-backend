@@ -31,7 +31,7 @@ class CombatParticipantViewSet(viewsets.ModelViewSet):
         participant = self.get_object()
         amount = int(request.data.get('amount', 0))
         source_id = request.data.get('source_id')
-        damage_type = request.data.get('damage_type')
+        request.data.get('damage_type')
         
         if amount <= 0:
             return Response(
@@ -237,7 +237,6 @@ class CombatParticipantViewSet(viewsets.ModelViewSet):
                 status=status.HTTP_400_BAD_REQUEST
             )
         
-        session = participant.combat_session
         hazards_applied = []
         
         for hazard_type in position.current_hazards:

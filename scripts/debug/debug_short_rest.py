@@ -21,7 +21,7 @@ def debug_short_rest():
     # Simulate damage
     char.stats.hit_points = 1
     char.stats.save()
-    print(f"Reduced HP to 1 for testing.")
+    print("Reduced HP to 1 for testing.")
 
     # Request
     factory = APIRequestFactory()

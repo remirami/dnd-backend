@@ -10,7 +10,6 @@ from rest_framework import status
 import logging
 
 from combat.models import CombatSession, CombatParticipant
-from combat.serializers import CombatParticipantSerializer
 from characters.models import Character
 
 logger = logging.getLogger('combat')

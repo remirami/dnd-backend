@@ -1,7 +1,6 @@
 
 import os
 import django
-import sys
 
 # Setup Django environment
 os.environ.setdefault('DJANGO_SETTINGS_MODULE', 'dnd_backend.settings')

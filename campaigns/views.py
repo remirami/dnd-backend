@@ -9,7 +9,7 @@ from .models import Campaign, CampaignCharacter, CampaignEncounter, CharacterXP,
 from .serializers import (
     CampaignSerializer, CampaignCharacterSerializer, CampaignEncounterSerializer,
     ShortRestRequestSerializer, LongRestRequestSerializer, TreasureRoomSerializer,
-    RecruitableCharacterSerializer, RecruitmentRoomSerializer
+    RecruitmentRoomSerializer
 )
 from .utils import grant_encounter_xp, TreasureGenerator, RecruitmentGenerator, CampaignGenerator
 from encounters.models import Encounter
@@ -439,7 +439,7 @@ class CampaignViewSet(viewsets.ModelViewSet):
                             campaign,
                             encounter.encounter_number
                         )
-                    except ValueError as e:
+                    except ValueError:
                         # Silently fail if recruitment can't be generated (e.g., party already full)
                         pass
             
@@ -918,7 +918,7 @@ class CampaignViewSet(viewsets.ModelViewSet):
             )
             
             old_level = campaign_char.character.level
-            result = xp_tracking.add_xp(xp_per_character, source=source)
+            xp_tracking.add_xp(xp_per_character, source=source)
             new_level = campaign_char.character.level
             
             level_gained = new_level > old_level

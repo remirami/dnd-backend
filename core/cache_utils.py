@@ -8,7 +8,6 @@ from django.core.cache import cache
 from django.conf import settings
 from rest_framework.response import Response
 import hashlib
-import json
 
 
 def generate_cache_key(view_name, *args, **kwargs):

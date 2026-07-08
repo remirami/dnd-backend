@@ -540,7 +540,6 @@ class CombatParticipant(models.Model):
             return None
         
         from characters.models import CharacterItem
-        from items.models import Weapon
         
         try:
             character_item = CharacterItem.objects.get(
@@ -559,7 +558,6 @@ class CombatParticipant(models.Model):
             return None
         
         from characters.models import CharacterItem
-        from items.models import Armor
         
         try:
             character_item = CharacterItem.objects.get(
@@ -578,7 +576,6 @@ class CombatParticipant(models.Model):
             return None
         
         from characters.models import CharacterItem
-        from items.models import Armor
         
         try:
             character_item = CharacterItem.objects.get(
@@ -661,7 +658,6 @@ class CombatParticipant(models.Model):
             }
         
         from characters.models import CharacterItem
-        from items.models import MagicItem
         
         bonuses = {
             'to_hit': 0,
@@ -754,14 +750,7 @@ class CombatParticipant(models.Model):
         self.save()
         return self.current_hp
     
-    def reset_turn(self):
-        """Reset action economy for a new turn"""
-        self.action_used = False
-        self.bonus_action_used = False
-        self.reaction_used = False
-        self.movement_used = 0
-        # Reset legendary actions at start of round (handled in next_turn)
-        self.save()
+
     
     def make_death_save(self, roll=None):
         """

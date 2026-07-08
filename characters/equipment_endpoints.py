@@ -6,7 +6,6 @@ from rest_framework.decorators import action
 from rest_framework.response import Response
 from rest_framework import status
 from characters.models import CharacterItem
-from items.models import Item
 
 
 def add_equipment_endpoints_to_viewset(cls):

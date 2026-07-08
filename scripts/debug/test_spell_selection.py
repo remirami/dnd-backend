@@ -8,7 +8,6 @@ os.environ.setdefault('DJANGO_SETTINGS_MODULE', 'dnd_backend.settings')
 django.setup()
 
 from characters.starting_spells import (
-    get_starting_spell_rules,
     is_caster_at_level_1,
     calculate_starting_cantrips,
     calculate_starting_spells,

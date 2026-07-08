@@ -1,6 +1,4 @@
 
-import requests
-import json
 import os
 
 # Assuming server is running on 8000
@@ -17,7 +15,7 @@ def check_via_client():
     
     from rest_framework.test import APIClient
     from django.contrib.auth import get_user_model
-    User = get_user_model()
+    get_user_model()
     
     client = APIClient()
     # Assume admin user exists from earlier interactions or use the owner of char 151

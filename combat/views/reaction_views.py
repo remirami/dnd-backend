@@ -11,8 +11,7 @@ import logging
 from combat.models import CombatParticipant, CombatAction
 from combat.serializers import CombatActionSerializer
 from combat.utils import (
-    roll_d20, calculate_attack_roll, calculate_damage, check_hit,
-    calculate_saving_throw
+    roll_d20, calculate_attack_roll, calculate_damage, check_hit
 )
 
 logger = logging.getLogger('combat')

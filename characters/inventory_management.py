@@ -4,8 +4,8 @@ Inventory Management Utilities
 Handles equipment, weight tracking, and item effects.
 """
 
-from .models import Character, CharacterItem
-from items.models import Item, Weapon, Armor
+from .models import CharacterItem
+from items.models import Weapon
 
 
 # Encumbrance thresholds (in pounds)
@@ -116,13 +116,13 @@ def can_equip_item(character, item, slot):
         if item.two_handed:
             valid_slots = ['main_hand']  # Two-handed weapons must be in main hand
         if slot not in valid_slots:
-            return False, f"Weapon must be equipped in main_hand or off_hand"
+            return False, "Weapon must be equipped in main_hand or off_hand"
     
     elif hasattr(item, 'armor_type'):  # It's an Armor
         if slot != 'armor' and item.armor_type != 'shield':
-             return False, f"Armor must be equipped in armor slot"
+             return False, "Armor must be equipped in armor slot"
         if item.armor_type == 'shield' and slot != 'off_hand':
-             return False, f"Shield must be equipped in off_hand"
+             return False, "Shield must be equipped in off_hand"
     
     else:
         # Other items can go in various slots
@@ -390,7 +390,6 @@ def get_equipped_items(character):
 
 def get_equipped_weapon(character, slot='main_hand'):
     """Get equipped weapon in specified slot"""
-    from items.models import Weapon
     try:
         char_item = CharacterItem.objects.get(
             character=character,

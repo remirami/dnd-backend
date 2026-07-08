@@ -203,21 +203,21 @@ def test_combat_flow():
         f"{BASE_URL}/combat/sessions/{session_id}/attack/",
         json=attack_data
     )
-    attack_result = print_response(attack_response, "Attack Made")
+    print_response(attack_response, "Attack Made")
     
     # Step 9: Advance to next turn
     print("\n9. Advancing to next turn...")
     next_turn_response = SESSION.post(
         f"{BASE_URL}/combat/sessions/{session_id}/next_turn/"
     )
-    next_turn_result = print_response(next_turn_response, "Next Turn")
+    print_response(next_turn_response, "Next Turn")
     
     # Step 10: View combat log
     print("\n10. Viewing combat log...")
     log_response = SESSION.get(
         f"{BASE_URL}/combat/actions/?combat_session={session_id}"
     )
-    log_result = print_response(log_response, "Combat Log")
+    print_response(log_response, "Combat Log")
     
     # Step 11: Test Phase 2 - Spell Casting
     print("\n11. Testing spell casting (Phase 2)...")
@@ -255,7 +255,7 @@ def test_combat_flow():
                 'advantage': False
             }
         )
-        save_result = print_response(save_response, "Saving Throw")
+        print_response(save_response, "Saving Throw")
     
     # Step 13: Test Phase 2 - Conditions
     print("\n13. Testing conditions (Phase 2)...")

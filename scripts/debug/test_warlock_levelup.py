@@ -5,7 +5,7 @@ from django.contrib.auth.models import User
 os.environ.setdefault('DJANGO_SETTINGS_MODULE', 'dnd_backend.settings')
 django.setup()
 
-from characters.models import Character, CharacterClass, CharacterRace
+from characters.models import CharacterClass, CharacterRace
 from characters.views import CharacterViewSet
 # We need to simulate the viewset logic or call the method directly?
 # The level_up logic is in the ViewSet action 'level_up'.

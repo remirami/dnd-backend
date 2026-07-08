@@ -124,7 +124,7 @@ participant2 = CombatParticipant.objects.create(
     armor_class=15
 )
 
-print(f"✓ Created combat with participants")
+print("✓ Created combat with participants")
 print(f"  - {participant1.get_name()} (initiative={participant1.initiative})")
 print(f"  - {participant2.get_name()} (initiative={participant2.initiative})")
 print(f"  - Current turn index: {combat_session.current_turn_index}")

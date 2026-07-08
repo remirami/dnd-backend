@@ -3,12 +3,10 @@ Test script for HP mechanics
 """
 import os
 import django
-from django.db import connection
 
 os.environ.setdefault('DJANGO_SETTINGS_MODULE', 'dnd_backend.settings')
 django.setup()
 
-from characters.models import Character, CharacterStats
 
 def test_hp_mechanics():
     print("=" * 60)

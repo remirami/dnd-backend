@@ -11,8 +11,7 @@ from characters.multiclassing import (
     calculate_multiclass_spell_slots,
     get_class_level,
     get_multiclass_hit_dice,
-    get_primary_class,
-    can_multiclass_into
+    get_primary_class
 )
 
 

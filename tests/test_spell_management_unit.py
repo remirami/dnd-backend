@@ -14,12 +14,7 @@ from characters.spell_management import (
     calculate_spells_prepared,
     calculate_spells_known,
     get_wizard_spellbook_size,
-    can_prepare_spell,
-    can_learn_spell,
-    can_add_to_spellbook,
     get_prepared_spells,
-    get_known_spells,
-    get_spellbook_spells,
     can_cast_spell
 )
 
@@ -161,7 +156,7 @@ class SpellManagementTestCase(TestCase):
             character_class=self.wizard_class,
             race=self.human_race
         )
-        stats = CharacterStats.objects.create(
+        CharacterStats.objects.create(
             character=wizard,
             strength=10,
             dexterity=12,
@@ -185,7 +180,7 @@ class SpellManagementTestCase(TestCase):
             character_class=self.cleric_class,
             race=self.human_race
         )
-        stats = CharacterStats.objects.create(
+        CharacterStats.objects.create(
             character=cleric,
             strength=14,
             dexterity=10,
@@ -209,7 +204,7 @@ class SpellManagementTestCase(TestCase):
             character_class=self.bard_class,
             race=self.human_race
         )
-        stats = CharacterStats.objects.create(
+        CharacterStats.objects.create(
             character=bard,
             strength=8,
             dexterity=14,
@@ -233,7 +228,7 @@ class SpellManagementTestCase(TestCase):
             character_class=self.wizard_class,
             race=self.human_race
         )
-        stats = CharacterStats.objects.create(
+        CharacterStats.objects.create(
             character=wizard,
             intelligence=16,  # +3 modifier
             wisdom=10,
@@ -258,7 +253,7 @@ class SpellManagementTestCase(TestCase):
             character_class=self.wizard_class,
             race=self.human_race
         )
-        stats = CharacterStats.objects.create(
+        CharacterStats.objects.create(
             character=wizard,
             intelligence=8,  # -1 modifier
             wisdom=10,

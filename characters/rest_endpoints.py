@@ -1,7 +1,5 @@
 from rest_framework.decorators import action
 from rest_framework.response import Response
-from rest_framework import status
-import math
 import random
 
 def add_rest_endpoints(viewset_class):
@@ -117,7 +115,6 @@ def add_rest_endpoints(viewset_class):
              # 1: 1 @ 1
              # 2-9: 2 @ X
              # 10+:... (Simplified for now or import utils)
-             from campaigns.utils import calculate_spell_slots
              # Note: calculate_spell_slots might return total slots if we pass the character?
              # But we want specifically Warlock contribution.
              # Let's use a pact magic helper or simple lookup for common tiers.

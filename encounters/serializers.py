@@ -2,9 +2,8 @@
 from rest_framework import serializers
 from .models import (
     Encounter, EncounterEnemy, EncounterTheme,
-    EnemyThemeAssociation, BiomeEncounterWeight, ThemeIncompatibility
+    EnemyThemeAssociation, BiomeEncounterWeight
 )
-from bestiary.serializers import EnemySerializer
 
 
 class EncounterEnemySerializer(serializers.ModelSerializer):

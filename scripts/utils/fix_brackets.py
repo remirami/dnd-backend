@@ -27,7 +27,6 @@ def fix_brackets_in_file():
 
         # If this line starts a subclass entry
         if re.match(r"^\s+'[^']+': \{$", line):
-            subclass_start = i
             # Find the feature dictionary that follows
             j = i + 1
             while j < len(lines):

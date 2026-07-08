@@ -162,7 +162,7 @@ def test_combat_logging():
             print(f"  Average Damage per Turn: {damage.get('average_per_turn', 0)}")
             
             participants = analytics.get('participant_performance', {})
-            print(f"\n  Participant Performance:")
+            print("\n  Participant Performance:")
             for pid, perf in participants.items():
                 print(f"    {perf.get('name', 'Unknown')}:")
                 print(f"      Hit Rate: {perf.get('hit_rate', 0)}%")

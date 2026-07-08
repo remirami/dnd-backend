@@ -19,12 +19,11 @@ os.environ.setdefault('DJANGO_SETTINGS_MODULE', 'dnd_backend.settings')
 django.setup()
 
 from django.contrib.auth.models import User
-from characters.models import Character, CharacterClass, CharacterRace, CharacterBackground, CharacterStats, CharacterSpell
+from characters.models import Character, CharacterClass, CharacterRace, CharacterStats, CharacterSpell
 from characters.spell_management import (
     is_prepared_caster, is_known_caster, can_cast_rituals,
     calculate_spells_prepared, calculate_spells_known,
-    get_wizard_spellbook_size, can_learn_spell, can_add_to_spellbook,
-    can_cast_spell
+    get_wizard_spellbook_size, can_cast_spell
 )
 
 # Configure stdout for Unicode
@@ -291,11 +290,11 @@ def test_prepare_spells():
     # Test can_cast_spell
     can_cast = can_cast_spell(character, 'Cure Wounds')
     print(f"  Can cast 'Cure Wounds': {can_cast}")
-    assert can_cast == True
+    assert can_cast
     
     cannot_cast = can_cast_spell(character, 'Fireball')
     print(f"  Can cast 'Fireball': {cannot_cast}")
-    assert cannot_cast == False
+    assert not cannot_cast
     
     character.delete()
     print("  ✅ All spell preparation tests passed!")
@@ -334,7 +333,7 @@ def test_learn_spells():
     spell_names = ['Vicious Mockery', 'Healing Word', 'Charm Person', 'Sleep', 'Thunderwave', 'Detect Magic', 'Faerie Fire', 'Tasha\'s Hideous Laughter']
     
     for i, spell_name in enumerate(spell_names[:spells_known_limit]):
-        spell = CharacterSpell.objects.create(
+        CharacterSpell.objects.create(
             character=character,
             name=spell_name,
             level=1 if i < 4 else 2,
@@ -351,7 +350,7 @@ def test_learn_spells():
     # Test can_cast_spell
     can_cast = can_cast_spell(character, 'Vicious Mockery')
     print(f"  Can cast 'Vicious Mockery': {can_cast}")
-    assert can_cast == True
+    assert can_cast
     
     character.delete()
     print("  ✅ All spell learning tests passed!")
@@ -419,7 +418,7 @@ def test_wizard_spellbook_management():
     # Test can_cast_spell
     can_cast = can_cast_spell(character, 'Magic Missile')
     print(f"  Can cast 'Magic Missile': {can_cast}")
-    assert can_cast == True
+    assert can_cast
     
     character.delete()
     print("  ✅ All wizard spellbook tests passed!")
@@ -452,7 +451,7 @@ def test_ritual_casting():
     )
     
     # Add ritual spell to spellbook but don't prepare it
-    ritual_spell = CharacterSpell.objects.create(
+    CharacterSpell.objects.create(
         character=character,
         name='Detect Magic',
         level=1,
@@ -463,17 +462,17 @@ def test_ritual_casting():
         is_prepared=False  # Not prepared
     )
     
-    print(f"  Created ritual spell 'Detect Magic' (not prepared)")
+    print("  Created ritual spell 'Detect Magic' (not prepared)")
     
     # Test ritual casting
     can_cast_ritual = can_cast_spell(character, 'Detect Magic', allow_ritual=True)
     print(f"  Can cast 'Detect Magic' as ritual: {can_cast_ritual}")
-    assert can_cast_ritual == True
+    assert can_cast_ritual
     
     # Test non-ritual casting (should fail)
     cannot_cast_normal = can_cast_spell(character, 'Detect Magic', allow_ritual=False)
     print(f"  Can cast 'Detect Magic' normally (not ritual): {cannot_cast_normal}")
-    assert cannot_cast_normal == False
+    assert not cannot_cast_normal
     
     # Test non-ritual caster
     fighter_class, _ = CharacterClass.objects.get_or_create(name='Fighter')
@@ -487,7 +486,7 @@ def test_ritual_casting():
     
     can_ritual = can_cast_rituals(fighter)
     print(f"  Fighter can cast rituals: {can_ritual}")
-    assert can_ritual == False
+    assert not can_ritual
     
     character.delete()
     fighter.delete()

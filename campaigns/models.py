@@ -504,10 +504,8 @@ class CharacterXP(models.Model):
     def _level_up(self, old_level, new_level, levels_gained):
         """Handle level up"""
         import random
-        from characters.models import Character, CharacterStats
         
         character = self.campaign_character.character
-        campaign = self.campaign_character.campaign
         
         # Update character level
         character.level = new_level

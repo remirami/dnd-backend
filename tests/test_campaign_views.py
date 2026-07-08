@@ -9,13 +9,11 @@ from rest_framework.test import APIClient
 from rest_framework import status
 
 from campaigns.models import (
-    Campaign, CampaignCharacter, CampaignEncounter, TreasureRoom, 
-    TreasureRoomReward, CharacterXP
+    Campaign, CampaignCharacter, TreasureRoom, 
+    TreasureRoomReward
 )
 from characters.models import Character, CharacterClass, CharacterRace, CharacterStats
-from encounters.models import Encounter, EncounterEnemy
 from bestiary.models import Enemy, EnemyStats
-from items.models import Item
 
 
 class CampaignViewsTestCase(TestCase):
@@ -204,7 +202,7 @@ class CampaignViewsTestCase(TestCase):
             starting_level=1
         )
         
-        campaign_char = CampaignCharacter.objects.create(
+        CampaignCharacter.objects.create(
             campaign=campaign,
             character=self.character,
             current_hp=12,
@@ -284,7 +282,7 @@ class CampaignViewsTestCase(TestCase):
             status='active'  # Must be active to take rests
         )
         
-        campaign_char = CampaignCharacter.objects.create(
+        CampaignCharacter.objects.create(
             campaign=campaign,
             character=self.character,
             current_hp=5,  # Damaged

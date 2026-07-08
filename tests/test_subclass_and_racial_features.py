@@ -19,7 +19,7 @@ django.setup()
 from django.contrib.auth.models import User
 from characters.models import (
     Character, CharacterStats, CharacterClass, CharacterRace, 
-    CharacterBackground, CharacterFeature
+    CharacterFeature
 )
 from campaigns.models import Campaign, CampaignCharacter, CharacterXP
 from campaigns.racial_features_data import get_racial_features, apply_racial_features_to_character
@@ -336,7 +336,7 @@ def test_level_up_with_subclass():
         source__contains='Level 7'
     )
     
-    print(f"\nNew features gained at level 7:")
+    print("\nNew features gained at level 7:")
     for feature in new_features:
         print(f"  - {feature.name} ({feature.source})")
     

@@ -3,7 +3,6 @@ Explore Open5e API to find available subclass/archetype data
 """
 
 import requests
-import json
 
 BASE_URL = "https://api.open5e.com"
 
@@ -36,10 +35,10 @@ for endpoint in endpoints_to_test:
                         first_item = data['results'][0]
                         print(f"  -> First item: {first_item.get('name', 'N/A')}")
                         if 'class' in first_item or 'archetype' in first_item:
-                            print(f"  -> This looks like subclass data!")
+                            print("  -> This looks like subclass data!")
                             print(f"  -> Sample keys: {list(first_item.keys())[:10]}")
             except:
-                print(f"  -> Response is not JSON")
+                print("  -> Response is not JSON")
         print()
     except Exception as e:
         print(f"{endpoint}: Error - {str(e)}\n")

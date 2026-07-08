@@ -1,14 +1,13 @@
 
 import os
 import django
-import sys
 import json
 
 # Setup Django environment
 os.environ.setdefault('DJANGO_SETTINGS_MODULE', 'dnd_backend.settings')
 django.setup()
 
-from characters.models import Character, CharacterClass, CharacterClassLevel, CharacterRace, CharacterStats
+from characters.models import Character, CharacterClass, CharacterClassLevel, CharacterRace
 from characters.views import CharacterViewSet
 from rest_framework.test import APIRequestFactory, force_authenticate
 from django.contrib.auth.models import User

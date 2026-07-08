@@ -7,31 +7,26 @@ from rest_framework.decorators import action
 from rest_framework.response import Response
 
 from ..models import (
-    Character, CharacterStats, CharacterClass, CharacterRace, CharacterBackground,
-    CharacterProficiency, CharacterFeature, CharacterSpell, CharacterResistance, CharacterItem,
+    Character, CharacterClass, CharacterProficiency, CharacterFeature, CharacterSpell, CharacterItem,
     CharacterClassLevel
 )
 from ..multiclassing import (
     can_multiclass_into, calculate_multiclass_spell_slots, get_multiclass_spellcasting_ability,
-    get_multiclass_hit_dice, get_total_level, get_class_level, get_primary_class,
-    MULTICLASS_PREREQUISITES
+    get_multiclass_hit_dice, get_total_level, MULTICLASS_PREREQUISITES
 )
 from ..serializers import (
-    CharacterSerializer, CharacterStatsSerializer, CharacterClassSerializer,
-    CharacterRaceSerializer, CharacterBackgroundSerializer, CharacterProficiencySerializer,
-    CharacterFeatureSerializer, CharacterSpellSerializer, CharacterResistanceSerializer
+    CharacterSerializer, CharacterStatsSerializer, CharacterProficiencySerializer,
+    CharacterFeatureSerializer, CharacterSpellSerializer
 )
 from ..spell_management import (
     is_prepared_caster, is_known_caster, can_cast_rituals,
     calculate_spells_prepared, calculate_spells_known,
     get_wizard_spellbook_size, can_learn_spell, can_add_to_spellbook,
-    get_prepared_spells, get_known_spells, get_spellbook_spells,
-    can_cast_spell, get_spellcasting_ability
+    get_prepared_spells, get_known_spells, get_spellbook_spells
 )
 from campaigns.utils import calculate_spell_slots
 from ..inventory_management import (
-    equip_item, unequip_item, get_equipped_items,
-    calculate_total_weight, get_encumbrance_level, get_encumbrance_effects,
+    equip_item, unequip_item, calculate_total_weight, get_encumbrance_level, get_encumbrance_effects,
     calculate_carrying_capacity,
     get_equipped_weapon, get_equipped_armor, get_equipped_shield
 )
@@ -66,7 +61,7 @@ class CharacterViewSet(viewsets.ModelViewSet):
     
     def perform_create(self, serializer):
         """Automatically set the user when creating a character"""
-        character = serializer.save(user=self.request.user)
+        serializer.save(user=self.request.user)
         # Note: Racial and background features are already applied in CharacterSerializer.create
     
     @action(detail=True, methods=['post'])
@@ -110,6 +105,7 @@ class CharacterViewSet(viewsets.ModelViewSet):
     
     def _calculate_pending_spells(self, character, character_class, level, features_gained):
         """Helper to calculate pending spell choices on level up"""
+        pending_choices = None
         # Calculate pending spell choices
         if character_class.name.lower() == 'wizard':
              # Wizards gain 2 spells per level into their spellbook
@@ -245,9 +241,8 @@ class CharacterViewSet(viewsets.ModelViewSet):
         }
         """
         import random
-        from campaigns.utils import calculate_spell_slots, get_spellcasting_ability, calculate_spell_save_dc, calculate_spell_attack_bonus
+        from campaigns.utils import get_spellcasting_ability, calculate_spell_save_dc, calculate_spell_attack_bonus
         from campaigns.class_features_data import get_class_features, get_subclass_features
-        from characters.spell_management import calculate_spells_known
         
         def dlog(msg):
             print(f"[LEVEL_UP_DEBUG] {msg}")  # Console output
@@ -262,7 +257,6 @@ class CharacterViewSet(viewsets.ModelViewSet):
         
         character = self.get_object()
         
-        old_level = character.level
         
         # Check if multiclass level-up
         class_id = request.data.get('class_id')
@@ -301,7 +295,6 @@ class CharacterViewSet(viewsets.ModelViewSet):
                         {"error": f"Cannot level up {target_class.get_name_display()} beyond level 20"},
                         status=status.HTTP_400_BAD_REQUEST
                     )
-                old_class_level = class_level.level
                 class_level.level += 1
                 class_level.save()
                 new_class_level = class_level.level
@@ -345,7 +338,6 @@ class CharacterViewSet(viewsets.ModelViewSet):
                 # total_level = get_total_level(character)
                 # character.level = total_level
                 
-                start_level = 1
                 if is_primary and character.level > 0:
                      # If restoring mismatch, maybe we should respect current level?
                      # But level_up implies +1.
@@ -361,7 +353,6 @@ class CharacterViewSet(viewsets.ModelViewSet):
                     character_class=target_class,
                     level=1
                 )
-                old_class_level = 0
                 new_class_level = 1
                 
                 # If this was a primary class restore, we might want to catch up?
@@ -387,7 +378,6 @@ class CharacterViewSet(viewsets.ModelViewSet):
             
             # Determine correct spell slot calculation
             from ..multiclassing import calculate_multiclass_spell_slots
-            from campaigns.utils import calculate_spell_slots
             
             # Check if character is truly multiclass (has levels in > 1 class)
             class_count = CharacterClassLevel.objects.filter(character=character).count()
@@ -1856,7 +1846,7 @@ class CharacterViewSet(viewsets.ModelViewSet):
         """Get character's lifetime combat statistics"""
         character = self.get_object()
         
-        from combat.models import CombatParticipant, CombatLog
+        from combat.models import CombatParticipant
         
         # Get all combat participations
         participations = CombatParticipant.objects.filter(character=character)
@@ -1889,11 +1879,11 @@ class CharacterViewSet(viewsets.ModelViewSet):
             total_spells_cast += participant_stats.get('spells_cast', 0)
             
             # Track favorite weapons and spells
-            for action in session.actions.filter(actor=participation):
-                if action.action_type == 'attack' and action.attack_name:
-                    favorite_weapon[action.attack_name] = favorite_weapon.get(action.attack_name, 0) + 1
-                elif action.action_type == 'spell' and action.attack_name:
-                    favorite_spell[action.attack_name] = favorite_spell.get(action.attack_name, 0) + 1
+            for sess_action in session.actions.filter(actor=participation):
+                if sess_action.action_type == 'attack' and sess_action.attack_name:
+                    favorite_weapon[sess_action.attack_name] = favorite_weapon.get(sess_action.attack_name, 0) + 1
+                elif sess_action.action_type == 'spell' and sess_action.attack_name:
+                    favorite_spell[sess_action.attack_name] = favorite_spell.get(sess_action.attack_name, 0) + 1
             
             # Check if character was a victor
             if participation.id in log.victors:
@@ -2136,7 +2126,6 @@ class CharacterViewSet(viewsets.ModelViewSet):
             )
         
         # Calculate max spell slots
-        from campaigns.utils import calculate_spell_slots
         from ..multiclassing import calculate_multiclass_spell_slots
         
         if CharacterClassLevel.objects.filter(character=character).count() > 1:
@@ -2565,7 +2554,7 @@ class CharacterViewSet(viewsets.ModelViewSet):
                 # "d10" -> 10
                 try:
                     hit_die_size = int(character.character_class.hit_dice.strip('d'))
-                except:
+                except (ValueError, AttributeError):
                     pass
             
             import random
@@ -2633,7 +2622,6 @@ class CharacterViewSet(viewsets.ModelViewSet):
         stats.hit_dice_used = max(0, stats.hit_dice_used - regain_amount)
         
         # 3. Restore Spell Slots
-        from campaigns.utils import calculate_spell_slots
         from ..multiclassing import calculate_multiclass_spell_slots
         
         if CharacterClassLevel.objects.filter(character=character).count() > 1:

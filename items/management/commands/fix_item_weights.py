@@ -1,5 +1,5 @@
 from django.core.management.base import BaseCommand
-from items.models import Item, Weapon, Armor
+from items.models import Weapon, Armor
 
 class Command(BaseCommand):
     help = 'Updates missing weight data for standard D&D items'

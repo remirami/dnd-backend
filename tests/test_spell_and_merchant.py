@@ -5,9 +5,9 @@ Tests spell imports, merchant discovery, weight progression, and purchases
 from django.test import TestCase, TransactionTestCase
 from django.contrib.auth.models import User
 from rest_framework.test import APIClient
-from spells.models import Spell, SpellDamage
+from spells.models import Spell
 from merchants.models import MerchantEncounter, MerchantInventoryItem, MerchantTransaction
-from merchants.rarity_weights import get_rarity_weights, select_random_items, generate_merchant_name
+from merchants.rarity_weights import get_rarity_weights, generate_merchant_name
 from campaigns.models import Campaign, CampaignCharacter
 from characters.models import Character, CharacterClass, CharacterRace, CharacterStats
 from items.models import Item
@@ -304,7 +304,7 @@ class MerchantSystemTests(TransactionTestCase):
             quantity=1
         )
         
-        response = self.client.post(f'/api/merchants/{merchant.id}/purchase/', {
+        self.client.post(f'/api/merchants/{merchant.id}/purchase/', {
             'inventory_item_id': inventory_item.id,
             'campaign_character_id': self.campaign_char.id
         })

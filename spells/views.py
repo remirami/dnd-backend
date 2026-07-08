@@ -7,7 +7,7 @@ from django.conf import settings
 
 from core.throttles import SpellLookupThrottle
 
-from .models import Spell, SpellDamage
+from .models import Spell
 from .serializers import SpellSerializer, SpellListSerializer
 
 

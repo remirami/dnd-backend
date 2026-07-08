@@ -5,7 +5,7 @@ os.environ.setdefault('DJANGO_SETTINGS_MODULE', 'dnd_backend.settings')
 django.setup()
 
 from django.contrib.auth.models import User
-from characters.models import Character, CharacterClass, CharacterRace
+from characters.models import CharacterClass, CharacterRace
 from characters.serializers import CharacterSerializer
 
 def test_creation():

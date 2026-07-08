@@ -9,7 +9,7 @@ sys.path.append('c:/dnd-backend/dnd-backend')
 os.environ.setdefault('DJANGO_SETTINGS_MODULE', 'dnd_backend.settings')
 django.setup()
 
-from characters.models import CharacterFeature, CharacterFeat, Feat
+from characters.models import CharacterFeature, CharacterFeat
 from campaigns.feat_data import get_feat_config
 
 def fix_skilled_feat():

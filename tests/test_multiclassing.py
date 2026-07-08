@@ -207,7 +207,7 @@ def test_multiclass_spell_slots():
     
     spell_slots = calculate_multiclass_spell_slots(character)
     print(f"  Wizard 5 / Cleric 3 (8 caster levels): {spell_slots}")
-    print(f"  Caster level calculation debug:")
+    print("  Caster level calculation debug:")
     class_levels = CharacterClassLevel.objects.filter(character=character)
     for cl in class_levels:
         print(f"    {cl.character_class.name}: {cl.level}")

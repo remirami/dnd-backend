@@ -1,7 +1,6 @@
 import os
 import django
 import sys
-import json
 
 # Set up Django environment
 sys.path.append('c:\\dnd-backend\\dnd-backend')

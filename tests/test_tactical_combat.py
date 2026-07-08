@@ -9,9 +9,7 @@ from rest_framework.test import APIClient
 from rest_framework import status
 
 from combat.models import CombatSession, CombatParticipant
-from characters.models import Character, CharacterClass, CharacterRace, CharacterBackground, CharacterStats
-from encounters.models import Encounter, EncounterEnemy
-from bestiary.models import Enemy
+from encounters.models import Encounter
 
 
 class AOETargetingTests(TestCase):

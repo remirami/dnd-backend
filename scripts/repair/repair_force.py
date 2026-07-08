@@ -19,12 +19,12 @@ def repair_force():
         try:
             current_slots = char.stats.spell_slots
         except Exception:
-            print(f"  Skipping (No Stats)")
+            print("  Skipping (No Stats)")
             continue
         
         if current_slots != proper_slots:
             print(f"  MISMATCH! DB: {current_slots} vs CALC: {proper_slots}")
-            print(f"  FIXING...")
+            print("  FIXING...")
             char.stats.spell_slots = proper_slots
             char.stats.save()
             

@@ -1,5 +1,4 @@
 
-import os
 
 path = r"c:\dnd-backend\dnd-backend\campaigns\class_features_data.py"
 with open(path, 'r', encoding='utf-8') as f:

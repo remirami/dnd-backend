@@ -44,7 +44,7 @@ class Command(BaseCommand):
         # Get damage types
         slashing = DamageType.objects.filter(name__icontains='slashing').first()
         piercing = DamageType.objects.filter(name__icontains='piercing').first()
-        bludgeoning = DamageType.objects.filter(name__icontains='bludgeoning').first()
+        DamageType.objects.filter(name__icontains='bludgeoning').first()
         
         # Create basic weapons
         weapons = [

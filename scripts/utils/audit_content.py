@@ -10,7 +10,7 @@ django.setup()
 
 from bestiary.models import Enemy
 from spells.models import Spell
-from characters.models import CharacterRace, CharacterClass, Character
+from characters.models import CharacterRace
 
 # SRD Violations Blacklist (Non-SRD / Product Identity)
 BLACKLIST_MONSTERS = [

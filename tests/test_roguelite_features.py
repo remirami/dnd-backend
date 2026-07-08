@@ -235,7 +235,7 @@ def test_roguelite_features():
                 }
                 stats_response = requests.post(f"{BASE_URL}/character-stats/", json=stats_data, headers=headers)
                 if stats_response.status_code == 201:
-                    print(f"      Created stats, retrying character addition...")
+                    print("      Created stats, retrying character addition...")
                     # Retry adding character
                     retry_response = requests.post(
                         f"{BASE_URL}/campaigns/{campaign_id}/add_character/",
@@ -320,7 +320,7 @@ def test_roguelite_features():
         # Check for treasure room
         if 'treasure_room' in encounter_result:
             treasure = encounter_result['treasure_room']
-            print(f"\n   [TREASURE ROOM DISCOVERED!]")
+            print("\n   [TREASURE ROOM DISCOVERED!]")
             print(f"   Type: {treasure.get('room_type', 'N/A')}")
             print(f"   Gold: {treasure.get('rewards', {}).get('gold', 0)}")
             print(f"   XP Bonus: {treasure.get('rewards', {}).get('xp_bonus', 0)}")
@@ -354,7 +354,7 @@ def test_roguelite_features():
             print(f"   Encounter {encounter_num}: {room_type} - {status}")
             
             if discovered and not room.get('loot_distributed', False):
-                print(f"      [LOOT AVAILABLE]")
+                print("      [LOOT AVAILABLE]")
     
     # Step 12: Claim treasure if available
     if treasure_rooms:

@@ -1,7 +1,7 @@
 from django.core.management.base import BaseCommand
 from django.utils import timezone
 from datetime import timedelta
-from combat.models import CombatSession, CombatParticipant, CombatAction, CombatLog
+from combat.models import CombatSession, CombatParticipant, CombatAction
 from encounters.models import Encounter, EncounterEnemy
 from characters.models import Character, CharacterStats, CharacterClass, CharacterRace
 from bestiary.models import Enemy, EnemyStats, DamageType
@@ -250,10 +250,10 @@ class Command(BaseCommand):
         self.stdout.write(f'Duration: {log.duration_seconds} seconds')
         self.stdout.write(f'Total Damage Dealt: {log.total_damage_dealt}')
         self.stdout.write(f'Total Damage Received: {log.total_damage_received}')
-        self.stdout.write(f'\nActions by Type:')
+        self.stdout.write('\nActions by Type:')
         for action_type, count in log.actions_by_type.items():
             self.stdout.write(f'  {action_type}: {count}')
-        self.stdout.write(f'\nParticipant Stats:')
+        self.stdout.write('\nParticipant Stats:')
         for pid, stats in log.participant_stats.items():
             self.stdout.write(f'  {stats["name"]}:')
             self.stdout.write(f'    Damage Dealt: {stats["damage_dealt"]}')
@@ -265,19 +265,19 @@ class Command(BaseCommand):
         self.stdout.write('\n' + '='*60)
         self.stdout.write('TEST THE LOGGING ENDPOINTS:')
         self.stdout.write('='*60)
-        self.stdout.write(f'\n1. Get Statistics:')
+        self.stdout.write('\n1. Get Statistics:')
         self.stdout.write(f'   GET http://127.0.0.1:8000/api/combat/sessions/{session.id}/stats/')
-        self.stdout.write(f'\n2. Get Full Report:')
+        self.stdout.write('\n2. Get Full Report:')
         self.stdout.write(f'   GET http://127.0.0.1:8000/api/combat/sessions/{session.id}/report/')
-        self.stdout.write(f'\n3. Export as JSON:')
+        self.stdout.write('\n3. Export as JSON:')
         self.stdout.write(f'   GET http://127.0.0.1:8000/api/combat/sessions/{session.id}/export/?format=json')
-        self.stdout.write(f'\n4. Export as CSV:')
+        self.stdout.write('\n4. Export as CSV:')
         self.stdout.write(f'   GET http://127.0.0.1:8000/api/combat/sessions/{session.id}/export/?format=csv')
-        self.stdout.write(f'\n5. Get Log Analytics:')
+        self.stdout.write('\n5. Get Log Analytics:')
         self.stdout.write(f'   GET http://127.0.0.1:8000/api/combat/logs/{log.id}/analytics/')
-        self.stdout.write(f'\n6. Get Character Stats:')
+        self.stdout.write('\n6. Get Character Stats:')
         self.stdout.write(f'   GET http://127.0.0.1:8000/api/characters/{character.id}/combat_stats/')
         self.stdout.write('\n' + '='*60)
         self.stdout.write(self.style.SUCCESS('\nTest combat data created successfully!'))
-        self.stdout.write(f'\nYou can now test the logging endpoints using the URLs above.')
+        self.stdout.write('\nYou can now test the logging endpoints using the URLs above.')
 

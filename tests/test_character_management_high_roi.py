@@ -10,7 +10,7 @@ from rest_framework import status
 
 from characters.models import (
     Character, CharacterClass, CharacterRace, CharacterStats,
-    CharacterClassLevel, CharacterFeature
+    CharacterClassLevel
 )
 
 

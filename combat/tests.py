@@ -1,7 +1,7 @@
 from django.test import TestCase
 from rest_framework.test import APIClient
 from rest_framework import status
-from .models import CombatSession, CombatParticipant, CombatAction
+from .models import CombatSession, CombatParticipant
 from encounters.models import Encounter, EncounterEnemy
 from characters.models import Character, CharacterClass, CharacterRace, CharacterStats
 from bestiary.models import Enemy, EnemyStats

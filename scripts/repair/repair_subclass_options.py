@@ -2,7 +2,6 @@
 import os
 import django
 import sys
-import json
 
 sys.path.append(os.getcwd())
 os.environ.setdefault('DJANGO_SETTINGS_MODULE', 'dnd_backend.settings')
@@ -10,14 +9,15 @@ django.setup()
 
 from characters.models import Character, CharacterFeature
 from characters.serializers import CharacterSerializer
-from campaigns.class_features_data import CLASS_FEATURES_2024, CLASS_FEATURES_2014
 
 def repair_and_verify():
     print("--- Repairing Subclass Feature Options ---")
     
     # 1. Update options for Subclass features
     characters = Character.objects.all()
+    updates = 0
     
+    FIGHTER_OPTIONS = ["Champion", "Battle Master", "Eldritch Knight"]
     MANEUVER_OPTIONS = [
         "Commander's Strike", "Disarming Attack", "Distracting Strike", "Evasive Footwork",
         "Feinting Attack", "Goading Attack", "Lunging Attack", "Maneuvering Attack",

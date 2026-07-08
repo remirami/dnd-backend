@@ -8,7 +8,6 @@ Make sure you have:
 """
 import requests
 import json
-import time
 
 BASE_URL = "http://127.0.0.1:8000/api"
 SESSION = requests.Session()
@@ -130,13 +129,13 @@ def test_campaign_gauntlet():
         f"{BASE_URL}/campaigns/{campaign_id}/add_character/",
         json={"character_id": char1['id']}
     )
-    result1 = print_response(add_char1, f"Added {char1['name']}")
+    print_response(add_char1, f"Added {char1['name']}")
     
     add_char2 = SESSION.post(
         f"{BASE_URL}/campaigns/{campaign_id}/add_character/",
         json={"character_id": char2['id']}
     )
-    result2 = print_response(add_char2, f"Added {char2['name']}")
+    print_response(add_char2, f"Added {char2['name']}")
     
     # Step 5: Add encounters to campaign
     print("\n5. Adding encounters to campaign...")
@@ -183,7 +182,7 @@ def test_campaign_gauntlet():
     # Step 9: Start first encounter
     print("\n9. Starting first encounter...")
     start_enc_response = SESSION.post(f"{BASE_URL}/campaigns/{campaign_id}/start_encounter/")
-    start_enc_result = print_response(start_enc_response, "Encounter Started")
+    print_response(start_enc_response, "Encounter Started")
     
     # Step 10: Simulate combat (damage characters)
     print("\n10. Simulating combat damage...")
@@ -196,8 +195,8 @@ def test_campaign_gauntlet():
     
     if campaign_chars:
         # Simulate damage by updating HP (in real scenario, this happens during combat)
-        print(f"  Note: In real combat, HP would be tracked via CombatParticipant")
-        print(f"  For testing, we'll simulate damage by checking party status after combat")
+        print("  Note: In real combat, HP would be tracked via CombatParticipant")
+        print("  For testing, we'll simulate damage by checking party status after combat")
     
     # Step 11: Complete first encounter (simulate victory)
     print("\n11. Completing first encounter...")
@@ -210,12 +209,12 @@ def test_campaign_gauntlet():
             }
         }
     )
-    complete_result = print_response(complete_response, "Encounter 1 Completed")
+    print_response(complete_response, "Encounter 1 Completed")
     
     # Step 12: Check party status after encounter
     print("\n12. Checking party status after encounter 1...")
     party_after1 = SESSION.get(f"{BASE_URL}/campaigns/{campaign_id}/party_status/")
-    party_status1 = print_response(party_after1, "Party Status After Encounter 1")
+    print_response(party_after1, "Party Status After Encounter 1")
     
     # Step 13: Take a short rest
     print("\n13. Taking a short rest...")
@@ -238,7 +237,7 @@ def test_campaign_gauntlet():
     # Step 14: Start second encounter
     print("\n14. Starting second encounter...")
     start_enc2_response = SESSION.post(f"{BASE_URL}/campaigns/{campaign_id}/start_encounter/")
-    start_enc2_result = print_response(start_enc2_response, "Encounter 2 Started")
+    print_response(start_enc2_response, "Encounter 2 Started")
     
     # Step 15: Complete second encounter
     print("\n15. Completing second encounter...")
@@ -251,7 +250,7 @@ def test_campaign_gauntlet():
             }
         }
     )
-    complete2_result = print_response(complete2_response, "Encounter 2 Completed")
+    print_response(complete2_response, "Encounter 2 Completed")
     
     # Step 16: Take a long rest (strategic decision!)
     print("\n16. Taking a long rest (strategic decision!)...")
@@ -271,7 +270,7 @@ def test_campaign_gauntlet():
     # Step 17: Start third encounter
     print("\n17. Starting third encounter...")
     start_enc3_response = SESSION.post(f"{BASE_URL}/campaigns/{campaign_id}/start_encounter/")
-    start_enc3_result = print_response(start_enc3_response, "Encounter 3 Started")
+    print_response(start_enc3_response, "Encounter 3 Started")
     
     # Step 18: Complete third encounter (campaign should complete)
     print("\n18. Completing third encounter (final encounter)...")
@@ -284,7 +283,7 @@ def test_campaign_gauntlet():
             }
         }
     )
-    complete3_result = print_response(complete3_response, "Encounter 3 Completed")
+    print_response(complete3_response, "Encounter 3 Completed")
     
     # Step 19: Check final campaign status
     print("\n19. Checking final campaign status...")
@@ -300,7 +299,7 @@ def test_campaign_gauntlet():
         print(f"  Long Rests Remaining: {campaign_data.get('long_rests_available', 0) - campaign_data.get('long_rests_used', 0)}")
         
         party = final.get('party_status', [])
-        print(f"\n  Final Party Status:")
+        print("\n  Final Party Status:")
         for char in party:
             status_icon = "ALIVE" if char['is_alive'] else "DEAD"
             print(f"    {char['character']}: {char['current_hp']}/{char['max_hp']} HP ({status_icon})")
@@ -309,7 +308,7 @@ def test_campaign_gauntlet():
     # Step 20: Get full campaign details
     print("\n20. Getting full campaign details...")
     campaign_details = SESSION.get(f"{BASE_URL}/campaigns/{campaign_id}/")
-    details = print_response(campaign_details, "Campaign Details")
+    print_response(campaign_details, "Campaign Details")
     
     # Summary
     print("\n" + "="*60)

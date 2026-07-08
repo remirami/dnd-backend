@@ -82,7 +82,7 @@ class InitiativeTests(TestCase):
     
     def test_roll_initiative_updates_participants(self):
         """Test initiative is saved to participants"""
-        response = self.client.post(f'/api/combat/sessions/{self.session.id}/roll_initiative/')
+        self.client.post(f'/api/combat/sessions/{self.session.id}/roll_initiative/')
         
         self.participant.refresh_from_db()
         self.assertGreater(self.participant.initiative, 0)

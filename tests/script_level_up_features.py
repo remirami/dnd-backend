@@ -98,7 +98,7 @@ print("-"*70 + "\n")
 # Grant XP to level up to 2
 result = xp_tracking.add_xp(300, source="test")
 character.refresh_from_db()  # Refresh to get updated level
-print(f"Granted 300 XP")
+print("Granted 300 XP")
 print(f"Current XP: {xp_tracking.current_xp}")
 print(f"New Level: {character.level}")
 print(f"Level gained: {result['level_gained']}")
@@ -180,7 +180,7 @@ print(f"Expected: {{'d10': {character.level}}} (Fighter uses d10)")
 expected_dice = character.level
 actual_dice = campaign_char.hit_dice_remaining.get('d10', 0)
 if actual_dice == expected_dice:
-    print(f"\n[PASS] Hit dice count is correct!")
+    print("\n[PASS] Hit dice count is correct!")
 else:
     print(f"\n[FAIL] Hit dice count is wrong! Expected {expected_dice}, got {actual_dice}")
 

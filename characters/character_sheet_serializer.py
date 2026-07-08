@@ -6,8 +6,8 @@ on a character sheet. Includes all stats, abilities, features, spells,
 equipment, and computed values.
 """
 from rest_framework import serializers
-from .models import Character, CharacterStats, CharacterFeat
-from .multiclassing import get_total_level, get_class_level
+from .models import Character, CharacterFeat
+from .multiclassing import get_total_level
 
 
 class CharacterSheetSerializer(serializers.ModelSerializer):

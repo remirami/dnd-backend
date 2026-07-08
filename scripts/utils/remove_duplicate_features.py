@@ -9,7 +9,6 @@ os.environ.setdefault('DJANGO_SETTINGS_MODULE', 'dnd_backend.settings')
 django.setup()
 
 from characters.models import Character, CharacterFeature, CharacterProficiency
-from django.db.models import Count
 
 def remove_duplicate_features():
     """Remove duplicate character features while keeping one copy."""

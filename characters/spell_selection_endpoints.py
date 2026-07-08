@@ -73,7 +73,7 @@ def add_spell_selection_endpoints(cls):
     @action(detail=True, methods=['post'])
     def apply_starting_spells(self, request, pk=None):
         """Apply selected starting spells to a character"""
-        from characters.starting_spells import get_spell_selection_requirements, calculate_starting_cantrips
+        from characters.starting_spells import get_spell_selection_requirements
         
         character = self.get_object()
         cantrip_ids = request.data.get('cantrip_ids', [])

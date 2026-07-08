@@ -1,0 +1,19 @@
+# ruff.toml configuration
+
+# Same as Black.
+line-length = 120
+
+# Assume Python 3.11
+target-version = "py311"
+
+exclude = [
+    "characters/views_append.py",
+]
+
+[lint]
+ignore = [
+    "E402",  # Module level import not at top of file
+    "E722",  # Do not use bare `except`
+    "E701",  # Multiple statements on one line (colon)
+    "F601",  # Multi-value repeated key literal
+]

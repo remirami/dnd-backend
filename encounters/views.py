@@ -4,8 +4,7 @@ from rest_framework.response import Response
 
 from .models import Encounter, EncounterEnemy, EncounterTheme, BiomeEncounterWeight
 from .serializers import (
-    EncounterSerializer, EncounterEnemySerializer, EncounterThemeSerializer,
-    BiomeEncounterWeightSerializer
+    EncounterSerializer, EncounterEnemySerializer, EncounterThemeSerializer
 )
 from .services import EncounterGenerator, BiomeEncounterGenerator
 

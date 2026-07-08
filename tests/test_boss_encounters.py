@@ -6,12 +6,11 @@ from django.contrib.auth.models import User
 from rest_framework.test import APIClient
 from rest_framework import status
 
-from campaigns.models import Campaign, CampaignEncounter
+from campaigns.models import Campaign
 from campaigns.services.campaign_generator import CampaignGenerator
 from campaigns.boss_encounters import get_random_boss_for_biome, get_all_bosses_for_biome
 from bestiary.models import Enemy, EnemyStats
 from encounters.models import EncounterTheme, EnemyThemeAssociation
-from characters.models import Character, CharacterClass, CharacterRace, CharacterStats
 
 
 class BossEncounterDataTests(TestCase):
@@ -113,7 +112,7 @@ class CampaignGeneratorTests(TestCase):
     
     def test_difficulty_progression(self):
         """Test encounters get progressively harder"""
-        campaign = self.generator.generate_gauntlet(
+        self.generator.generate_gauntlet(
             biome='desert',
             party_level=5,
             party_size=4,

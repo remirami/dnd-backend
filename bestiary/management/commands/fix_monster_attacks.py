@@ -109,7 +109,7 @@ class Command(BaseCommand):
             try:
                 stats = enemy.stats
             except EnemyStats.DoesNotExist:
-                self.stdout.write(f'  No stats record, skipping')
+                self.stdout.write('  No stats record, skipping')
                 continue
 
             changed = False
@@ -288,7 +288,7 @@ class Command(BaseCommand):
 
                 elif name_lower == 'multiattack' and 'multiattack' not in api_attacks:
                     # Multiattack incorrectly stored as an attack
-                    self.stdout.write(f'  Remove fake attack: Multiattack')
+                    self.stdout.write('  Remove fake attack: Multiattack')
                     if not dry_run:
                         # Check if there's already a Multiattack ability
                         if not enemy.abilities.filter(name__iexact='Multiattack').exists():

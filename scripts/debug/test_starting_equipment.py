@@ -1,13 +1,10 @@
 import os
 import django
-import sys
 
 #Setup Django environment
 os.environ.setdefault('DJANGO_SETTINGS_MODULE', 'dnd_backend.settings')
 django.setup()
 
-from django.contrib.auth.models import User
-from characters.models import Character, CharacterClass, CharacterRace
 from characters.starting_equipment import get_starting_equipment_for_class, get_all_packs
 
 def test_starting_equipment_data():

@@ -3,7 +3,7 @@ Rarity-based weighted random selection for merchant inventory.
 Rarity chances increase as players progress deeper into the gauntlet.
 """
 import random
-from items.models import Item, Weapon, Armor, Consumable,MagicItem
+from items.models import Item
 
 
 # Rarity progression by encounter depth

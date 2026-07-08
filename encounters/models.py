@@ -1,6 +1,6 @@
 # encounters/models.py
 from django.db import models
-from bestiary.models import Enemy, Condition
+from bestiary.models import Enemy
 
 
 class EncounterTheme(models.Model):

@@ -7,7 +7,7 @@ sys.path.append(os.getcwd())
 os.environ.setdefault('DJANGO_SETTINGS_MODULE', 'dnd_backend.settings')
 django.setup()
 
-from characters.models import Character, CharacterRace, CharacterClass, CharacterBackground
+from characters.models import CharacterRace, CharacterClass, CharacterBackground
 from characters.serializers import CharacterSerializer
 from django.contrib.auth.models import User
 
@@ -63,7 +63,7 @@ def verify_2024_logic():
         # Verify Origin Feat
         feat_entry = char_2024.character_feats.first()
         if feat_entry and feat_entry.feat.name == 'Tough':
-             print(f"PASS: Origin Feat 'Tough' auto-granted.")
+             print("PASS: Origin Feat 'Tough' auto-granted.")
         else:
              print(f"FAIL: Origin Feat 'Tough' NOT found. Found: {feat_entry}")
 

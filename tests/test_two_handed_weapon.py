@@ -1,6 +1,6 @@
 from django.test import TestCase
 from django.contrib.auth.models import User
-from characters.models import Character, CharacterClass, CharacterRace, CharacterStats, CharacterItem
+from characters.models import Character, CharacterClass, CharacterRace, CharacterStats
 from items.models import Weapon, DamageType, ItemCategory
 from characters.inventory_management import equip_item, can_equip_item
 

@@ -4,7 +4,6 @@ Logging configuration for D&D Backend API
 Provides structured logging with file rotation and different log levels
 for various application components.
 """
-import os
 import logging
 from logging.handlers import RotatingFileHandler
 from pathlib import Path
@@ -27,7 +26,7 @@ def setup_logging(base_dir):
         datefmt='%Y-%m-%d %H:%M:%S'
     )
     
-    simple_formatter = logging.Formatter(
+    logging.Formatter(
         '%(levelname)s - %(message)s'
     )
     

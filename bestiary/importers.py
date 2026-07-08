@@ -1,4 +1,3 @@
-import json
 from typing import List, Dict, Optional
 from django.conf import settings
 

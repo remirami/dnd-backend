@@ -3,7 +3,7 @@ Combat utilities for dice rolling and calculations
 """
 import random
 import re
-from typing import Tuple, Optional
+from typing import Tuple
 
 
 def roll_dice(dice_string: str) -> Tuple[int, str]:
