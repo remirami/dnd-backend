@@ -316,6 +316,24 @@ def unequip_item(character, char_item_or_item):
 
     item = char_item.item
 
+    # Helper function for merging into an existing inventory stack to prevent IntegrityError
+    def move_to_inventory(ci, extra_qty=0):
+        total_qty = ci.quantity + extra_qty
+        existing = CharacterItem.objects.filter(
+            character=character,
+            item=item,
+            equipment_slot='inventory'
+        ).exclude(id=ci.id).first()
+        if existing:
+            existing.quantity += total_qty
+            existing.save(update_fields=['quantity'])
+            ci.delete()
+        else:
+            ci.quantity = total_qty
+            ci.is_equipped = False
+            ci.equipment_slot = 'inventory'
+            ci.save()
+
     # ── DUAL-WIELD STACK MERGE (bidirectional) ──────────────────────────────
     # Case A — unequipping the off_hand half of a split stack:
     #   merge it back into the main_hand row (restores the ×2 stack).
@@ -351,18 +369,14 @@ def unequip_item(character, char_item_or_item):
             is_equipped=True,
         ).first()
         if off_sibling:
-            char_item.quantity += 1
-            char_item.is_equipped = False
-            char_item.equipment_slot = 'inventory'
-            char_item.save()
+            qty_to_add = off_sibling.quantity
             off_sibling.delete()
+            move_to_inventory(char_item, extra_qty=qty_to_add)
             recalculate_armor_class(character)
-            return True, f"Unequipped {item.name} (dual-wield ended, stack \u00d72 restored)"
+            return True, f"Unequipped {item.name} (dual-wield ended, stack ×2 restored)"
     # ────────────────────────────────────────────────────────────────────────
 
-    char_item.is_equipped = False
-    char_item.equipment_slot = 'inventory'
-    char_item.save()
+    move_to_inventory(char_item)
 
     recalculate_armor_class(character)
 
