@@ -652,7 +652,10 @@ class CharacterSerializer(serializers.ModelSerializer):
                     options=feature_data.get('options', []),
                     choice_limit=feature_data.get('choice_limit', 1)
                 )
-                
+        # Recalculate derived stats (like Armor Class from Unarmored Defense)
+        from .inventory_management import recalculate_armor_class
+        recalculate_armor_class(character)
+                 
         return character
 
     def update(self, instance, validated_data):

@@ -488,9 +488,35 @@ def recalculate_armor_class(character):
             # No DEX bonus (neither positive nor negative usually, though strict 5e says no bonus)
             pass
     else:
-        # Unarmored: 10 + DEX
-        # TODO: Add Unarmored Defense (Monk/Barbarian) check here later
-        ac = 10 + dex_mod
+        # Unarmored Defense & Draconic Resilience
+        from .multiclassing import get_class_level
+        
+        barb_level = get_class_level(character, 'barbarian')
+        monk_level = get_class_level(character, 'monk')
+        
+        # Check primary class too in case class levels aren't initialized yet
+        is_barbarian = barb_level > 0 or (character.character_class and character.character_class.name.lower() == 'barbarian')
+        is_monk = monk_level > 0 or (character.character_class and character.character_class.name.lower() == 'monk')
+        
+        # Check for Draconic Sorcerer subclass
+        is_draconic = False
+        if character.subclass:
+            subclass_lower = character.subclass.lower()
+            if 'draconic' in subclass_lower:
+                is_draconic = True
+        
+        options = [10 + dex_mod]
+        if is_barbarian:
+            options.append(10 + dex_mod + stats.constitution_modifier)
+        if is_monk:
+            # Monk Unarmored Defense only applies if not wielding a shield
+            equipped_shield = get_equipped_shield(character)
+            if not equipped_shield:
+                options.append(10 + dex_mod + stats.wisdom_modifier)
+        if is_draconic:
+            options.append(13 + dex_mod)
+            
+        ac = max(options)
         
     # 2. Add Shield Bonus
     equipped_shield = get_equipped_shield(character)

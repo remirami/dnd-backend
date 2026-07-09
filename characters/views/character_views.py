@@ -679,6 +679,10 @@ class CharacterViewSet(viewsets.ModelViewSet):
         character.save()
         dlog(f"DEBUG: Saved Character {character.id}. Pending field in DB: {character.pending_spell_choices}")
         
+        # Recalculate derived stats like Armor Class
+        from ..inventory_management import recalculate_armor_class
+        recalculate_armor_class(character)
+        
         serializer = self.get_serializer(character)
         return Response({
             "message": f"{character.name} leveled up to level {new_level}!",
@@ -923,6 +927,10 @@ class CharacterViewSet(viewsets.ModelViewSet):
             character.pending_asi_levels.remove(level)
             character.save()
             
+            # Recalculate derived stats like Armor Class
+            from ..inventory_management import recalculate_armor_class
+            recalculate_armor_class(character)
+            
             return Response({
                 "message": "Ability scores improved!",
                 "changes": applied_changes,
@@ -1125,6 +1133,9 @@ class CharacterViewSet(viewsets.ModelViewSet):
                             'choice_limit': feature_data.get('choice_limit', 1)
                         }
                     )
+            # Recalculate derived stats like Armor Class
+            from ..inventory_management import recalculate_armor_class
+            recalculate_armor_class(character)
             
             return Response({
                 "message": f"Subclass '{subclass_name}' selected!",
