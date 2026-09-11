@@ -3,7 +3,7 @@ Spell selection endpoints for CharacterViewSet
 """
 from rest_framework.decorators import action
 from rest_framework.response import Response
-from rest_framework import status
+from rest_framework import permissions, status
 from characters.models import CharacterSpell
 from spells.models import Spell
 from spells.serializers import SpellSerializer
@@ -14,7 +14,7 @@ def add_spell_selection_endpoints(cls):
     Decorator to add spell selection endpoints to CharacterViewSet
     """
     
-    @action(detail=False, methods=['get'])
+    @action(detail=False, methods=['get'], permission_classes=[permissions.AllowAny])
     def starting_spell_choices(self, request):
         """Get available spells for character creation based on class"""
         from characters.starting_spells import get_spell_selection_requirements, RECOMMENDED_SPELLS
@@ -26,8 +26,11 @@ def add_spell_selection_endpoints(cls):
                 status=status.HTTP_400_BAD_REQUEST
             )
         
+        # Clean class name (handle "Wizard (2024)", "wizard", "Wizard", etc.)
+        clean_class_name = class_name.split('(')[0].strip()
+        
         # Get spell selection requirements
-        requirements = get_spell_selection_requirements(class_name)
+        requirements = get_spell_selection_requirements(clean_class_name)
         if not requirements:
             return Response(
                 {"message": f"{class_name} is not a spellcasting class at level 1"},
@@ -37,13 +40,13 @@ def add_spell_selection_endpoints(cls):
         # Get available cantrips for this class
         cantrips = Spell.objects.filter(
             level=0,
-            classes__name__iexact=class_name
+            classes__name__iexact=clean_class_name
         ).order_by('school', 'name')
         
         # Get available 1st level spells for this class
         level_1_spells = Spell.objects.filter(
             level=1,
-            classes__name__iexact=class_name
+            classes__name__iexact=clean_class_name
         ).order_by('school', 'name')
         
         # Serialize spells
@@ -51,7 +54,7 @@ def add_spell_selection_endpoints(cls):
         spells_data = SpellSerializer(level_1_spells, many=True).data
         
         # Mark recommended spells
-        recommendations = RECOMMENDED_SPELLS.get(class_name.capitalize(), {})
+        recommendations = RECOMMENDED_SPELLS.get(clean_class_name.capitalize(), {})
         rec_cantrips = set(recommendations.get('cantrips', []))
         rec_spells = set(recommendations.get('spells_level_1', []))
         
@@ -80,8 +83,9 @@ def add_spell_selection_endpoints(cls):
         spell_ids = request.data.get('spell_ids', [])
         
         # Get requirements for this class
+        clean_class_name = character.character_class.name.split('(')[0].strip()
         requirements = get_spell_selection_requirements(
-            character.character_class.name,
+            clean_class_name,
             character.stats if hasattr(character, 'stats') else None
         )
         
@@ -119,7 +123,7 @@ def add_spell_selection_endpoints(cls):
                 spell = Spell.objects.get(pk=spell_id, level=0)
                 
                 # Verify spell is available for this class
-                if not spell.classes.filter(pk=character.character_class.pk).exists():
+                if not (spell.classes.filter(pk=character.character_class.pk).exists() or spell.classes.filter(name__iexact=clean_class_name).exists()):
                     failed_spells.append(f"{spell.name}: Not available to {character.character_class.name}")
                     continue
                 
@@ -143,7 +147,7 @@ def add_spell_selection_endpoints(cls):
                 failed_spells.append(f"Cantrip ID {spell_id}: {str(e)}")
         
         # Process leveled spells
-        is_wizard = character.character_class.name.lower() == 'wizard'
+        is_wizard = clean_class_name.lower() == 'wizard'
         is_known_caster = spells_info.get('type') == 'known'
         
         for spell_id in spell_ids:
@@ -151,7 +155,7 @@ def add_spell_selection_endpoints(cls):
                 spell = Spell.objects.get(pk=spell_id, level=1)
                 
                 # Verify spell is available for this class
-                if not spell.classes.filter(pk=character.character_class.pk).exists():
+                if not (spell.classes.filter(pk=character.character_class.pk).exists() or spell.classes.filter(name__iexact=clean_class_name).exists()):
                     failed_spells.append(f"{spell.name}: Not available to {character.character_class.name}")
                     continue
                 

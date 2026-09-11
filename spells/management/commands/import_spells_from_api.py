@@ -41,7 +41,7 @@ class Command(BaseCommand):
         """Import spells from Open5e API"""
         self.stdout.write('Fetching spells from Open5e API...')
         
-        base_url = 'https://api.open5e.com/spells'
+        base_url = 'https://api.open5e.com/v1/spells/?document__slug=wotc-srd'
         all_spells = []
         next_url = base_url
         
@@ -95,7 +95,7 @@ class Command(BaseCommand):
                 # Map Open5e data to our model
                 spell_defaults = {
                     'slug': spell_data.get('slug', slugify(spell_name)),
-                    'level': self._parse_level(spell_data.get('level', 0)),
+                    'level': self._parse_level(spell_data.get('level_int', spell_data.get('level', 0))),
                     'school': self._parse_school(spell_data.get('school', '')),
                     'casting_time': spell_data.get('casting_time', '1 action'),
                     'range': spell_data.get('range', 'Self'),

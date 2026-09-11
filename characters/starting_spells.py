@@ -131,7 +131,9 @@ def get_starting_spell_rules(class_name):
         Dictionary with spell selection rules, or None if not a caster
     """
     # Normalize class name
-    class_name = class_name.strip().lower().capitalize()
+    if not class_name:
+        return None
+    class_name = class_name.split('(')[0].strip().lower().capitalize()
     
     # Check if non-caster
     if class_name in NON_CASTERS:

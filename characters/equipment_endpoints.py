@@ -4,7 +4,7 @@ This file adds starting equipment endpoints that should be imported in views.py
 """
 from rest_framework.decorators import action
 from rest_framework.response import Response
-from rest_framework import status
+from rest_framework import permissions, status
 from characters.models import CharacterItem
 
 
@@ -14,7 +14,7 @@ def add_equipment_endpoints_to_viewset(cls):
     Usage: Add @add_equipment_endpoints_to_viewset before CharacterViewSet class
     """
     
-    @action(detail=False, methods=['get'])
+    @action(detail=False, methods=['get'], permission_classes=[permissions.AllowAny])
     def starting_equipment_choices(self, request):
         """Get starting equipment choices for a specific class"""
         from characters.starting_equipment import get_starting_equipment_for_class, get_all_packs
@@ -26,7 +26,8 @@ def add_equipment_endpoints_to_viewset(cls):
                 status=status.HTTP_400_BAD_REQUEST
             )
         
-        equipment_data = get_starting_equipment_for_class(class_name)
+        clean_class_name = class_name.split('(')[0].strip()
+        equipment_data = get_starting_equipment_for_class(clean_class_name)
         if not equipment_data:
             return Response(
                 {"error": f"No starting equipment data for class '{class_name}'"},

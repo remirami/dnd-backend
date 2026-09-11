@@ -795,7 +795,10 @@ def get_starting_equipment_for_class(class_name):
     Returns:
         dict: Starting equipment data or None if class not found
     """
-    return STARTING_EQUIPMENT.get(class_name.lower())
+    if not class_name:
+        return None
+    clean_name = class_name.split('(')[0].strip().lower()
+    return STARTING_EQUIPMENT.get(clean_name)
 
 
 def get_equipment_pack(pack_name):
