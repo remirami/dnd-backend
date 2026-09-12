@@ -102,6 +102,10 @@ class CombatSessionViewSet(
         session.started_at = timezone.now()
         session.save()
         
+        # Reset turn action economy for all active participants at combat start
+        for participant in participants:
+            participant.reset_turn()
+        
         logger.info(f"Combat {pk} started with {participants.count()} participants")
         
         serializer = self.get_serializer(session)

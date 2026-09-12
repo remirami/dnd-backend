@@ -464,6 +464,12 @@ class CombatParticipant(models.Model):
         name = self.get_name()
         return f"{name} (Initiative: {self.initiative})"
     
+    def save(self, *args, **kwargs):
+        is_new = self.pk is None
+        if is_new and (self.attacks_remaining == 1 or not self.attacks_remaining):
+            self.attacks_remaining = self._calculate_attacks_per_action()
+        super().save(*args, **kwargs)
+    
     def clean(self):
         """Validate combat participant data"""
         from django.core.exceptions import ValidationError
@@ -861,8 +867,8 @@ class CombatParticipant(models.Model):
     def _calculate_attacks_per_action(self):
         """
         Calculate how many attacks this participant gets per Attack action.
-        - Characters: based on Extra Attack class feature
-        - Enemies: based on Multiattack ability
+        - Characters: based on Extra Attack class feature, with class/level fallback
+        - Enemies: based on Multiattack ability (encounter or practice mode)
         """
         if self.character:
             from characters.models import CharacterFeature
@@ -881,6 +887,22 @@ class CombatParticipant(models.Model):
             # Most martial classes level 5: 2 attacks
             if any('extra attack' in f for f in feature_names):
                 return 2
+
+            # Fallback based on class and level if CharacterFeature records are missing
+            if hasattr(self.character, 'character_class') and self.character.character_class:
+                class_name = self.character.character_class.name.lower().split('(')[0].strip()
+                lvl = self.character.level
+                if class_name == 'fighter':
+                    if lvl >= 20:
+                        return 4
+                    if lvl >= 11:
+                        return 3
+                    if lvl >= 5:
+                        return 2
+                elif class_name in ['barbarian', 'paladin', 'ranger', 'monk']:
+                    if lvl >= 5:
+                        return 2
+
             return 1
         
         elif self.encounter_enemy:
@@ -899,6 +921,23 @@ class CombatParticipant(models.Model):
                     return 2  # Default multiattack = 2
             return 1
         
+        elif self.participant_type == 'enemy' and self.name:
+            # Support practice mode enemies without encounter_enemy
+            from bestiary.models import Enemy
+            enemy = Enemy.objects.filter(name__iexact=self.name).first()
+            if enemy:
+                for ability in enemy.abilities.all():
+                    if 'multiattack' in ability.name.lower():
+                        desc = ability.description.lower()
+                        number_words = {
+                            'two': 2, 'three': 3, 'four': 4, 'five': 5,
+                            '2': 2, '3': 3, '4': 4, '5': 5,
+                        }
+                        for word, count in number_words.items():
+                            if word in desc:
+                                return count
+                        return 2  # Default multiattack = 2
+
         return 1
     
     def reset_reaction(self):
