@@ -63,6 +63,48 @@ class CharacterViewSet(viewsets.ModelViewSet):
         """Automatically set the user when creating a character"""
         serializer.save(user=self.request.user)
         # Note: Racial and background features are already applied in CharacterSerializer.create
+
+    @action(detail=False, methods=['post'], permission_classes=[permissions.IsAuthenticated])
+    def generate_random(self, request):
+        """
+        Generate a randomized Level 1 character.
+        If request.data.get('preview') is True, returns generated configuration without creating DB records.
+        Otherwise creates the Character, stats, equipment, and spells in the DB.
+        """
+        from ..services.random_character import generate_random_character_data, create_random_character
+
+        preview_raw = request.data.get('preview', False)
+        if isinstance(preview_raw, str):
+            preview = preview_raw.lower() in ('true', '1', 'yes')
+        else:
+            preview = bool(preview_raw)
+
+        ruleset_version = request.data.get('ruleset_version', '2014')
+        class_id = request.data.get('character_class_id')
+        race_id = request.data.get('race_id')
+
+        try:
+            if preview:
+                data = generate_random_character_data(
+                    ruleset_version=ruleset_version,
+                    character_class_id=class_id,
+                    race_id=race_id
+                )
+                return Response(data, status=status.HTTP_200_OK)
+            else:
+                character = create_random_character(
+                    user=request.user,
+                    ruleset_version=ruleset_version,
+                    character_class_id=class_id,
+                    race_id=race_id
+                )
+                serialized = CharacterSerializer(character).data
+                return Response(serialized, status=status.HTTP_201_CREATED)
+        except Exception as e:
+            return Response(
+                {"error": f"Failed to generate random character: {str(e)}"},
+                status=status.HTTP_400_BAD_REQUEST
+            )
     
     @action(detail=True, methods=['post'])
     def apply_racial_features(self, request, pk=None):
