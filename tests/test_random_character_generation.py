@@ -215,3 +215,24 @@ class RandomCharacterGenerationTests(APITestCase):
         # AC must be at least their Unarmored Defense (or higher if Scale Mail was better)
         self.assertGreaterEqual(char.stats.armor_class, unarmored_ac)
 
+    def test_barbarian_duplicate_item_consolidation_and_preview_fields(self):
+        """Verify duplicate starting items (e.g. Javelins) consolidate without UniqueConstraint error, and preview returns equipment/defense metadata"""
+        barb_cls, _ = CharacterClass.objects.get_or_create(
+            name='barbarian',
+            defaults={'hit_dice': 'd12', 'primary_ability': 'STR', 'source_ruleset': '2014'}
+        )
+        Item.objects.get_or_create(name='Javelin', defaults={'category_id': self.sword.category_id, 'weight': 2.0, 'value': 1})
+        preview = generate_random_character_data(ruleset_version='2014', character_class_id=barb_cls.id)
+        self.assertIn('equipment_list', preview)
+        self.assertIn('defense_summary', preview)
+        self.assertIn('has_scale_mail', preview)
+
+        # Force Choice 4 to Unarmored Warrior (which awards 2 extra Javelins alongside default 4 Javelins)
+        preview['equipment_selections']['4'] = '(b) Unarmored Warrior (Two Extra Javelins)'
+
+        char = create_random_character(self.user, ruleset_version='2014', character_data=preview)
+        self.assertIsNotNone(char)
+        javelin_ci = char.character_items.filter(item__name='Javelin')
+        self.assertEqual(javelin_ci.count(), 1, "Duplicate Javelins should consolidate into a single CharacterItem row")
+        self.assertGreaterEqual(javelin_ci.first().quantity, 6)
+

@@ -346,7 +346,7 @@ def generate_random_character_data(
     # 5. Alignment, name, personality
     alignments = ['NG', 'CG', 'LG', 'N', 'CN', 'LN']
     alignment = random.choice(alignments)
-    name = generate_random_name(race.name)
+    char_name = generate_random_name(race.name)
     subclass = select_random_subclass(character_class.name, ruleset_version)
 
     # 6. Equipment selections
@@ -428,8 +428,51 @@ def generate_random_character_data(
     cantrip_names = list(Spell.objects.filter(id__in=cantrip_ids).values_list('name', flat=True))
     spell_names = list(Spell.objects.filter(id__in=spell_ids).values_list('name', flat=True))
 
+    # Equipment list & defense details
+    equipment_names = []
+    has_scale_mail = False
+    has_shield = False
+    if equip_data:
+        for it in equip_data.get('default_items', []):
+            qty = it.get('quantity', 1)
+            it_name = it.get('name', '')
+            if it_name:
+                equipment_names.append(f"{it_name} ×{qty}" if qty > 1 else it_name)
+        for choice in equip_data.get('choices', []):
+            c_num = str(choice.get('choice_number'))
+            selected_label = equipment_selections.get(c_num)
+            for opt in choice.get('options', []):
+                if opt.get('label') == selected_label:
+                    if opt.get('pack'):
+                        equipment_names.append(opt['pack'])
+                    for it in opt.get('items', []):
+                        qty = it.get('quantity', 1)
+                        it_name = it.get('name', '')
+                        if 'choice' not in it_name.lower() and it_name:
+                            equipment_names.append(f"{it_name} ×{qty}" if qty > 1 else it_name)
+                            if 'scale mail' in it_name.lower():
+                                has_scale_mail = True
+                            if 'shield' in it_name.lower():
+                                has_shield = True
+
+    # Defense summary
+    if clean_class_name == 'barbarian':
+        unarmored_val = 10 + dex_mod + con_mod
+        scale_ac_val = 14 + min(dex_mod, 2)
+        if has_scale_mail:
+            if scale_ac_val >= unarmored_val:
+                defense_summary = f"Scale Mail (AC {scale_ac_val})"
+            else:
+                defense_summary = f"Unarmored Defense (AC {unarmored_val}) [Scale Mail in bag]"
+        else:
+            defense_summary = f"Unarmored Defense (AC {unarmored_val})"
+    elif armor_class > 10 + dex_mod:
+        defense_summary = f"Armored (AC {armor_class})"
+    else:
+        defense_summary = f"Unarmored (AC {armor_class})"
+
     return {
-        'name': name,
+        'name': char_name,
         'ruleset_version': ruleset_version,
         'race_id': race.id,
         'race_name': race.name,
@@ -453,6 +496,9 @@ def generate_random_character_data(
         'wisdom': ability_scores['wisdom'],
         'charisma': ability_scores['charisma'],
         'equipment_selections': equipment_selections,
+        'equipment_list': equipment_names,
+        'defense_summary': defense_summary,
+        'has_scale_mail': has_scale_mail,
         'cantrip_ids': cantrip_ids,
         'cantrip_names': cantrip_names,
         'spell_ids': spell_ids,
@@ -598,12 +644,22 @@ def create_random_character(
                 item_obj = Item.objects.filter(name__iexact=alias).first()
 
         if item_obj:
-            CharacterItem.objects.create(
+            existing_item = CharacterItem.objects.filter(
                 character=character,
                 item=item_obj,
-                quantity=quantity,
-                is_equipped=False
-            )
+                equipment_slot='inventory'
+            ).first()
+            if existing_item:
+                existing_item.quantity += quantity
+                existing_item.save(update_fields=['quantity'])
+            else:
+                CharacterItem.objects.create(
+                    character=character,
+                    item=item_obj,
+                    quantity=quantity,
+                    is_equipped=False,
+                    equipment_slot='inventory'
+                )
 
     # Auto-equip armor, shield, and a primary weapon
     char_items = CharacterItem.objects.filter(character=character).select_related('item')
