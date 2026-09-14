@@ -248,6 +248,34 @@ class CombatSessionViewSet(
             )
     
     @action(detail=True, methods=['post'])
+    def remove_participant(self, request, pk=None):
+        """Remove a participant from combat (before or during combat setup)"""
+        session = self.get_object()
+        participant_id = request.data.get('participant_id')
+        character_id = request.data.get('character_id')
+        
+        participant = None
+        if participant_id:
+            participant = session.participants.filter(pk=participant_id).first()
+        elif character_id:
+            participant = session.participants.filter(character_id=character_id).first()
+        
+        if not participant:
+            return Response(
+                {"error": "Participant not found in this combat session"},
+                status=status.HTTP_404_NOT_FOUND
+            )
+        
+        name = participant.get_name()
+        participant.delete()
+        
+        serializer = self.get_serializer(session)
+        return Response({
+            "message": f"{name} removed from combat",
+            "session": serializer.data
+        })
+    
+    @action(detail=True, methods=['post'])
     def roll_initiative(self, request, pk=None):
         """Roll initiative for participants.
         

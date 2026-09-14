@@ -106,6 +106,27 @@ class CombatSessionAPITests(TestCase):
         
         self.assertEqual(response.status_code, status.HTTP_200_OK)
         self.assertIn('participant', response.data)
+
+    def test_remove_participant_from_session(self):
+        """Test removing a participant from combat (de-selecting character)"""
+        session = CombatSession.objects.create(status='preparing')
+        add_res = self.client.post(
+            f'/api/combat/sessions/{session.id}/add_participant/',
+            {
+                'participant_type': 'character',
+                'character_id': self.character.id
+            }
+        )
+        self.assertEqual(add_res.status_code, status.HTTP_200_OK)
+        self.assertEqual(session.participants.count(), 1)
+
+        # Remove by character_id
+        remove_res = self.client.post(
+            f'/api/combat/sessions/{session.id}/remove_participant/',
+            {'character_id': self.character.id}
+        )
+        self.assertEqual(remove_res.status_code, status.HTTP_200_OK)
+        self.assertEqual(session.participants.count(), 0)
     
     def test_start_combat_with_participants(self):
         """Test starting combat with participants"""
