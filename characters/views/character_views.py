@@ -82,6 +82,7 @@ class CharacterViewSet(viewsets.ModelViewSet):
         ruleset_version = request.data.get('ruleset_version', '2014')
         class_id = request.data.get('character_class_id')
         race_id = request.data.get('race_id')
+        character_data = request.data.get('character_data')
 
         try:
             if preview:
@@ -96,7 +97,8 @@ class CharacterViewSet(viewsets.ModelViewSet):
                     user=request.user,
                     ruleset_version=ruleset_version,
                     character_class_id=class_id,
-                    race_id=race_id
+                    race_id=race_id,
+                    character_data=character_data
                 )
                 serialized = CharacterSerializer(character).data
                 return Response(serialized, status=status.HTTP_201_CREATED)

@@ -100,6 +100,39 @@ FLAWS_LIST = [
 MARTIAL_WEAPONS = ['Longsword', 'Greatsword', 'Battleaxe', 'Rapier', 'Shortsword', 'Halberd', 'Warhammer', 'Maul', 'Glaive']
 SIMPLE_WEAPONS = ['Dagger', 'Mace', 'Spear', 'Quarterstaff', 'Handaxe', 'Light Crossbow', 'Shortbow']
 
+# SRD5e official starting pouch gold by background
+BACKGROUND_STARTING_GOLD = {
+    'acolyte': 15,
+    'charlatan': 15,
+    'criminal': 15,
+    'entertainer': 15,
+    'folk-hero': 10,
+    'guild-artisan': 15,
+    'hermit': 5,
+    'noble': 25,
+    'outlander': 10,
+    'sage': 10,
+    'sailor': 10,
+    'soldier': 10,
+    'urchin': 10,
+}
+
+
+def calculate_starting_gold(background: Optional[CharacterBackground] = None) -> int:
+    """
+    Calculate starting gold based on D&D 5e background pouch wealth.
+    Since random characters already receive complete starting equipment
+    (weapons, armor, class packs), starting gold represents their background purse.
+    Includes a slight pocket change variation (+0 to 5 gp).
+    """
+    if background and background.name:
+        bg_slug = background.name.lower().replace(' ', '-')
+        base = BACKGROUND_STARTING_GOLD.get(bg_slug)
+        if base is not None:
+            return base + random.randint(0, 5)
+    return random.randint(10, 20)
+
+
 
 def roll_4d6_drop_lowest() -> int:
     """Roll 4d6 and drop the lowest die."""
@@ -253,6 +286,20 @@ def generate_random_character_data(
         if avail_lvl1_spells and spells_needed > 0:
             spell_ids = random.sample(avail_lvl1_spells, min(spells_needed, len(avail_lvl1_spells)))
 
+    # Calculate estimated HP and AC
+    con_mod = (ability_scores['constitution'] - 10) // 2
+    dex_mod = (ability_scores['dexterity'] - 10) // 2
+    hit_dice_map = {'d6': 6, 'd8': 8, 'd10': 10, 'd12': 12}
+    die_size = hit_dice_map.get(character_class.hit_dice, 8)
+    hit_points = max(1, die_size + con_mod)
+    armor_class = 10 + dex_mod
+
+    # Rolled starting gold (Background pouch: typically 10-25 gp)
+    gold_pieces = calculate_starting_gold(background)
+
+    cantrip_names = list(Spell.objects.filter(id__in=cantrip_ids).values_list('name', flat=True))
+    spell_names = list(Spell.objects.filter(id__in=spell_ids).values_list('name', flat=True))
+
     return {
         'name': name,
         'ruleset_version': ruleset_version,
@@ -268,6 +315,9 @@ def generate_random_character_data(
         'flaws': random.choice(FLAWS_LIST),
         'ideals': random.choice(IDEALS_LIST),
         'hp_method': 'fixed',
+        'hit_points': hit_points,
+        'armor_class': armor_class,
+        'gold_pieces': gold_pieces,
         'strength': ability_scores['strength'],
         'dexterity': ability_scores['dexterity'],
         'constitution': ability_scores['constitution'],
@@ -276,7 +326,9 @@ def generate_random_character_data(
         'charisma': ability_scores['charisma'],
         'equipment_selections': equipment_selections,
         'cantrip_ids': cantrip_ids,
+        'cantrip_names': cantrip_names,
         'spell_ids': spell_ids,
+        'spell_names': spell_names,
         'language_ids': [],
     }
 
@@ -285,16 +337,22 @@ def create_random_character(
     user: User,
     ruleset_version: str = '2014',
     character_class_id: Optional[int] = None,
-    race_id: Optional[int] = None
+    race_id: Optional[int] = None,
+    character_data: Optional[Dict[str, Any]] = None
 ) -> Character:
     """
     Generate and persist a full, playable level 1 character to the database.
+    If character_data is provided, uses that data directly (e.g. from preview confirmation).
+    Otherwise generates fresh random character data.
     """
-    data = generate_random_character_data(
-        ruleset_version=ruleset_version,
-        character_class_id=character_class_id,
-        race_id=race_id
-    )
+    if character_data:
+        data = character_data
+    else:
+        data = generate_random_character_data(
+            ruleset_version=ruleset_version,
+            character_class_id=character_class_id,
+            race_id=race_id
+        )
 
     # 1. Create base character via CharacterSerializer
     serializer_payload = {
@@ -378,11 +436,12 @@ def create_random_character(
         # Default items
         items_to_add.extend(equip_data.get('default_items', []))
 
-        # Starting gold
-        gold_min = equip_data.get('starting_gold', {}).get('min', 10)
-        gold_max = equip_data.get('starting_gold', {}).get('max', 50)
-        character.gold_pieces = random.randint(gold_min, gold_max)
-        character.save(update_fields=['gold_pieces'])
+    # Starting gold (use confirmed preview gold or calculate background purse)
+    if data.get('gold_pieces') is not None:
+        character.gold_pieces = data['gold_pieces']
+    else:
+        character.gold_pieces = calculate_starting_gold(character.background)
+    character.save(update_fields=['gold_pieces'])
 
     # Add items to CharacterItem
     for item_spec in items_to_add:

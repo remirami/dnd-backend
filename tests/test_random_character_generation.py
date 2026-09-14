@@ -158,3 +158,27 @@ class RandomCharacterGenerationTests(APITestCase):
         # Check that spells were created
         self.assertTrue(char.spells.filter(level=0).exists())
         self.assertTrue(char.spells.filter(level=1).exists())
+
+    def test_api_confirm_preview_creates_exact_character(self):
+        """Previewing then confirming with character_data creates that exact character"""
+        preview_res = self.client.post('/api/characters/generate_random/', {'preview': True}, format='json')
+        self.assertEqual(preview_res.status_code, status.HTTP_200_OK)
+        preview_data = preview_res.json()
+        preview_name = preview_data['name']
+        preview_str = preview_data['strength']
+        self.assertIn('gold_pieces', preview_data)
+        self.assertGreaterEqual(preview_data['gold_pieces'], 5)
+        self.assertLessEqual(preview_data['gold_pieces'], 35)
+
+        confirm_res = self.client.post(
+            '/api/characters/generate_random/',
+            {'preview': False, 'character_data': preview_data},
+            format='json'
+        )
+        self.assertEqual(confirm_res.status_code, status.HTTP_201_CREATED)
+        created_data = confirm_res.json()
+        self.assertEqual(created_data['name'], preview_name)
+        char = Character.objects.get(pk=created_data['id'])
+        self.assertEqual(char.name, preview_name)
+        self.assertEqual(char.stats.strength, preview_str)
+        self.assertEqual(char.gold_pieces, preview_data['gold_pieces'])
