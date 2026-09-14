@@ -182,3 +182,36 @@ class RandomCharacterGenerationTests(APITestCase):
         self.assertEqual(char.name, preview_name)
         self.assertEqual(char.stats.strength, preview_str)
         self.assertEqual(char.gold_pieces, preview_data['gold_pieces'])
+        self.assertEqual(char.stats.armor_class, preview_data['armor_class'])
+
+    def test_fighter_starting_armor_and_ac(self):
+        """Fighters start with Chain Mail or Leather Armor and calculate AC realistically"""
+        char = create_random_character(self.user, ruleset_version='2014', character_class_id=self.fighter_cls.id)
+        armor_items = char.character_items.filter(item__category__name='Armor')
+        self.assertTrue(armor_items.exists(), "Fighter should receive armor or shield")
+        self.assertGreaterEqual(char.stats.armor_class, 11)
+
+    def test_paladin_starting_armor_and_ac(self):
+        """Paladins start with Chain Mail and have AC >= 16"""
+        paladin_cls, _ = CharacterClass.objects.get_or_create(
+            name='paladin',
+            defaults={'hit_dice': 'd10', 'primary_ability': 'STR', 'source_ruleset': '2014'}
+        )
+        char = create_random_character(self.user, ruleset_version='2014', character_class_id=paladin_cls.id)
+        has_chain_mail = char.character_items.filter(item__name='Chain Mail').exists()
+        self.assertTrue(has_chain_mail, "Paladin must start with Chain Mail")
+        self.assertGreaterEqual(char.stats.armor_class, 16)
+
+    def test_barbarian_smart_hybrid_ac(self):
+        """Barbarians receive either Scale Mail or Unarmored gear and calculate optimal AC"""
+        barb_cls, _ = CharacterClass.objects.get_or_create(
+            name='barbarian',
+            defaults={'hit_dice': 'd12', 'primary_ability': 'STR', 'source_ruleset': '2014'}
+        )
+        char = create_random_character(self.user, ruleset_version='2014', character_class_id=barb_cls.id)
+        dex_mod = (char.stats.dexterity - 10) // 2
+        con_mod = (char.stats.constitution - 10) // 2
+        unarmored_ac = 10 + dex_mod + con_mod
+        # AC must be at least their Unarmored Defense (or higher if Scale Mail was better)
+        self.assertGreaterEqual(char.stats.armor_class, unarmored_ac)
+

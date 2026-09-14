@@ -133,6 +133,109 @@ def calculate_starting_gold(background: Optional[CharacterBackground] = None) ->
     return random.randint(10, 20)
 
 
+ITEM_NAME_ALIASES = {
+    'leather': 'Leather Armor',
+    'scale mail': 'Scale Mail',
+    'chain mail': 'Chain Mail',
+    'plate': 'Plate Armor',
+    'hand axe': 'Handaxe',
+    'crossbow bolt': 'Crossbow Bolts',
+    'arrow': 'Arrows',
+}
+
+
+def calculate_preview_ac(
+    clean_class_name: str,
+    ability_scores: Dict[str, int],
+    equip_data: Optional[Dict[str, Any]],
+    equipment_selections: Dict[str, str],
+    subclass: Optional[str] = None
+) -> int:
+    """Calculate realistic preview Armor Class based on rolled gear and class defense features."""
+    dex_mod = (ability_scores.get('dexterity', 10) - 10) // 2
+    con_mod = (ability_scores.get('constitution', 10) - 10) // 2
+    wis_mod = (ability_scores.get('wisdom', 10) - 10) // 2
+
+    # Gather item names from default_items and chosen options
+    item_names = []
+    if equip_data:
+        for it in equip_data.get('default_items', []):
+            item_names.append(it.get('name', ''))
+        for choice in equip_data.get('choices', []):
+            c_num = str(choice.get('choice_number'))
+            selected_label = equipment_selections.get(c_num)
+            for opt in choice.get('options', []):
+                if opt.get('label') == selected_label:
+                    for it in opt.get('items', []):
+                        item_names.append(it.get('name', ''))
+
+    has_shield = any('shield' in n.lower() for n in item_names)
+    shield_bonus = 2 if has_shield else 0
+
+    # Determine armor stats
+    armor_base = None
+    armor_type = None
+
+    for n in item_names:
+        nl = n.lower()
+        if 'plate' in nl and 'half' not in nl and 'breast' not in nl:
+            armor_base, armor_type = 18, 'heavy'
+            break
+        elif 'chain mail' in nl:
+            armor_base, armor_type = 16, 'heavy'
+            break
+        elif 'scale mail' in nl:
+            armor_base, armor_type = 14, 'medium'
+            break
+        elif 'chain shirt' in nl:
+            armor_base, armor_type = 13, 'medium'
+            break
+        elif 'ring mail' in nl:
+            armor_base, armor_type = 14, 'heavy'
+            break
+        elif 'hide' in nl:
+            armor_base, armor_type = 12, 'medium'
+            break
+        elif 'studded leather' in nl:
+            armor_base, armor_type = 12, 'light'
+            break
+        elif 'leather' in nl and 'studded' not in nl:
+            armor_base, armor_type = 11, 'light'
+            break
+        elif 'padded' in nl:
+            armor_base, armor_type = 11, 'light'
+            break
+
+    armored_ac = None
+    if armor_base is not None:
+        if armor_type == 'heavy':
+            armored_ac = armor_base + shield_bonus
+        elif armor_type == 'medium':
+            armored_ac = armor_base + min(dex_mod, 2) + shield_bonus
+        elif armor_type == 'light':
+            armored_ac = armor_base + dex_mod + shield_bonus
+
+    # Unarmored Defense options
+    unarmored_options = [10 + dex_mod + shield_bonus]
+    if clean_class_name == 'barbarian':
+        unarmored_options.append(10 + dex_mod + con_mod + shield_bonus)
+    elif clean_class_name == 'monk':
+        if not has_shield:
+            unarmored_options.append(10 + dex_mod + wis_mod)
+    elif subclass and 'draconic' in subclass.lower():
+        unarmored_options.append(13 + dex_mod + shield_bonus)
+
+    max_unarmored_ac = max(unarmored_options)
+
+    if armored_ac is not None:
+        if clean_class_name == 'barbarian':
+            # Option 1 (Smart Hybrid): Barbarian chooses whichever is higher
+            return max(armored_ac, max_unarmored_ac)
+        return armored_ac
+    return max_unarmored_ac
+
+
+
 
 def roll_4d6_drop_lowest() -> int:
     """Roll 4d6 and drop the lowest die."""
@@ -221,6 +324,25 @@ def generate_random_character_data(
     for stat_name, score in zip(priority, rolled_scores):
         ability_scores[stat_name] = score
 
+    # Apply 2014 racial ability score bonuses so preview shows final stats
+    if race and ruleset_version != '2024':
+        from characters.services.validators import RacialBonusCalculator
+        short_scores = {
+            'str': ability_scores['strength'],
+            'dex': ability_scores['dexterity'],
+            'con': ability_scores['constitution'],
+            'int': ability_scores['intelligence'],
+            'wis': ability_scores['wisdom'],
+            'cha': ability_scores['charisma'],
+        }
+        final_short = RacialBonusCalculator.apply_bonuses(short_scores, race)
+        ability_scores['strength'] = final_short['str']
+        ability_scores['dexterity'] = final_short['dex']
+        ability_scores['constitution'] = final_short['con']
+        ability_scores['intelligence'] = final_short['int']
+        ability_scores['wisdom'] = final_short['wis']
+        ability_scores['charisma'] = final_short['cha']
+
     # 5. Alignment, name, personality
     alignments = ['NG', 'CG', 'LG', 'N', 'CN', 'LN']
     alignment = random.choice(alignments)
@@ -292,7 +414,13 @@ def generate_random_character_data(
     hit_dice_map = {'d6': 6, 'd8': 8, 'd10': 10, 'd12': 12}
     die_size = hit_dice_map.get(character_class.hit_dice, 8)
     hit_points = max(1, die_size + con_mod)
-    armor_class = 10 + dex_mod
+    armor_class = calculate_preview_ac(
+        clean_class_name=clean_class_name,
+        ability_scores=ability_scores,
+        equip_data=equip_data,
+        equipment_selections=equipment_selections,
+        subclass=subclass
+    )
 
     # Rolled starting gold (Background pouch: typically 10-25 gp)
     gold_pieces = calculate_starting_gold(background)
@@ -379,6 +507,19 @@ def create_random_character(
     serializer.is_valid(raise_exception=True)
     character = serializer.save(user=user)
 
+    # Ensure character.stats has the exact scores and HP from preview
+    if hasattr(character, 'stats'):
+        stats = character.stats
+        stats.strength = data['strength']
+        stats.dexterity = data['dexterity']
+        stats.constitution = data['constitution']
+        stats.intelligence = data['intelligence']
+        stats.wisdom = data['wisdom']
+        stats.charisma = data['charisma']
+        stats.hit_points = data['hit_points']
+        stats.max_hit_points = data['hit_points']
+        stats.save()
+
     # Apply subclass if set (e.g. 2014 Cleric / Sorcerer / Warlock)
     if data.get('subclass'):
         character.subclass = data['subclass']
@@ -451,6 +592,11 @@ def create_random_character(
             continue
 
         item_obj = Item.objects.filter(name__iexact=item_name).first()
+        if not item_obj:
+            alias = ITEM_NAME_ALIASES.get(item_name.lower())
+            if alias:
+                item_obj = Item.objects.filter(name__iexact=alias).first()
+
         if item_obj:
             CharacterItem.objects.create(
                 character=character,
@@ -472,6 +618,18 @@ def create_random_character(
         # Try equip armor
         if not armor_equipped and (hasattr(it, 'armor') or 'armor' in it_name or 'mail' in it_name or 'leather' in it_name):
             if 'shield' not in it_name:
+                # For Barbarian: Smart Hybrid (Option 1) - only equip if armor beats or matches unarmored defense
+                if clean_class == 'barbarian':
+                    con_mod = (character.stats.constitution - 10) // 2
+                    dex_mod = (character.stats.dexterity - 10) // 2
+                    unarmored_ac = 10 + dex_mod + con_mod
+                    base_ac = getattr(getattr(it, 'armor', None), 'base_ac', 14 if 'scale' in it_name else 11)
+                    armor_type = getattr(getattr(it, 'armor', None), 'armor_type', 'medium' if 'scale' in it_name else 'light')
+                    armored_ac = base_ac + (min(dex_mod, 2) if armor_type == 'medium' else (0 if armor_type == 'heavy' else dex_mod))
+                    if unarmored_ac > armored_ac:
+                        # Character's unarmored defense is higher, keep armor unequipped in inventory
+                        continue
+
                 success, _, _ = equip_item(character, it, slot='armor')
                 if success:
                     armor_equipped = True

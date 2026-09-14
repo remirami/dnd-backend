@@ -111,7 +111,7 @@ STARTING_EQUIPMENT = {
                     {
                         'label': '(b) Leather Armor, Longbow, and 20 Arrows',
                         'items': [
-                            {'name': 'Leather', 'quantity': 1},
+                            {'name': 'Leather Armor', 'quantity': 1},
                             {'name': 'Longbow', 'quantity': 1},
                             {'name': 'Arrow', 'quantity': 20}
                         ]
@@ -291,7 +291,7 @@ STARTING_EQUIPMENT = {
             }
         ],
         'default_items': [
-            {'name': 'Leather', 'quantity': 1},
+            {'name': 'Leather Armor', 'quantity': 1},
             {'name': 'Dagger', 'quantity': 2},
             {'name': "Thieves' Tools", 'quantity': 1}
         ]
@@ -336,6 +336,20 @@ STARTING_EQUIPMENT = {
                     {
                         'label': "(a) Explorer's Pack",
                         'pack': "Explorer's Pack"
+                    }
+                ]
+            },
+            {
+                'choice_number': 4,
+                'description': 'Choose your armor / combat style',
+                'options': [
+                    {
+                        'label': '(a) Scale Mail',
+                        'items': [{'name': 'Scale Mail', 'quantity': 1}]
+                    },
+                    {
+                        'label': '(b) Unarmored Warrior (Two Extra Javelins)',
+                        'items': [{'name': 'Javelin', 'quantity': 2}]
                     }
                 ]
             }
@@ -397,7 +411,7 @@ STARTING_EQUIPMENT = {
             }
         ],
         'default_items': [
-            {'name': 'Leather', 'quantity': 1},
+            {'name': 'Leather Armor', 'quantity': 1},
             {'name': 'Dagger', 'quantity': 1}
         ]
     },
@@ -430,7 +444,7 @@ STARTING_EQUIPMENT = {
                     },
                     {
                         'label': '(b) Leather Armor',
-                        'items': [{'name': 'Leather', 'quantity': 1}]
+                        'items': [{'name': 'Leather Armor', 'quantity': 1}]
                     },
                     {
                         'label': '(c) Chain Mail',
@@ -520,7 +534,7 @@ STARTING_EQUIPMENT = {
             }
         ],
         'default_items': [
-            {'name': 'Leather', 'quantity': 1},
+            {'name': 'Leather Armor', 'quantity': 1},
             {'name': 'Druidic Focus', 'quantity': 1}
         ]
     },
@@ -633,7 +647,7 @@ STARTING_EQUIPMENT = {
                     },
                     {
                         'label': '(b) Leather Armor',
-                        'items': [{'name': 'Leather', 'quantity': 1}]
+                        'items': [{'name': 'Leather Armor', 'quantity': 1}]
                     }
                 ]
             },
@@ -778,7 +792,7 @@ STARTING_EQUIPMENT = {
             }
         ],
         'default_items': [
-            {'name': 'Leather', 'quantity': 1},
+            {'name': 'Leather Armor', 'quantity': 1},
             {'name': 'Dagger', 'quantity': 2}
         ]
     }

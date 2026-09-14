@@ -14,7 +14,10 @@ class UnarmoredDefenseTests(TestCase):
             size='M',
             speed=30
         )
-        self.armor_category = ItemCategory.objects.create(name='Armor')
+        self.armor_category, _ = ItemCategory.objects.get_or_create(
+            name='Armor',
+            defaults={'description': 'Protective equipment'}
+        )
         
         # Barbarian Class
         self.barbarian_class = CharacterClass.objects.create(
@@ -39,25 +42,29 @@ class UnarmoredDefenseTests(TestCase):
         )
 
         # Standard leather armor
-        self.leather_armor_item = Armor.objects.create(
+        self.leather_armor_item, _ = Armor.objects.get_or_create(
             name='Leather Armor',
-            category=self.armor_category,
-            armor_type='light',
-            base_ac=11,
-            min_strength=0,
-            stealth_disadvantage=False,
-            weight=10
+            defaults={
+                'category': self.armor_category,
+                'armor_type': 'light',
+                'base_ac': 11,
+                'min_strength': 0,
+                'stealth_disadvantage': False,
+                'weight': 10
+            }
         )
         
         # Standard shield
-        self.shield_item = Armor.objects.create(
+        self.shield_item, _ = Armor.objects.get_or_create(
             name='Shield',
-            category=self.armor_category,
-            armor_type='shield',
-            base_ac=2,
-            min_strength=0,
-            stealth_disadvantage=False,
-            weight=6
+            defaults={
+                'category': self.armor_category,
+                'armor_type': 'shield',
+                'base_ac': 2,
+                'min_strength': 0,
+                'stealth_disadvantage': False,
+                'weight': 6
+            }
         )
 
     def test_default_unarmored_ac(self):
