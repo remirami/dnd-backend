@@ -28,6 +28,12 @@ from .practice_views import CombatPracticeMixin
 logger = logging.getLogger('combat')
 
 
+# Hard limits for combat participants (Option 1: Balanced Tabletop Limits)
+MAX_TOTAL_PARTICIPANTS = 16
+MAX_PARTY_PARTICIPANTS = 6
+MAX_ENEMY_PARTICIPANTS = 10
+
+
 class CombatSessionViewSet(
     CombatActionMixin,
     CombatReactionMixin,
@@ -95,6 +101,24 @@ class CombatSessionViewSet(
                 {"error": "Cannot start combat without at least one enemy"},
                 status=status.HTTP_400_BAD_REQUEST
             )
+
+        if participants.count() > MAX_TOTAL_PARTICIPANTS:
+            return Response(
+                {"error": f"Cannot start combat: total participants ({participants.count()}) exceed limit of {MAX_TOTAL_PARTICIPANTS}"},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
+        if participants.filter(participant_type='character').count() > MAX_PARTY_PARTICIPANTS:
+            return Response(
+                {"error": f"Cannot start combat: party size ({participants.filter(participant_type='character').count()}) exceeds limit of {MAX_PARTY_PARTICIPANTS}"},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
+        if participants.filter(participant_type='enemy').count() > MAX_ENEMY_PARTICIPANTS:
+            return Response(
+                {"error": f"Cannot start combat: enemies ({participants.filter(participant_type='enemy').count()}) exceed limit of {MAX_ENEMY_PARTICIPANTS}"},
+                status=status.HTTP_400_BAD_REQUEST
+            )
         
         session.status = 'active'
         session.current_round = 1
@@ -120,11 +144,33 @@ class CombatSessionViewSet(
         session = self.get_object()
         participant_type = request.data.get('participant_type')
         
+        # Enforce total participant limit
+        if session.participants.count() >= MAX_TOTAL_PARTICIPANTS:
+            return Response(
+                {"error": f"Encounter participant limit reached (maximum {MAX_TOTAL_PARTICIPANTS} participants)"},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+        
         if participant_type == 'character':
+            # Enforce party participant limit
+            party_count = session.participants.filter(participant_type='character').count()
+            if party_count >= MAX_PARTY_PARTICIPANTS:
+                return Response(
+                    {"error": f"Party roster is full (maximum {MAX_PARTY_PARTICIPANTS} characters)"},
+                    status=status.HTTP_400_BAD_REQUEST
+                )
+            
             character_id = request.data.get('character_id')
             if not character_id:
                 return Response(
                     {"error": "Missing 'character_id'"},
+                    status=status.HTTP_400_BAD_REQUEST
+                )
+            
+            # Prevent duplicate character
+            if session.participants.filter(participant_type='character', character_id=character_id).exists():
+                return Response(
+                    {"error": "Character is already in this combat session"},
                     status=status.HTTP_400_BAD_REQUEST
                 )
             
@@ -161,6 +207,14 @@ class CombatSessionViewSet(
             })
         
         elif participant_type == 'enemy':
+            # Enforce enemy participant limit
+            enemy_count = session.participants.filter(participant_type='enemy').count()
+            if enemy_count >= MAX_ENEMY_PARTICIPANTS:
+                return Response(
+                    {"error": f"Enemy roster is full (maximum {MAX_ENEMY_PARTICIPANTS} enemies)"},
+                    status=status.HTTP_400_BAD_REQUEST
+                )
+
             encounter_enemy_id = request.data.get('encounter_enemy_id')
             enemy_id = request.data.get('enemy_id')  # Direct enemy ID for practice mode
             
