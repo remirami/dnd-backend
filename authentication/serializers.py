@@ -1,6 +1,8 @@
-from rest_framework import serializers
+from typing import ClassVar
+
 from django.contrib.auth.models import User
 from django.contrib.auth.password_validation import validate_password
+from rest_framework import serializers
 from rest_framework_simplejwt.serializers import TokenObtainPairSerializer
 
 
@@ -17,7 +19,7 @@ class UserRegistrationSerializer(serializers.ModelSerializer):
     class Meta:
         model = User
         fields = ('username', 'email', 'password', 'password2', 'first_name', 'last_name')
-        extra_kwargs = {
+        extra_kwargs: ClassVar[dict] = {
             'first_name': {'required': False},
             'last_name': {'required': False},
         }
