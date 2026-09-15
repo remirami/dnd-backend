@@ -78,7 +78,7 @@ class Weapon(Item):
         ('slashing', 'Slashing'),
     ]
     
-    weapon_type = models.CharField(max_length=20, choices=WEAPON_TYPE_CHOICES)
+    weapon_type = models.CharField(max_length=50, choices=WEAPON_TYPE_CHOICES)
     damage_dice = models.CharField(max_length=20, help_text="e.g., '1d6', '2d4'")
     damage_type = models.ForeignKey(DamageType, on_delete=models.SET_NULL, null=True, blank=True)
     versatile_damage = models.CharField(max_length=20, blank=True, help_text="Damage when used two-handed, e.g., '1d10'")

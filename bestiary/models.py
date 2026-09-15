@@ -161,7 +161,7 @@ class EnemyStats(models.Model):
 
 class DamageType(models.Model):
     """Damage types in D&D 5e"""
-    name = models.CharField(max_length=50, unique=True)
+    name = models.CharField(max_length=200, unique=True)
     
     def __str__(self):
         return self.name
@@ -189,7 +189,7 @@ class EnemyResistance(models.Model):
 
 class Language(models.Model):
     """Languages in D&D 5e"""
-    name = models.CharField(max_length=50, unique=True)
+    name = models.CharField(max_length=200, unique=True)
     
     def __str__(self):
         return self.name
@@ -250,7 +250,7 @@ class EnemyConditionImmunity(models.Model):
 class EnemyLegendaryAction(models.Model):
     """Legendary actions for powerful creatures"""
     enemy = models.ForeignKey(Enemy, on_delete=models.CASCADE, related_name="legendary_actions")
-    name = models.CharField(max_length=100)
+    name = models.CharField(max_length=200)
     description = models.TextField()
     cost = models.IntegerField(default=1)  # Legendary action points (1, 2, or 3)
     
@@ -311,9 +311,9 @@ class EnemyTreasure(models.Model):
 
 class EnemyAttack(models.Model):
     enemy = models.ForeignKey(Enemy, on_delete=models.CASCADE, related_name="attacks")
-    name = models.CharField(max_length=100)
+    name = models.CharField(max_length=300)
     bonus = models.IntegerField()
-    damage = models.CharField(max_length=50)  # e.g. "2d6+3 slashing"
+    damage = models.CharField(max_length=100)  # e.g. "2d6+3 slashing"
 
     def __str__(self):
         return f"{self.enemy.name} - {self.name}"
@@ -321,7 +321,7 @@ class EnemyAttack(models.Model):
 
 class EnemyAbility(models.Model):
     enemy = models.ForeignKey(Enemy, on_delete=models.CASCADE, related_name="abilities")
-    name = models.CharField(max_length=100)
+    name = models.CharField(max_length=300)
     description = models.TextField()
 
     def __str__(self):

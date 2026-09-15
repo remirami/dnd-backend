@@ -40,7 +40,7 @@ class Spell(models.Model):
     school = models.CharField(max_length=20, choices=SCHOOL_CHOICES)
     
     # Casting Information
-    casting_time = models.CharField(max_length=100, help_text="e.g., '1 action', '1 bonus action', '1 minute'")
+    casting_time = models.CharField(max_length=200, help_text="e.g., '1 action', '1 bonus action', '1 minute'")
     range = models.CharField(max_length=100, help_text="e.g., 'Self', '60 feet', 'Touch'")
     components = models.CharField(max_length=100, help_text="V, S, M components")
     material = models.TextField(blank=True, help_text="Material component description if M is required")
