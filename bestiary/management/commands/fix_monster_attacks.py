@@ -7,9 +7,11 @@ Only updates existing monsters — does not create new ones.
 """
 import re
 import time
+
 import requests
 from django.core.management.base import BaseCommand
-from bestiary.models import Enemy, EnemyStats, EnemyAttack, EnemyAbility
+
+from bestiary.models import Enemy, EnemyAbility, EnemyAttack, EnemyStats
 
 
 def parse_damage_from_desc(desc):
@@ -163,32 +165,32 @@ class Command(BaseCommand):
             # Senses
             senses_str = api_data.get('senses', '')
             if senses_str:
-                dv_match = re.search(r'darkvision\s+(\d+\s*ft\.?)', senses_str, re.I)
+                dv_match = re.search(r'darkvision\s+(\d+\s*ft\.?)', senses_str, re.IGNORECASE)
                 if dv_match and stats.darkvision != dv_match.group(1):
                     self.stdout.write(f'  darkvision: {stats.darkvision} -> {dv_match.group(1)}')
                     if not dry_run:
                         stats.darkvision = dv_match.group(1)
                     changed = True
 
-                bs_match = re.search(r'blindsight\s+(\d+\s*ft\.?)', senses_str, re.I)
+                bs_match = re.search(r'blindsight\s+(\d+\s*ft\.?)', senses_str, re.IGNORECASE)
                 if bs_match and stats.blindsight != bs_match.group(1):
                     if not dry_run:
                         stats.blindsight = bs_match.group(1)
                     changed = True
 
-                ts_match = re.search(r'tremorsense\s+(\d+\s*ft\.?)', senses_str, re.I)
+                ts_match = re.search(r'tremorsense\s+(\d+\s*ft\.?)', senses_str, re.IGNORECASE)
                 if ts_match and stats.tremorsense != ts_match.group(1):
                     if not dry_run:
                         stats.tremorsense = ts_match.group(1)
                     changed = True
 
-                true_match = re.search(r'truesight\s+(\d+\s*ft\.?)', senses_str, re.I)
+                true_match = re.search(r'truesight\s+(\d+\s*ft\.?)', senses_str, re.IGNORECASE)
                 if true_match and stats.truesight != true_match.group(1):
                     if not dry_run:
                         stats.truesight = true_match.group(1)
                     changed = True
 
-                pp_match = re.search(r'passive Perception\s+(\d+)', senses_str, re.I)
+                pp_match = re.search(r'passive Perception\s+(\d+)', senses_str, re.IGNORECASE)
                 if pp_match:
                     pp_val = int(pp_match.group(1))
                     if stats.passive_perception != pp_val:
@@ -231,7 +233,7 @@ class Command(BaseCommand):
                         if dd:
                             damage = f"{dd}+{db}" if db else dd
                             # Try to get damage type from desc
-                            type_match = re.search(r'(\w+)\s+damage', action.get('desc', ''), re.I)
+                            type_match = re.search(r'(\w+)\s+damage', action.get('desc', ''), re.IGNORECASE)
                             if type_match:
                                 damage += f" {type_match.group(1).lower()}"
                     if damage:
@@ -323,10 +325,9 @@ class Command(BaseCommand):
                 existing = enemy.abilities.filter(name__iexact=sa['name']).first()
                 if existing:
                     # Update description if it's short/placeholder
-                    if len(existing.description) < len(sa.get('desc', '')):
-                        if not dry_run:
-                            existing.description = sa['desc']
-                            existing.save()
+                    if len(existing.description) < len(sa.get('desc', '')) and not dry_run:
+                        existing.description = sa['desc']
+                        existing.save()
                 elif sa.get('desc'):
                     if not dry_run:
                         EnemyAbility.objects.create(

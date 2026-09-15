@@ -3,17 +3,14 @@ Comprehensive tests for campaigns/views.py to improve coverage from 16% to 70%
 Tests: Campaign CRUD, character management, encounter flow, treasure, rest system
 """
 
-from django.test import TestCase
 from django.contrib.auth.models import User
-from rest_framework.test import APIClient
+from django.test import TestCase
 from rest_framework import status
+from rest_framework.test import APIClient
 
-from campaigns.models import (
-    Campaign, CampaignCharacter, TreasureRoom, 
-    TreasureRoomReward
-)
-from characters.models import Character, CharacterClass, CharacterRace, CharacterStats
 from bestiary.models import Enemy, EnemyStats
+from campaigns.models import Campaign, CampaignCharacter, TreasureRoom, TreasureRoomReward
+from characters.models import Character, CharacterClass, CharacterRace, CharacterStats
 
 
 class CampaignViewsTestCase(TestCase):

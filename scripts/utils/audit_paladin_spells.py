@@ -1,12 +1,13 @@
 import os
+
 import django
 
 # Setup Django environment
 os.environ.setdefault("DJANGO_SETTINGS_MODULE", "dnd_backend.settings")
 django.setup()
 
-from spells.models import Spell
 from characters.models import CharacterClass
+from spells.models import Spell
 
 try:
     classes = CharacterClass.objects.all()

@@ -9,16 +9,16 @@ Usage:
 """
 
 # Import the main composed viewset
-from .session_views import CombatSessionViewSet
+from .log_views import CombatActionViewSet, CombatLogViewSet
 
 # Import standalone viewsets
 from .participant_views import CombatParticipantViewSet
-from .log_views import CombatActionViewSet, CombatLogViewSet
+from .session_views import CombatSessionViewSet
 
 # Export all for backwards compatibility
 __all__ = [
-    'CombatSessionViewSet',
-    'CombatParticipantViewSet',
     'CombatActionViewSet',
     'CombatLogViewSet',
+    'CombatParticipantViewSet',
+    'CombatSessionViewSet',
 ]

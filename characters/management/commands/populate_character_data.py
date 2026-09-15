@@ -1,5 +1,6 @@
 from django.core.management.base import BaseCommand
-from characters.models import CharacterClass, CharacterRace, CharacterBackground
+
+from characters.models import CharacterBackground, CharacterClass, CharacterRace
 
 
 class Command(BaseCommand):

@@ -1,7 +1,15 @@
 from django.contrib import admin
+
 from .models import (
-    Character, CharacterStats, CharacterClass, CharacterRace, CharacterBackground,
-    CharacterProficiency, CharacterFeature, CharacterSpell, CharacterResistance
+    Character,
+    CharacterBackground,
+    CharacterClass,
+    CharacterFeature,
+    CharacterProficiency,
+    CharacterRace,
+    CharacterResistance,
+    CharacterSpell,
+    CharacterStats,
 )
 
 

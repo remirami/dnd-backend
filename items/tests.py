@@ -1,8 +1,9 @@
 from django.test import TestCase
-from rest_framework.test import APITestCase
 from rest_framework import status
-from items.models import Weapon, Armor, Consumable, ItemCategory, ItemProperty
+from rest_framework.test import APITestCase
+
 from bestiary.models import DamageType
+from items.models import Armor, Consumable, ItemCategory, ItemProperty, Weapon
 
 
 class ItemModelTests(TestCase):

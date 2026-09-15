@@ -1,15 +1,18 @@
 import os
-import django
 import sys
+
+import django
 
 # Setup Django
 sys.path.append(os.getcwd())
 os.environ.setdefault('DJANGO_SETTINGS_MODULE', 'dnd_backend.settings')
 django.setup()
 
+from rest_framework.test import APIRequestFactory
+
 from characters.models import Character, CharacterClass, CharacterClassLevel, CharacterFeature
 from characters.views import CharacterViewSet
-from rest_framework.test import APIRequestFactory
+
 
 def verify_fix():
     print("--- Verifying Dashboard Subclass Fix ---")

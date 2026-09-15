@@ -1,6 +1,7 @@
 import os
-import django
 import sys
+
+import django
 
 # Set up Django environment
 sys.path.append('c:\\dnd-backend\\dnd-backend')
@@ -8,6 +9,7 @@ os.environ.setdefault('DJANGO_SETTINGS_MODULE', 'dnd_backend.settings')
 django.setup()
 
 from spells.models import Spell
+
 
 def cleanup_srd_spells():
     print("Enforcing Strict SRD 5.2.1 Spell List...")

@@ -1,5 +1,6 @@
 from django.db import migrations
 
+
 def sync_weapon_booleans(apps, schema_editor):
     Weapon = apps.get_model('items', 'Weapon')
     for weapon in Weapon.objects.all():

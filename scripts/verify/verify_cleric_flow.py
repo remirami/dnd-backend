@@ -1,12 +1,16 @@
 import os
+
 import django
+
 os.environ.setdefault('DJANGO_SETTINGS_MODULE', 'dnd_backend.settings')
 django.setup()
 
-from characters.models import Character, CharacterClass, CharacterFeature, CharacterRace, CharacterBackground
-from rest_framework.test import APIRequestFactory, force_authenticate
-from characters.views import CharacterViewSet
 from django.contrib.auth.models import User
+from rest_framework.test import APIRequestFactory, force_authenticate
+
+from characters.models import Character, CharacterBackground, CharacterClass, CharacterFeature, CharacterRace
+from characters.views import CharacterViewSet
+
 
 def verify_cleric():
     print("--- Verifying Cleric (2024) Flow ---")

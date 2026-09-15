@@ -3,6 +3,7 @@ Populate D&D 5e feats database
 """
 
 from django.core.management.base import BaseCommand
+
 from characters.models import Feat
 
 

@@ -1,6 +1,7 @@
 import os
-import django
 import sys
+
+import django
 from django.contrib.auth import get_user_model
 
 # Setup Django environment
@@ -10,6 +11,7 @@ django.setup()
 
 from characters.models import CharacterClass, CharacterFeature, CharacterRace
 from characters.serializers import CharacterSerializer
+
 
 def verify_features():
     User = get_user_model()

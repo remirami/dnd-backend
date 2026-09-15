@@ -3,13 +3,16 @@ Script to add Ability Score Increase features to existing characters.
 Run with: python add_asi_features.py
 """
 import os
+
 import django
 
 os.environ.setdefault('DJANGO_SETTINGS_MODULE', 'dnd_backend.settings')
 django.setup()
 
-from characters.models import Character, CharacterFeature
 import re
+
+from characters.models import Character, CharacterFeature
+
 
 def add_asi_features():
     """Add Ability Score Increase features to existing characters."""

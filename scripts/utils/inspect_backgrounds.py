@@ -1,6 +1,7 @@
 import os
-import django
 import sys
+
+import django
 
 # Setup Django environment
 sys.path.append(os.getcwd())
@@ -8,6 +9,7 @@ os.environ.setdefault('DJANGO_SETTINGS_MODULE', 'dnd_backend.settings')
 django.setup()
 
 from characters.models import CharacterBackground
+
 
 def inspect_backgrounds():
     print("Inspecting Character Backgrounds...")

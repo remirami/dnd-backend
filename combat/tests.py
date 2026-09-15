@@ -1,10 +1,12 @@
 from django.test import TestCase
-from rest_framework.test import APIClient
 from rest_framework import status
-from .models import CombatSession, CombatParticipant
-from encounters.models import Encounter, EncounterEnemy
-from characters.models import Character, CharacterClass, CharacterRace, CharacterStats
+from rest_framework.test import APIClient
+
 from bestiary.models import Enemy, EnemyStats
+from characters.models import Character, CharacterClass, CharacterRace, CharacterStats
+from encounters.models import Encounter, EncounterEnemy
+
+from .models import CombatParticipant, CombatSession
 
 
 class CombatModelTests(TestCase):

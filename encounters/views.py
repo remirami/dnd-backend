@@ -1,12 +1,10 @@
-from rest_framework import viewsets, status
+from rest_framework import status, viewsets
 from rest_framework.decorators import action
 from rest_framework.response import Response
 
-from .models import Encounter, EncounterEnemy, EncounterTheme, BiomeEncounterWeight
-from .serializers import (
-    EncounterSerializer, EncounterEnemySerializer, EncounterThemeSerializer
-)
-from .services import EncounterGenerator, BiomeEncounterGenerator
+from .models import BiomeEncounterWeight, Encounter, EncounterEnemy, EncounterTheme
+from .serializers import EncounterEnemySerializer, EncounterSerializer, EncounterThemeSerializer
+from .services import BiomeEncounterGenerator, EncounterGenerator
 
 
 class EncounterViewSet(viewsets.ModelViewSet):

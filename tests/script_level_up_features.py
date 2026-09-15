@@ -3,6 +3,7 @@
 
 import os
 import sys
+
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 import django
@@ -11,8 +12,9 @@ os.environ.setdefault('DJANGO_SETTINGS_MODULE', 'dnd_backend.settings')
 django.setup()
 
 from django.contrib.auth.models import User
-from characters.models import Character, CharacterClass, CharacterRace, CharacterStats, CharacterFeature
+
 from campaigns.models import Campaign, CampaignCharacter, CharacterXP
+from characters.models import Character, CharacterClass, CharacterFeature, CharacterRace, CharacterStats
 
 print("\n" + "="*70)
 print("  LEVEL-UP SYSTEM TEST - Class Features & Hit Dice")
@@ -26,14 +28,14 @@ try:
     fighter_class = CharacterClass.objects.get(name='fighter')
 except CharacterClass.DoesNotExist:
     print("ERROR: Fighter class not found. Run: python manage.py populate_character_data")
-    exit(1)
+    sys.exit(1)
 
 # Get a race
 try:
     human_race = CharacterRace.objects.get(name='human')
 except CharacterRace.DoesNotExist:
     print("ERROR: Human race not found. Run: python manage.py populate_character_data")
-    exit(1)
+    sys.exit(1)
 
 # Create test character
 print("Creating test character...")

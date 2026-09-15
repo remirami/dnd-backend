@@ -5,17 +5,18 @@ Target: Improve coverage from 33% to 65%
 """
 
 from django.test import TestCase
-from characters.models import Character, CharacterClass, CharacterRace, CharacterStats, CharacterSpell
+
+from characters.models import Character, CharacterClass, CharacterRace, CharacterSpell, CharacterStats
 from characters.spell_management import (
-    is_prepared_caster,
-    is_known_caster,
-    can_cast_rituals,
-    get_spellcasting_ability,
-    calculate_spells_prepared,
     calculate_spells_known,
-    get_wizard_spellbook_size,
+    calculate_spells_prepared,
+    can_cast_rituals,
+    can_cast_spell,
     get_prepared_spells,
-    can_cast_spell
+    get_spellcasting_ability,
+    get_wizard_spellbook_size,
+    is_known_caster,
+    is_prepared_caster,
 )
 
 

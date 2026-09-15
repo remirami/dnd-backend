@@ -11,6 +11,7 @@ Tests:
 
 import os
 import sys
+
 import django
 
 # Setup Django
@@ -19,11 +20,16 @@ os.environ.setdefault('DJANGO_SETTINGS_MODULE', 'dnd_backend.settings')
 django.setup()
 
 from django.contrib.auth.models import User
-from characters.models import Character, CharacterClass, CharacterRace, CharacterStats, CharacterSpell
+
+from characters.models import Character, CharacterClass, CharacterRace, CharacterSpell, CharacterStats
 from characters.spell_management import (
-    is_prepared_caster, is_known_caster, can_cast_rituals,
-    calculate_spells_prepared, calculate_spells_known,
-    get_wizard_spellbook_size, can_cast_spell
+    calculate_spells_known,
+    calculate_spells_prepared,
+    can_cast_rituals,
+    can_cast_spell,
+    get_wizard_spellbook_size,
+    is_known_caster,
+    is_prepared_caster,
 )
 
 # Configure stdout for Unicode
@@ -70,7 +76,7 @@ def test_spellcasting_types():
         )
         
         # Create stats
-        stats, _ = CharacterStats.objects.get_or_create(
+        _stats, _ = CharacterStats.objects.get_or_create(
             character=character,
             defaults={
                 'hit_points': 50,
@@ -86,7 +92,7 @@ def test_spellcasting_types():
         is_known = is_known_caster(character)
         can_ritual = can_cast_rituals(character)
         
-        print(f"  {class_name:12} | Prepared: {str(is_prep):5} | Known: {str(is_known):5} | Ritual: {str(can_ritual):5}")
+        print(f"  {class_name:12} | Prepared: {is_prep!s:5} | Known: {is_known!s:5} | Ritual: {can_ritual!s:5}")
         
         assert is_prep == expected_prepared, f"{class_name} prepared caster check failed"
         assert is_known == expected_known, f"{class_name} known caster check failed"
@@ -169,7 +175,7 @@ def test_spells_known():
             level=level
         )
         
-        stats, _ = CharacterStats.objects.get_or_create(
+        _stats, _ = CharacterStats.objects.get_or_create(
             character=character,
             defaults={
                 'hit_points': 50,
@@ -212,7 +218,7 @@ def test_wizard_spellbook():
             level=level
         )
         
-        stats, _ = CharacterStats.objects.get_or_create(
+        _stats, _ = CharacterStats.objects.get_or_create(
             character=character,
             defaults={
                 'hit_points': 50,
@@ -248,7 +254,7 @@ def test_prepare_spells():
         level=5
     )
     
-    stats, _ = CharacterStats.objects.get_or_create(
+    _stats, _ = CharacterStats.objects.get_or_create(
         character=character,
         defaults={
             'hit_points': 50,
@@ -316,7 +322,7 @@ def test_learn_spells():
         level=5
     )
     
-    stats, _ = CharacterStats.objects.get_or_create(
+    _stats, _ = CharacterStats.objects.get_or_create(
         character=character,
         defaults={
             'hit_points': 50,
@@ -372,7 +378,7 @@ def test_wizard_spellbook_management():
         level=5
     )
     
-    stats, _ = CharacterStats.objects.get_or_create(
+    _stats, _ = CharacterStats.objects.get_or_create(
         character=character,
         defaults={
             'hit_points': 50,
@@ -440,7 +446,7 @@ def test_ritual_casting():
         level=5
     )
     
-    stats, _ = CharacterStats.objects.get_or_create(
+    _stats, _ = CharacterStats.objects.get_or_create(
         character=character,
         defaults={
             'hit_points': 50,

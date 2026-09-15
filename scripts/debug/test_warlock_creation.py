@@ -1,12 +1,15 @@
 import os
+
 import django
 
 os.environ.setdefault('DJANGO_SETTINGS_MODULE', 'dnd_backend.settings')
 django.setup()
 
 from django.contrib.auth.models import User
+
 from characters.models import CharacterClass, CharacterRace
 from characters.serializers import CharacterSerializer
+
 
 def test_creation():
     print("Testing New Warlock Creation...")

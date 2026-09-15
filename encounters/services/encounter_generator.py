@@ -5,9 +5,7 @@ Generates themed encounters with 95% thematic coherence / 5% chaotic mix
 """
 import random
 
-from encounters.models import (
-    Encounter, EncounterEnemy, EncounterTheme
-)
+from encounters.models import Encounter, EncounterEnemy, EncounterTheme
 
 
 class EncounterGenerator:

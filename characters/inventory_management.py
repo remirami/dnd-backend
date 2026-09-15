@@ -4,9 +4,9 @@ Inventory Management Utilities
 Handles equipment, weight tracking, and item effects.
 """
 
-from .models import CharacterItem
 from items.models import Weapon
 
+from .models import CharacterItem
 
 # Encumbrance thresholds (in pounds)
 ENCUMBRANCE_THRESHOLDS = {

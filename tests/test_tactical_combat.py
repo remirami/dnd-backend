@@ -3,12 +3,12 @@ Tests for Tactical Combat Features
 
 Tests for AOE targeting, grappling, and cover systems.
 """
-from django.test import TestCase
 from django.contrib.auth.models import User
-from rest_framework.test import APIClient
+from django.test import TestCase
 from rest_framework import status
+from rest_framework.test import APIClient
 
-from combat.models import CombatSession, CombatParticipant
+from combat.models import CombatParticipant, CombatSession
 from encounters.models import Encounter
 
 

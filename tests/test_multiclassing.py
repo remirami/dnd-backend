@@ -11,6 +11,7 @@ Tests:
 
 import os
 import sys
+
 import django
 
 # Setup Django
@@ -19,10 +20,15 @@ os.environ.setdefault('DJANGO_SETTINGS_MODULE', 'dnd_backend.settings')
 django.setup()
 
 from django.contrib.auth.models import User
-from characters.models import Character, CharacterClass, CharacterRace, CharacterStats, CharacterClassLevel
+
+from characters.models import Character, CharacterClass, CharacterClassLevel, CharacterRace, CharacterStats
 from characters.multiclassing import (
-    can_multiclass_into, calculate_multiclass_spell_slots, get_multiclass_spellcasting_ability,
-    get_multiclass_hit_dice, get_total_level, get_class_level
+    calculate_multiclass_spell_slots,
+    can_multiclass_into,
+    get_class_level,
+    get_multiclass_hit_dice,
+    get_multiclass_spellcasting_ability,
+    get_total_level,
 )
 
 # Configure stdout for Unicode
@@ -43,8 +49,8 @@ def test_multiclass_prerequisites():
     
     user, _ = User.objects.get_or_create(username='test_user')
     fighter_class, _ = CharacterClass.objects.get_or_create(name='fighter')
-    wizard_class, _ = CharacterClass.objects.get_or_create(name='wizard')
-    paladin_class, _ = CharacterClass.objects.get_or_create(name='paladin')
+    _wizard_class, _ = CharacterClass.objects.get_or_create(name='wizard')
+    _paladin_class, _ = CharacterClass.objects.get_or_create(name='paladin')
     race, _ = CharacterRace.objects.get_or_create(name='human')
     
     # Create character with low stats
@@ -117,7 +123,7 @@ def test_multiclass_levels():
         level=5
     )
     
-    stats, _ = CharacterStats.objects.get_or_create(
+    _stats, _ = CharacterStats.objects.get_or_create(
         character=character,
         defaults={
             'strength': 16,
@@ -298,7 +304,7 @@ def test_spellcasting_ability():
         level=6
     )
     
-    stats, _ = CharacterStats.objects.get_or_create(
+    _stats, _ = CharacterStats.objects.get_or_create(
         character=character,
         defaults={
             'strength': 10,

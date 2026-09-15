@@ -1,8 +1,24 @@
 from rest_framework import serializers
-from .models import Campaign, CampaignCharacter, CampaignEncounter, CharacterXP, TreasureRoom, TreasureRoomReward, RecruitableCharacter, RecruitmentRoom
-from characters.serializers import CharacterSerializer, CharacterClassSerializer, CharacterRaceSerializer, CharacterBackgroundSerializer
-from encounters.serializers import EncounterSerializer
+
+from characters.serializers import (
+    CharacterBackgroundSerializer,
+    CharacterClassSerializer,
+    CharacterRaceSerializer,
+    CharacterSerializer,
+)
 from combat.serializers import CombatSessionSerializer
+from encounters.serializers import EncounterSerializer
+
+from .models import (
+    Campaign,
+    CampaignCharacter,
+    CampaignEncounter,
+    CharacterXP,
+    RecruitableCharacter,
+    RecruitmentRoom,
+    TreasureRoom,
+    TreasureRoomReward,
+)
 
 
 class CharacterXPSerializer(serializers.ModelSerializer):

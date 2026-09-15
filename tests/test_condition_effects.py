@@ -3,18 +3,14 @@ Comprehensive Tests for Condition Effects System
 
 Tests condition application, duration tracking, effects, and removal.
 """
-from django.test import TestCase
 from django.contrib.auth.models import User
+from django.test import TestCase
 from rest_framework.test import APIClient
 
-from combat.models import CombatSession, CombatParticipant, ConditionApplication
-from combat.condition_effects import (
-    get_condition_for_spell,
-    get_condition_effects,
-    auto_apply_condition_from_spell
-)
-from characters.models import Character, CharacterClass, CharacterRace, CharacterStats
 from bestiary.models import Condition
+from characters.models import Character, CharacterClass, CharacterRace, CharacterStats
+from combat.condition_effects import auto_apply_condition_from_spell, get_condition_effects, get_condition_for_spell
+from combat.models import CombatParticipant, CombatSession, ConditionApplication
 from encounters.models import Encounter
 
 

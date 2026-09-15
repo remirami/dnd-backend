@@ -1,7 +1,9 @@
 from rest_framework import serializers
-from .models import Spell, SpellDamage
-from characters.serializers import CharacterClassSerializer
+
 from characters.models import CharacterClass
+from characters.serializers import CharacterClassSerializer
+
+from .models import Spell, SpellDamage
 
 
 class SpellDamageSerializer(serializers.ModelSerializer):

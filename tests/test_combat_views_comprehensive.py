@@ -3,14 +3,14 @@ Comprehensive tests for Combat Views API endpoints.
 
 Tests combat session management matching actual API implementation.
 """
-from django.test import TestCase  
 from django.contrib.auth.models import User
-from rest_framework.test import APIClient
+from django.test import TestCase
 from rest_framework import status
+from rest_framework.test import APIClient
 
-from combat.models import CombatSession, CombatParticipant
-from characters.models import Character, CharacterClass, CharacterRace, CharacterStats
 from bestiary.models import Enemy, EnemyStats
+from characters.models import Character, CharacterClass, CharacterRace, CharacterStats
+from combat.models import CombatParticipant, CombatSession
 from encounters.models import Encounter, EncounterEnemy
 
 
@@ -283,7 +283,7 @@ class CombatSessionAPITests(TestCase):
                 character_class=char_class,
                 race=race
             )
-            stats = CharacterStats.objects.create(
+            CharacterStats.objects.create(
                 character=c,
                 strength=10, dexterity=10, constitution=10,
                 max_hit_points=10, hit_points=10, armor_class=10

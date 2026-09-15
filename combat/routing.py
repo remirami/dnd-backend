@@ -5,6 +5,7 @@ Maps WebSocket URLs to consumers.
 """
 try:
     from django.urls import re_path
+
     from . import consumers
     
     websocket_urlpatterns = [

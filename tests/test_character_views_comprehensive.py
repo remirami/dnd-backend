@@ -3,14 +3,12 @@ Comprehensive tests for Character Views API endpoints.
 
 Tests character CRUD operations matching actual API implementation.
 """
-from django.test import TestCase
 from django.contrib.auth.models import User
-from rest_framework.test import APIClient
+from django.test import TestCase
 from rest_framework import status
+from rest_framework.test import APIClient
 
-from characters.models import (
-    Character, CharacterClass, CharacterRace, CharacterBackground
-)
+from characters.models import Character, CharacterBackground, CharacterClass, CharacterRace
 
 
 class CharacterAPITests(TestCase):

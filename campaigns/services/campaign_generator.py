@@ -6,11 +6,11 @@ and boss encounters
 """
 from django.db import transaction
 
-from campaigns.models import Campaign, CampaignEncounter
+from bestiary.models import Enemy
 from campaigns.boss_encounters import get_random_boss_for_biome
+from campaigns.models import Campaign, CampaignEncounter
 from encounters.models import Encounter, EncounterEnemy
 from encounters.services import BiomeEncounterGenerator
-from bestiary.models import Enemy
 
 
 class CampaignGenerator:

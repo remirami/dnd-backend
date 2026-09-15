@@ -5,8 +5,8 @@ Uses a hardcoded list of SRD 5.1 monster names (from 5thsrd.org) as the
 authoritative reference, then deletes any monsters not on that list.
 """
 from django.core.management.base import BaseCommand
-from bestiary.models import Enemy
 
+from bestiary.models import Enemy
 
 # Complete SRD 5.1 monster list from https://5thsrd.org/gamemaster_rules/monster_indexes/monsters_by_name/
 SRD_MONSTER_NAMES = {

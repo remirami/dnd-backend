@@ -1,4 +1,4 @@
-from typing import List, Dict, Optional
+
 from django.conf import settings
 
 try:
@@ -13,7 +13,7 @@ class DnDBeyondAPI:
     
     BASE_URL = "https://www.dndbeyond.com/api"
     
-    def __init__(self, api_key: Optional[str] = None):
+    def __init__(self, api_key: str | None = None):
         if not REQUESTS_AVAILABLE:
             raise ImportError('Requests library not available. Install with: pip install requests')
         
@@ -22,7 +22,7 @@ class DnDBeyondAPI:
         if self.api_key:
             self.session.headers.update({'Authorization': f'Bearer {self.api_key}'})
     
-    def search_monsters(self, query: str, limit: int = 20) -> List[Dict]:
+    def search_monsters(self, query: str, limit: int = 20) -> list[dict]:
         """Search for monsters by name"""
         try:
             url = f"{self.BASE_URL}/monsters"
@@ -41,7 +41,7 @@ class DnDBeyondAPI:
             print(f"D&D Beyond API error: {e}")
             return []
     
-    def get_monster_details(self, monster_id: str) -> Optional[Dict]:
+    def get_monster_details(self, monster_id: str) -> dict | None:
         """Get detailed monster information by ID"""
         try:
             url = f"{self.BASE_URL}/monsters/{monster_id}"
@@ -55,7 +55,7 @@ class DnDBeyondAPI:
             print(f"D&D Beyond API error: {e}")
             return None
     
-    def parse_monster_data(self, dndbeyond_data: Dict) -> Dict:
+    def parse_monster_data(self, dndbeyond_data: dict) -> dict:
         """Convert D&D Beyond format to our internal format"""
         try:
             monster = {
@@ -175,7 +175,7 @@ class DnDBeyondAPI:
             print(f"Error parsing D&D Beyond data: {e}")
             return {}
     
-    def get_monster_by_name(self, name: str) -> Optional[Dict]:
+    def get_monster_by_name(self, name: str) -> dict | None:
         """Get a specific monster by name"""
         results = self.search_monsters(name, limit=1)
         if results:
@@ -195,7 +195,7 @@ class Open5eAPI:
             raise ImportError('Requests library not available. Install with: pip install requests')
         self.session = requests.Session()
     
-    def get_all_monsters(self, limit: int = 50) -> List[Dict]:
+    def get_all_monsters(self, limit: int = 50) -> list[dict]:
         """Fetch all monsters from Open5e API, handling pagination"""
         monsters = []
         next_url = f"{self.BASE_URL}?limit={limit}"
@@ -216,7 +216,7 @@ class Open5eAPI:
                 
         return monsters
 
-    def parse_monster_data(self, data: Dict) -> Dict:
+    def parse_monster_data(self, data: dict) -> dict:
         """Convert Open5e format to our internal format"""
         # Mapping Open5e fields to our model
         monster = {
@@ -276,7 +276,7 @@ class SRDMonsterData:
     """Official D&D 5e SRD monster data"""
     
     @staticmethod
-    def get_srd_monsters() -> List[Dict]:
+    def get_srd_monsters() -> list[dict]:
         """Get official SRD monster data"""
         return [
             {

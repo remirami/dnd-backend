@@ -1,11 +1,12 @@
 import os
+
 import django
 
 os.environ.setdefault("DJANGO_SETTINGS_MODULE", "dnd_backend.settings")
 django.setup()
 
-from spells.models import Spell
 from characters.models import CharacterClass
+from spells.models import Spell
 
 # Mapping of Class Name -> List of Spell Names (SRD 5.2 subset)
 # Ideally this would be the full list, but we'll start with a solid subset to unblock the UI.
@@ -67,7 +68,7 @@ def fix_spells():
 
     # Also verify counts
     print("\nVerification:")
-    for class_name in CLASS_SPELLS.keys():
+    for class_name in CLASS_SPELLS:
         count = Spell.objects.filter(classes__name__iexact=class_name).count()
         print(f"{class_name}: {count} spells linked")
 

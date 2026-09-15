@@ -1,7 +1,8 @@
 
 import os
-import django
 import sys
+
+import django
 
 # Setup Django environment
 sys.path.append(os.getcwd())
@@ -9,8 +10,8 @@ os.environ.setdefault('DJANGO_SETTINGS_MODULE', 'dnd_backend.settings')
 django.setup()
 
 from bestiary.models import Enemy
-from spells.models import Spell
 from characters.models import CharacterRace
+from spells.models import Spell
 
 # SRD Violations Blacklist (Non-SRD / Product Identity)
 BLACKLIST_MONSTERS = [

@@ -3,6 +3,7 @@
 
 import re
 
+
 def auto_fix_brackets():
     with open('campaigns/class_features_data.py', 'r', encoding='utf-8') as f:
         content = f.read()

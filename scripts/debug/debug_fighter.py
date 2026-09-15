@@ -1,15 +1,18 @@
 
 import os
+
 import django
 
 # Setup Django environment
 os.environ.setdefault('DJANGO_SETTINGS_MODULE', 'dnd_backend.settings')
 django.setup()
 
+from django.contrib.auth.models import User
+from rest_framework.test import APIRequestFactory, force_authenticate
+
 from characters.models import Character, CharacterClass, CharacterRace, CharacterStats
 from characters.views import CharacterViewSet
-from rest_framework.test import APIRequestFactory, force_authenticate
-from django.contrib.auth.models import User
+
 
 def test_fighter_levelup():
     print("--- Starting Fighter Level Up Debug ---")

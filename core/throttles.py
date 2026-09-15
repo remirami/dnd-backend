@@ -3,7 +3,7 @@ Custom throttle classes for DRF API rate limiting.
 
 Provides specialized throttling for different API endpoints and operations.
 """
-from rest_framework.throttling import UserRateThrottle, AnonRateThrottle
+from rest_framework.throttling import AnonRateThrottle, UserRateThrottle
 
 
 class BurstRateThrottle(UserRateThrottle):
@@ -88,7 +88,6 @@ class AnonymousStrictThrottle(AnonRateThrottle):
     
     Use this for public endpoints that should be rate-limited more strictly.
     """
-    pass
 
 
 class NoThrottle:

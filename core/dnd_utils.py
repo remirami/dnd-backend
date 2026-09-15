@@ -157,8 +157,8 @@ def roll_dice(dice_string):
     Raises:
         ValueError: If dice string format is invalid
     """
-    import re
     import random
+    import re
     
     # Match patterns like 2d6, 2d6+3, 2d6-2
     match = re.match(r'(\d+)d(\d+)(?:([+-])(\d+))?', dice_string.strip())
@@ -207,8 +207,7 @@ def calculate_hit_points(level, hit_die, constitution_modifier, use_average=Fals
     import random
     
     # First level: max HP
-    if level < 1:
-        level = 1
+    level = max(level, 1)
     
     first_level_hp = hit_die + constitution_modifier
     

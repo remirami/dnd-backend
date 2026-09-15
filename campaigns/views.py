@@ -1,20 +1,35 @@
-from rest_framework import viewsets, status, permissions
-from rest_framework.decorators import action
-from rest_framework.response import Response
-from django.utils import timezone
-from django.db import transaction
 import logging
 
-from .models import Campaign, CampaignCharacter, CampaignEncounter, CharacterXP, TreasureRoom, TreasureRoomReward, RecruitableCharacter, RecruitmentRoom
-from .serializers import (
-    CampaignSerializer, CampaignCharacterSerializer, CampaignEncounterSerializer,
-    ShortRestRequestSerializer, LongRestRequestSerializer, TreasureRoomSerializer,
-    RecruitmentRoomSerializer
-)
-from .utils import grant_encounter_xp, TreasureGenerator, RecruitmentGenerator, CampaignGenerator
-from encounters.models import Encounter
+from django.db import transaction
+from django.utils import timezone
+from rest_framework import permissions, status, viewsets
+from rest_framework.decorators import action
+from rest_framework.response import Response
+
 from characters.models import Character
 from combat.models import CombatSession
+from encounters.models import Encounter
+
+from .models import (
+    Campaign,
+    CampaignCharacter,
+    CampaignEncounter,
+    CharacterXP,
+    RecruitableCharacter,
+    RecruitmentRoom,
+    TreasureRoom,
+    TreasureRoomReward,
+)
+from .serializers import (
+    CampaignCharacterSerializer,
+    CampaignEncounterSerializer,
+    CampaignSerializer,
+    LongRestRequestSerializer,
+    RecruitmentRoomSerializer,
+    ShortRestRequestSerializer,
+    TreasureRoomSerializer,
+)
+from .utils import CampaignGenerator, RecruitmentGenerator, TreasureGenerator, grant_encounter_xp
 
 # Campaign logging
 logger = logging.getLogger('campaign')
@@ -147,7 +162,7 @@ class CampaignViewSet(viewsets.ModelViewSet):
         except Exception as e:
             logger.error(f"Error generating gauntlet: {e}")
             return Response(
-                {"error": f"Failed to generate gauntlet: {str(e)}"},
+                {"error": f"Failed to generate gauntlet: {e!s}"},
                 status=status.HTTP_500_INTERNAL_SERVER_ERROR
             )
     
@@ -178,7 +193,7 @@ class CampaignViewSet(viewsets.ModelViewSet):
             })
         except Exception as e:
             return Response(
-                {"error": f"Failed to populate campaign: {str(e)}"},
+                {"error": f"Failed to populate campaign: {e!s}"},
                 status=status.HTTP_500_INTERNAL_SERVER_ERROR
             )
     
@@ -824,7 +839,7 @@ class CampaignViewSet(viewsets.ModelViewSet):
         
         # Handle XP bonus if applicable
         if reward.xp_bonus > 0:
-            xp_tracking, created = CharacterXP.objects.get_or_create(
+            xp_tracking, _created = CharacterXP.objects.get_or_create(
                 campaign_character=campaign_char
             )
             xp_result = xp_tracking.add_xp(reward.xp_bonus, source="treasure_room")
@@ -913,7 +928,7 @@ class CampaignViewSet(viewsets.ModelViewSet):
         xp_per_character = xp_amount // characters.count()
         
         for campaign_char in characters:
-            xp_tracking, created = CharacterXP.objects.get_or_create(
+            xp_tracking, _created = CharacterXP.objects.get_or_create(
                 campaign_character=campaign_char
             )
             
@@ -1162,7 +1177,7 @@ class CampaignViewSet(viewsets.ModelViewSet):
             
             if choice_type == 'feat':
                 # Handle feat selection
-                from characters.models import Feat, CharacterFeat, CharacterFeature
+                from characters.models import CharacterFeat, CharacterFeature, Feat
                 
                 feat_id = request.data.get('feat_id')
                 if not feat_id:
@@ -1311,7 +1326,7 @@ class CampaignViewSet(viewsets.ModelViewSet):
             )
         except Exception as e:
             return Response(
-                {"error": f"Failed to apply ASI/Feat: {str(e)}"},
+                {"error": f"Failed to apply ASI/Feat: {e!s}"},
                 status=status.HTTP_500_INTERNAL_SERVER_ERROR
             )
     
@@ -1371,6 +1386,7 @@ class CampaignViewSet(viewsets.ModelViewSet):
             
             # Apply subclass features retroactively for current level
             from characters.models import CharacterFeature
+
             from .class_features_data import get_subclass_features
             
             features_applied = []
@@ -1428,7 +1444,7 @@ class CampaignViewSet(viewsets.ModelViewSet):
             )
         except Exception as e:
             return Response(
-                {"error": f"Failed to select subclass: {str(e)}"},
+                {"error": f"Failed to select subclass: {e!s}"},
                 status=status.HTTP_500_INTERNAL_SERVER_ERROR
             )
     

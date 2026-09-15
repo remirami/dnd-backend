@@ -2,6 +2,7 @@
 Test script for HP mechanics
 """
 import os
+
 import django
 
 os.environ.setdefault('DJANGO_SETTINGS_MODULE', 'dnd_backend.settings')
@@ -38,8 +39,7 @@ def test_hp_mechanics():
     # 3. Add Temp HP
     print("\n--- Testing Add Temp HP (10) ---")
     amount = 10
-    if amount > stats.temporary_hit_points:
-        stats.temporary_hit_points = amount
+    stats.temporary_hit_points = max(stats.temporary_hit_points, amount)
     print(f"Result: Temp={stats.temporary_hit_points}")
     assert stats.temporary_hit_points == 10
     

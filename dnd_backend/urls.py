@@ -15,24 +15,34 @@ Including another URLconf
     2. Add a URL to urlpatterns:  path('blog/', include('blog.urls'))
 """
 from django.contrib import admin
-from django.urls import path, include
+from django.urls import include, path
 from rest_framework.routers import DefaultRouter
-from bestiary.views import EnemyViewSet, import_monsters_view, LanguageViewSet
-from encounters.views import EncounterViewSet, EncounterEnemyViewSet, EncounterThemeViewSet
-from characters.views import (
-    CharacterViewSet, CharacterClassViewSet, CharacterRaceViewSet,
-    CharacterBackgroundViewSet, CharacterProficiencyViewSet,
-    CharacterFeatureViewSet, CharacterSpellViewSet, CharacterResistanceViewSet
-)
-from combat.views import CombatSessionViewSet, CombatParticipantViewSet, CombatActionViewSet, CombatLogViewSet
-from items.views import (
-    ItemViewSet, WeaponViewSet, ArmorViewSet, ConsumableViewSet,
-    MagicItemViewSet, ItemCategoryViewSet, ItemPropertyViewSet
-)
-from campaigns.views import CampaignViewSet, CampaignCharacterViewSet, CampaignEncounterViewSet
-from spells.views import SpellViewSet
-from merchants.views import MerchantViewSet
 
+from bestiary.views import EnemyViewSet, LanguageViewSet, import_monsters_view
+from campaigns.views import CampaignCharacterViewSet, CampaignEncounterViewSet, CampaignViewSet
+from characters.views import (
+    CharacterBackgroundViewSet,
+    CharacterClassViewSet,
+    CharacterFeatureViewSet,
+    CharacterProficiencyViewSet,
+    CharacterRaceViewSet,
+    CharacterResistanceViewSet,
+    CharacterSpellViewSet,
+    CharacterViewSet,
+)
+from combat.views import CombatActionViewSet, CombatLogViewSet, CombatParticipantViewSet, CombatSessionViewSet
+from encounters.views import EncounterEnemyViewSet, EncounterThemeViewSet, EncounterViewSet
+from items.views import (
+    ArmorViewSet,
+    ConsumableViewSet,
+    ItemCategoryViewSet,
+    ItemPropertyViewSet,
+    ItemViewSet,
+    MagicItemViewSet,
+    WeaponViewSet,
+)
+from merchants.views import MerchantViewSet
+from spells.views import SpellViewSet
 
 router = DefaultRouter()
 # Bestiary routes

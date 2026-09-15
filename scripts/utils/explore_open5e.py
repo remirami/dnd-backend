@@ -41,7 +41,7 @@ for endpoint in endpoints_to_test:
                 print("  -> Response is not JSON")
         print()
     except Exception as e:
-        print(f"{endpoint}: Error - {str(e)}\n")
+        print(f"{endpoint}: Error - {e!s}\n")
 
 # Try to get detailed class info
 print("\n" + "="*80)
@@ -84,5 +84,5 @@ for endpoint in features_endpoints:
                 if data.get('results'):
                     print(f"  -> Sample: {data['results'][0].get('name', 'N/A')}")
     except Exception as e:
-        print(f"{endpoint}: Error - {str(e)}")
+        print(f"{endpoint}: Error - {e!s}")
 

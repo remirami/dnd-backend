@@ -1,7 +1,8 @@
 
 import os
-import django
 import sys
+
+import django
 
 # Setup Django environment
 sys.path.append(os.getcwd())
@@ -9,8 +10,9 @@ os.environ.setdefault('DJANGO_SETTINGS_MODULE', 'dnd_backend.settings')
 django.setup()
 
 from django.contrib.auth import get_user_model
-from characters.models import Character, CharacterClass, CharacterStats, CharacterRace, CharacterBackground
 from rest_framework.test import APIRequestFactory, force_authenticate
+
+from characters.models import Character, CharacterBackground, CharacterClass, CharacterRace, CharacterStats
 from characters.views import CharacterViewSet
 
 User = get_user_model()

@@ -1,15 +1,18 @@
 import os
-import django
 import sys
+
+import django
 
 # Setup Django environment
 sys.path.append(os.getcwd())
 os.environ.setdefault('DJANGO_SETTINGS_MODULE', 'dnd_backend.settings')
 django.setup()
 
-from characters.models import CharacterRace, CharacterClass, CharacterBackground
-from characters.serializers import CharacterSerializer
 from django.contrib.auth.models import User
+
+from characters.models import CharacterBackground, CharacterClass, CharacterRace
+from characters.serializers import CharacterSerializer
+
 
 def verify_2024_logic():
     print("Verifying 2024 Logic...")

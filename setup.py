@@ -4,8 +4,9 @@ D&D 5e Combat Simulator Backend Setup Script
 """
 
 import os
-import sys
 import subprocess
+import sys
+
 
 def run_command(command, description):
     """Run a command and handle errors"""

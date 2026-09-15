@@ -1,6 +1,8 @@
+import random
+
 from rest_framework.decorators import action
 from rest_framework.response import Response
-import random
+
 
 def add_rest_endpoints(viewset_class):
     """

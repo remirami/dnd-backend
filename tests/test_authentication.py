@@ -9,8 +9,10 @@ Tests:
 - Creating resources with authentication
 """
 
-import requests
 import json
+import sys
+
+import requests
 
 BASE_URL = "http://127.0.0.1:8000/api"
 
@@ -392,14 +394,14 @@ if __name__ == "__main__":
         success = test_authentication()
         if not success:
             print("\n[ERROR] Some tests failed. Check the output above for details.")
-            exit(1)
+            sys.exit(1)
     except requests.exceptions.ConnectionError:
         print("\n[ERROR] Could not connect to server.")
         print("   Make sure Django server is running: python manage.py runserver")
-        exit(1)
+        sys.exit(1)
     except Exception as e:
         print(f"\n[ERROR] Test failed with error: {e}")
         import traceback
         traceback.print_exc()
-        exit(1)
+        sys.exit(1)
 

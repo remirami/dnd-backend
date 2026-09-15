@@ -3,14 +3,17 @@ Tests for Encounter Theme and Biome Models
 
 Tests the database models for the encounter theme and biome distribution system.
 """
-from django.test import TestCase
 from django.db import IntegrityError
+from django.test import TestCase
 
-from encounters.models import (
-    EncounterTheme, EnemyThemeAssociation, ThemeIncompatibility,
-    BiomeEncounterWeight, Encounter
-)
 from bestiary.models import Enemy, EnemyStats
+from encounters.models import (
+    BiomeEncounterWeight,
+    Encounter,
+    EncounterTheme,
+    EnemyThemeAssociation,
+    ThemeIncompatibility,
+)
 
 
 class EncounterThemeModelTests(TestCase):

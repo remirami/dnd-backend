@@ -1,5 +1,7 @@
 from django.core.management.base import BaseCommand
+
 from characters.models import Character
+
 
 class Command(BaseCommand):
     help = 'Deletes ALL characters from the database'

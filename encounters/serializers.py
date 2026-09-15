@@ -1,9 +1,7 @@
 # encounters/serializers.py
 from rest_framework import serializers
-from .models import (
-    Encounter, EncounterEnemy, EncounterTheme,
-    EnemyThemeAssociation, BiomeEncounterWeight
-)
+
+from .models import BiomeEncounterWeight, Encounter, EncounterEnemy, EncounterTheme, EnemyThemeAssociation
 
 
 class EncounterEnemySerializer(serializers.ModelSerializer):

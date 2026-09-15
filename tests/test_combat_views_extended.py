@@ -4,14 +4,14 @@ Comprehensive Tests for Combat Views - Core Combat Flow
 Tests for untested endpoints in combat/views.py to improve coverage from 36% to 50%+.
 Covers: roll_initiative, next_turn, attack, saving_throw, end, stats
 """
-from django.test import TestCase
 from django.contrib.auth.models import User
-from rest_framework.test import APIClient
+from django.test import TestCase
 from rest_framework import status
+from rest_framework.test import APIClient
 
-from combat.models import CombatSession, CombatParticipant, CombatAction, CombatLog
-from characters.models import Character, CharacterClass, CharacterRace, CharacterStats
 from bestiary.models import Enemy, EnemyStats
+from characters.models import Character, CharacterClass, CharacterRace, CharacterStats
+from combat.models import CombatAction, CombatLog, CombatParticipant, CombatSession
 from encounters.models import Encounter, EncounterEnemy
 
 

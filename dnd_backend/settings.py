@@ -332,6 +332,7 @@ LOGGING = {
 
 # Ensure logs directory exists
 import os
+
 os.makedirs(BASE_DIR / 'logs', exist_ok=True)
 
 # Default primary key field type

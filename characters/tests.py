@@ -1,10 +1,9 @@
-from django.test import TestCase
 from django.contrib.auth.models import User
-from rest_framework.test import APIClient
+from django.test import TestCase
 from rest_framework import status
-from .models import (
-    Character, CharacterStats, CharacterClass, CharacterRace, CharacterBackground
-)
+from rest_framework.test import APIClient
+
+from .models import Character, CharacterBackground, CharacterClass, CharacterRace, CharacterStats
 
 
 class CharacterModelTests(TestCase):

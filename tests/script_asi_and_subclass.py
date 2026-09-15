@@ -3,6 +3,7 @@
 
 import os
 import sys
+
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 import django
 
@@ -10,8 +11,9 @@ os.environ.setdefault('DJANGO_SETTINGS_MODULE', 'dnd_backend.settings')
 django.setup()
 
 from django.contrib.auth.models import User
-from characters.models import Character, CharacterClass, CharacterRace, CharacterStats
+
 from campaigns.models import Campaign, CampaignCharacter, CharacterXP
+from characters.models import Character, CharacterClass, CharacterRace, CharacterStats
 
 print("\n" + "="*70)
 print("  ASI PLAYER CHOICE & SUBCLASS SELECTION TEST")

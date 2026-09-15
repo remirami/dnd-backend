@@ -1,6 +1,8 @@
 from rest_framework import serializers
-from .models import MerchantEncounter, MerchantInventoryItem, MerchantTransaction
+
 from items.serializers import ItemSerializer
+
+from .models import MerchantEncounter, MerchantInventoryItem, MerchantTransaction
 
 
 class MerchantInventoryItemSerializer(serializers.ModelSerializer):

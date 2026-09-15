@@ -1,13 +1,15 @@
 import os
-import django
 import sys
+
+import django
 
 # Setup Django environment
 sys.path.append(os.getcwd())
 os.environ.setdefault('DJANGO_SETTINGS_MODULE', 'dnd_backend.settings')
 django.setup()
 
-from characters.models import CharacterClass, Character, CharacterClassLevel
+from characters.models import Character, CharacterClass, CharacterClassLevel
+
 
 def merge_wizards():
     print("Merging Wizard duplicates...")
@@ -39,7 +41,6 @@ def merge_wizards():
                 # Assuming "duplicate class" bug, they probably only have one or the other effectively.
                 # If they have mismatched levels, this is complex.
                 # Deletion of 'bad' entry might be safest if 'target' exists?
-                pass 
             else:
                 lvl.character_class = target_wizard
                 lvl.save()

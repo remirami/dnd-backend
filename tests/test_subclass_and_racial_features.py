@@ -10,6 +10,7 @@ This script tests:
 
 import os
 import sys
+
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 import django
 
@@ -17,13 +18,11 @@ os.environ.setdefault('DJANGO_SETTINGS_MODULE', 'dnd_backend.settings')
 django.setup()
 
 from django.contrib.auth.models import User
-from characters.models import (
-    Character, CharacterStats, CharacterClass, CharacterRace, 
-    CharacterFeature
-)
-from campaigns.models import Campaign, CampaignCharacter, CharacterXP
-from campaigns.racial_features_data import get_racial_features, apply_racial_features_to_character
+
 from campaigns.class_features_data import get_class_features, get_subclass_features
+from campaigns.models import Campaign, CampaignCharacter, CharacterXP
+from campaigns.racial_features_data import apply_racial_features_to_character, get_racial_features
+from characters.models import Character, CharacterClass, CharacterFeature, CharacterRace, CharacterStats
 
 
 def test_racial_features():
@@ -404,7 +403,7 @@ def run_all_tests():
         print("  [PASS] Class features exist for all classes")
         
     except Exception as e:
-        print(f"\n[FAIL] TEST FAILED: {str(e)}")
+        print(f"\n[FAIL] TEST FAILED: {e!s}")
         import traceback
         traceback.print_exc()
         return False
@@ -414,5 +413,5 @@ def run_all_tests():
 
 if __name__ == '__main__':
     success = run_all_tests()
-    exit(0 if success else 1)
+    sys.exit(0 if success else 1)
 

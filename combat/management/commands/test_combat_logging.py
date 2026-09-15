@@ -1,11 +1,13 @@
+from datetime import timedelta
+
 from django.core.management.base import BaseCommand
 from django.utils import timezone
-from datetime import timedelta
-from combat.models import CombatSession, CombatParticipant, CombatAction
+
+from bestiary.models import DamageType, Enemy, EnemyStats
+from characters.models import Character, CharacterClass, CharacterRace, CharacterStats
+from combat.models import CombatAction, CombatParticipant, CombatSession
+from combat.utils import calculate_damage, roll_d20
 from encounters.models import Encounter, EncounterEnemy
-from characters.models import Character, CharacterStats, CharacterClass, CharacterRace
-from bestiary.models import Enemy, EnemyStats, DamageType
-from combat.utils import roll_d20, calculate_damage
 
 
 class Command(BaseCommand):
@@ -254,7 +256,7 @@ class Command(BaseCommand):
         for action_type, count in log.actions_by_type.items():
             self.stdout.write(f'  {action_type}: {count}')
         self.stdout.write('\nParticipant Stats:')
-        for pid, stats in log.participant_stats.items():
+        for stats in log.participant_stats.values():
             self.stdout.write(f'  {stats["name"]}:')
             self.stdout.write(f'    Damage Dealt: {stats["damage_dealt"]}')
             self.stdout.write(f'    Damage Received: {stats["damage_received"]}')

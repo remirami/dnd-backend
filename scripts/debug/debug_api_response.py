@@ -13,8 +13,8 @@ def check_via_client():
     os.environ.setdefault('DJANGO_SETTINGS_MODULE', 'dnd_backend.settings')
     django.setup()
     
-    from rest_framework.test import APIClient
     from django.contrib.auth import get_user_model
+    from rest_framework.test import APIClient
     get_user_model()
     
     client = APIClient()
@@ -51,5 +51,6 @@ def check_via_client():
         print("Character 151 not found")
 
 import sys
+
 if __name__ == "__main__":
     check_via_client()

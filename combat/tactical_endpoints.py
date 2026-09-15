@@ -3,9 +3,10 @@ Tactical Combat Endpoints
 
 Endpoints for AOE targeting, grappling, and cover systems.
 """
-from rest_framework.response import Response
 from rest_framework import status as http_status
-from .aoe_utils import get_aoe_targets, AOE_SPELL_TEMPLATES
+from rest_framework.response import Response
+
+from .aoe_utils import AOE_SPELL_TEMPLATES, get_aoe_targets
 from .utils import calculate_damage, calculate_saving_throw, roll_d20
 
 
@@ -137,7 +138,7 @@ def cast_aoe_spell_endpoint(self, request, pk=None):
             )
     except Exception as e:
         return Response(
-            {"error": f"Error calculating targets: {str(e)}"},
+            {"error": f"Error calculating targets: {e!s}"},
             status=http_status.HTTP_400_BAD_REQUEST
         )
     

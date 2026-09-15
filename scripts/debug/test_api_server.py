@@ -1,5 +1,6 @@
-import requests
 import os
+
+import requests
 
 # Try to get existing auth token? 
 # Or just login?
@@ -40,7 +41,6 @@ def test_api():
     # I will just rely on the user to restart if I suspect stale code.
     
     # Wait! I can create a user with known password in a setup script, THEN run this.
-    pass
 
 if __name__ == '__main__':
     # Creating a temp user to test API

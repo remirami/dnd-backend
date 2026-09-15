@@ -12,8 +12,13 @@ exclude = [
 
 [lint]
 ignore = [
-    "E402",  # Module level import not at top of file
-    "E722",  # Do not use bare `except`
-    "E701",  # Multiple statements on one line (colon)
-    "F601",  # Multi-value repeated key literal
+    "E402",    # Module level import not at top of file
+    "E722",    # Do not use bare `except`
+    "E701",    # Multiple statements on one line (colon)
+    "F601",    # Multi-value repeated key literal
+    "RUF012",  # Mutable default value for class attribute (Django models/serializers/admins)
+    "BLE001",  # Do not catch blind exception: `Exception`
+    "S110",    # `try`-`except`-`pass` detected
+    "SIM102",  # Use a single `if` statement instead of nested `if` statements
+    "SIM103",  # Return the condition directly
 ]

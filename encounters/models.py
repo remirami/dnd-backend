@@ -1,5 +1,6 @@
 # encounters/models.py
 from django.db import models
+
 from bestiary.models import Enemy
 
 

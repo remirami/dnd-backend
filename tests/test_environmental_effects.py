@@ -12,6 +12,7 @@ Tests:
 
 import os
 import sys
+
 import django
 
 # Setup Django
@@ -20,12 +21,17 @@ os.environ.setdefault('DJANGO_SETTINGS_MODULE', 'dnd_backend.settings')
 django.setup()
 
 from django.contrib.auth.models import User
+
 from characters.models import Character, CharacterClass, CharacterRace, CharacterStats
-from encounters.models import Encounter
-from combat.models import CombatSession, CombatParticipant, EnvironmentalEffect, ParticipantPosition
 from combat.environmental_effects import (
-    calculate_movement_cost, calculate_cover_ac_bonus, has_full_cover, get_lighting_attack_modifier, get_weather_ranged_modifier
+    calculate_cover_ac_bonus,
+    calculate_movement_cost,
+    get_lighting_attack_modifier,
+    get_weather_ranged_modifier,
+    has_full_cover,
 )
+from combat.models import CombatParticipant, CombatSession, EnvironmentalEffect, ParticipantPosition
+from encounters.models import Encounter
 
 # Configure stdout for Unicode
 if sys.stdout.encoding != 'utf-8':
@@ -147,7 +153,7 @@ def test_environmental_effects_integration():
         level=5
     )
     
-    stats, _ = CharacterStats.objects.get_or_create(
+    _stats, _ = CharacterStats.objects.get_or_create(
         character=character,
         defaults={
             'hit_points': 50,
@@ -257,7 +263,7 @@ def test_hazard_damage():
     ]
     
     for hazard_type, expected_dice, expected_damage_type, expected_save_type, expected_dc in test_cases:
-        damage_dice, damage_type, save_type, save_dc, condition = calculate_hazard_damage(hazard_type)
+        damage_dice, damage_type, save_type, save_dc, _condition = calculate_hazard_damage(hazard_type)
         print(f"  Hazard: {hazard_type}")
         print(f"    Damage: {damage_dice}, Type: {damage_type}, Save: {save_type} DC {save_dc}")
         assert damage_dice == expected_dice, f"Expected {expected_dice}, got {damage_dice}"

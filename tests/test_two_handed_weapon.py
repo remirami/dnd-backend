@@ -1,8 +1,10 @@
-from django.test import TestCase
 from django.contrib.auth.models import User
+from django.test import TestCase
+
+from characters.inventory_management import can_equip_item, equip_item
 from characters.models import Character, CharacterClass, CharacterRace, CharacterStats
-from items.models import Weapon, DamageType, ItemCategory
-from characters.inventory_management import equip_item, can_equip_item
+from items.models import DamageType, ItemCategory, Weapon
+
 
 class TwoHandedWeaponEquipTests(TestCase):
     """Test two-handed weapon equipment rules and constraints"""

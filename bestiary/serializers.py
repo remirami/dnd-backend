@@ -1,9 +1,22 @@
 from rest_framework import serializers
+
 from .models import (
-    Enemy, EnemyAttack, EnemyAbility, EnemySpell, EnemySpellSlot,
-    EnemyStats, DamageType, EnemyResistance, Language, EnemyLanguage,
-    Condition, EnemyConditionImmunity, EnemyLegendaryAction,
-    Environment, EnemyEnvironment, EnemyTreasure
+    Condition,
+    DamageType,
+    Enemy,
+    EnemyAbility,
+    EnemyAttack,
+    EnemyConditionImmunity,
+    EnemyEnvironment,
+    EnemyLanguage,
+    EnemyLegendaryAction,
+    EnemyResistance,
+    EnemySpell,
+    EnemySpellSlot,
+    EnemyStats,
+    EnemyTreasure,
+    Environment,
+    Language,
 )
 
 

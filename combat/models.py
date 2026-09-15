@@ -1,9 +1,10 @@
+from django.core.validators import MaxValueValidator, MinValueValidator
 from django.db import models
-from django.core.validators import MinValueValidator, MaxValueValidator
 from django.utils import timezone
-from encounters.models import Encounter, EncounterEnemy
-from characters.models import Character
+
 from bestiary.models import Condition, DamageType
+from characters.models import Character
+from encounters.models import Encounter, EncounterEnemy
 
 
 class CombatSession(models.Model):
@@ -102,7 +103,7 @@ class CombatSession(models.Model):
     
     def get_or_create_log(self):
         """Get or create combat log for this session"""
-        log, created = CombatLog.objects.get_or_create(combat_session=self)
+        log, _created = CombatLog.objects.get_or_create(combat_session=self)
         return log
     
     def generate_log(self):
@@ -642,10 +643,9 @@ class CombatParticipant(models.Model):
         if not self.encounter_enemy:
             return  # Not an enemy
         
-        if spell_name in self.spell_uses_remaining:
-            if self.spell_uses_remaining[spell_name] > 0:
-                self.spell_uses_remaining[spell_name] -= 1
-                self.save()
+        if spell_name in self.spell_uses_remaining and self.spell_uses_remaining[spell_name] > 0:
+            self.spell_uses_remaining[spell_name] -= 1
+            self.save()
     
     def reset_enemy_spell_slots(self):
         """Reset all enemy spell uses (for long rest or new day)"""
@@ -815,7 +815,7 @@ class CombatParticipant(models.Model):
         if not self.is_concentrating:
             return False, None, None, "Not concentrating on any spell"
         
-        from .utils import roll_d20, calculate_saving_throw
+        from .utils import calculate_saving_throw, roll_d20
         
         # Calculate DC: 10 or half damage, whichever is higher
         save_dc = max(10, damage_amount // 2)
@@ -1169,24 +1169,22 @@ class CombatLog(models.Model):
                     participant_stats[action.target.id]['healing_received'] += healing_amount
             
             # Track attacks
-            if action.action_type == 'attack':
-                if actor_id in participant_stats:
-                    participant_stats[actor_id]['attacks_made'] += 1
-                    if action.hit:
-                        participant_stats[actor_id]['attacks_hit'] += 1
-                        if action.critical:
-                            participant_stats[actor_id]['critical_hits'] += 1
-                    else:
-                        participant_stats[actor_id]['attacks_missed'] += 1
+            if action.action_type == 'attack' and actor_id in participant_stats:
+                participant_stats[actor_id]['attacks_made'] += 1
+                if action.hit:
+                    participant_stats[actor_id]['attacks_hit'] += 1
+                    if action.critical:
+                        participant_stats[actor_id]['critical_hits'] += 1
+                else:
+                    participant_stats[actor_id]['attacks_missed'] += 1
             
             # Track spells
-            if action.action_type == 'spell':
-                if actor_id in participant_stats:
-                    participant_stats[actor_id]['spells_cast'] += 1
-                    spell_name = action.attack_name
-                    participant_stats[actor_id]['spells_by_name'][spell_name] = \
+            if action.action_type == 'spell' and actor_id in participant_stats:
+                participant_stats[actor_id]['spells_cast'] += 1
+                spell_name = action.attack_name
+                participant_stats[actor_id]['spells_by_name'][spell_name] = \
                         participant_stats[actor_id]['spells_by_name'].get(spell_name, 0) + 1
-                    spells_cast[spell_name] = spells_cast.get(spell_name, 0) + 1
+                spells_cast[spell_name] = spells_cast.get(spell_name, 0) + 1
         
         # Calculate totals
         self.total_damage_dealt = sum(

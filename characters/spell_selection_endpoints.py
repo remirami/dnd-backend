@@ -1,9 +1,10 @@
 """
 Spell selection endpoints for CharacterViewSet
 """
+from rest_framework import permissions, status
 from rest_framework.decorators import action
 from rest_framework.response import Response
-from rest_framework import permissions, status
+
 from characters.models import CharacterSpell
 from spells.models import Spell
 from spells.serializers import SpellSerializer
@@ -17,7 +18,7 @@ def add_spell_selection_endpoints(cls):
     @action(detail=False, methods=['get'], permission_classes=[permissions.AllowAny])
     def starting_spell_choices(self, request):
         """Get available spells for character creation based on class"""
-        from characters.starting_spells import get_spell_selection_requirements, RECOMMENDED_SPELLS
+        from characters.starting_spells import RECOMMENDED_SPELLS, get_spell_selection_requirements
         
         class_name = request.query_params.get('class_name')
         if not class_name:
@@ -144,7 +145,7 @@ def add_spell_selection_endpoints(cls):
             except Spell.DoesNotExist:
                 failed_spells.append(f"Cantrip ID {spell_id}: Not found")
             except Exception as e:
-                failed_spells.append(f"Cantrip ID {spell_id}: {str(e)}")
+                failed_spells.append(f"Cantrip ID {spell_id}: {e!s}")
         
         # Process leveled spells
         is_wizard = clean_class_name.lower() == 'wizard'
@@ -176,7 +177,7 @@ def add_spell_selection_endpoints(cls):
             except Spell.DoesNotExist:
                 failed_spells.append(f"Spell ID {spell_id}: Not found")
             except Exception as e:
-                failed_spells.append(f"Spell ID {spell_id}: {str(e)}")
+                failed_spells.append(f"Spell ID {spell_id}: {e!s}")
         
         # Prepare a success message
         message = f"Successfully added {len(added_spells)} spells to {character.name}"
@@ -261,7 +262,7 @@ def add_spell_selection_endpoints(cls):
             except Spell.DoesNotExist:
                 errors.append(f"Spell {spell_id} not found")
             except Exception as e:
-                errors.append(f"Error adding spell {spell_id}: {str(e)}")
+                errors.append(f"Error adding spell {spell_id}: {e!s}")
         
         if errors:
              return Response({
@@ -281,7 +282,7 @@ def add_spell_selection_endpoints(cls):
             except Exception as e:
                 # Log the error but don't fail the request. The user spells were added successfully.
                 # We just failed to calculate if they need MORE spells.
-                print(f"Error calculating pending spells: {str(e)}")
+                print(f"Error calculating pending spells: {e!s}")
                 # Optionally append to message?
                 # message += f" (Warning: Could not calculate next steps: {str(e)})"
              

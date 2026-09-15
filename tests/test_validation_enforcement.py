@@ -4,14 +4,20 @@ Validation Enforcement Tests
 Tests that multiclass and feat prerequisites are properly enforced
 and cannot be bypassed via API endpoints.
 """
-from django.test import TestCase
 from django.contrib.auth.models import User
-from rest_framework.test import APIClient
+from django.test import TestCase
 from rest_framework import status
+from rest_framework.test import APIClient
 
 from characters.models import (
-    Character, CharacterClass, CharacterRace, CharacterBackground,
-    CharacterStats, Feat, CharacterFeat, CharacterClassLevel
+    Character,
+    CharacterBackground,
+    CharacterClass,
+    CharacterClassLevel,
+    CharacterFeat,
+    CharacterRace,
+    CharacterStats,
+    Feat,
 )
 
 

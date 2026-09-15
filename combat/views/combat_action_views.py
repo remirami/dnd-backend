@@ -3,24 +3,32 @@ Combat Action Views - Core combat action endpoints.
 
 Contains the CombatActionMixin with attack, cast_spell, and saving_throw actions.
 """
-from rest_framework.decorators import action
-from rest_framework.response import Response
-from rest_framework import status
 import logging
 
-from combat.models import CombatParticipant, CombatAction, ConditionApplication, EnvironmentalEffect, ParticipantPosition
+from rest_framework import status
+from rest_framework.decorators import action
+from rest_framework.response import Response
+
 from combat.condition_effects import auto_apply_condition_from_spell
 from combat.environmental_effects import (
-    calculate_cover_ac_bonus, has_full_cover,
-    get_lighting_attack_modifier, get_weather_ranged_modifier,
+    calculate_cover_ac_bonus,
+    get_lighting_attack_modifier,
+    get_weather_ranged_modifier,
+    has_full_cover,
+)
+from combat.models import (
+    CombatAction,
+    CombatParticipant,
+    ConditionApplication,
+    EnvironmentalEffect,
+    ParticipantPosition,
 )
 from combat.serializers import (
-    CombatActionSerializer, AttackRequestSerializer, SpellRequestSerializer,
+    AttackRequestSerializer,
+    CombatActionSerializer,
+    SpellRequestSerializer,
 )
-from combat.utils import (
-    roll_d20, calculate_attack_roll, calculate_damage, check_hit,
-    calculate_saving_throw
-)
+from combat.utils import calculate_attack_roll, calculate_damage, calculate_saving_throw, check_hit, roll_d20
 
 logger = logging.getLogger('combat')
 
@@ -228,12 +236,11 @@ class CombatActionMixin:
                     roll = min(roll, roll2)
                     advantage = False
                     disadvantage = True
-            elif weather_mod == 'advantage':
-                if equipped_weapon and equipped_weapon.range_normal > 0:
-                    roll2, _ = roll_d20()
-                    roll = max(roll, roll2)
-                    advantage = True
-                    disadvantage = False
+            elif weather_mod == 'advantage' and equipped_weapon and equipped_weapon.range_normal > 0:
+                roll2, _ = roll_d20()
+                roll = max(roll, roll2)
+                advantage = True
+                disadvantage = False
         
         # Recalculate attack total with new roll
         attack_total, attack_breakdown = calculate_attack_roll(
@@ -257,7 +264,7 @@ class CombatActionMixin:
             damage_amount, damage_breakdown = calculate_damage(
                 damage_string, damage_modifier, critical
             )
-            new_hp, concentration_broken = target.take_damage(damage_amount)
+            _new_hp, concentration_broken = target.take_damage(damage_amount)
         
         # Create combat action
         combat_action = CombatAction.objects.create(
@@ -387,12 +394,11 @@ class CombatActionMixin:
                     )
         
         # Validate spell slots for enemies
-        if caster.encounter_enemy:
-            if not caster.can_cast_enemy_spell(spell_name):
-                return Response(
-                    {"error": f"{caster.get_name()} has no spell slots remaining for {spell_name}"},
-                    status=status.HTTP_400_BAD_REQUEST
-                )
+        if caster.encounter_enemy and not caster.can_cast_enemy_spell(spell_name):
+            return Response(
+                {"error": f"{caster.get_name()} has no spell slots remaining for {spell_name}"},
+                status=status.HTTP_400_BAD_REQUEST
+            )
         
         target = None
         if target_id:
@@ -415,7 +421,7 @@ class CombatActionMixin:
         save_success = None
         damage_amount = 0
         if save_type and save_dc and target:
-            save_roll, save_breakdown = roll_d20()
+            save_roll, _save_breakdown = roll_d20()
             ability_mod = target.get_ability_modifier(save_type)
             proficiency_bonus = target.character.proficiency_bonus if target.character else 2
             proficiency = False  # Simplified
@@ -433,7 +439,7 @@ class CombatActionMixin:
                     damage_amount, _ = calculate_damage(damage_string, 0, False)
                 
                 if damage_amount > 0:
-                    new_hp, _ = target.take_damage(damage_amount)
+                    _new_hp, _ = target.take_damage(damage_amount)
         
         # Auto-apply conditions from spell (if save failed or no save)
         applied_condition = None

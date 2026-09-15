@@ -2,17 +2,19 @@
 Test script for spell selection data and endpoints
 """
 import os
+
 import django
 
 os.environ.setdefault('DJANGO_SETTINGS_MODULE', 'dnd_backend.settings')
 django.setup()
 
 from characters.starting_spells import (
-    is_caster_at_level_1,
     calculate_starting_cantrips,
     calculate_starting_spells,
-    get_spell_selection_requirements
+    get_spell_selection_requirements,
+    is_caster_at_level_1,
 )
+
 
 def test_spell_selection_data():
     """Test spell selection data for all classes"""

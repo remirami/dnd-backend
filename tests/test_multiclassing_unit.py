@@ -5,13 +5,14 @@ Target: Improve coverage from 47% to 75%
 """
 
 from django.test import TestCase
-from characters.models import Character, CharacterClass, CharacterRace, CharacterClassLevel
+
+from characters.models import Character, CharacterClass, CharacterClassLevel, CharacterRace
 from characters.multiclassing import (
-    get_total_level,
     calculate_multiclass_spell_slots,
     get_class_level,
     get_multiclass_hit_dice,
-    get_primary_class
+    get_primary_class,
+    get_total_level,
 )
 
 

@@ -6,7 +6,6 @@ Handles automatic condition application from spells/abilities and condition effe
 
 from bestiary.models import Condition
 
-
 # Mapping of spells/abilities to conditions they apply
 SPELL_CONDITION_MAP = {
     # Spells
@@ -232,15 +231,7 @@ def calculate_effective_speed(participant, base_speed):
     speed = base_speed
     
     # Check for speed-affecting conditions
-    if participant.conditions.filter(name='grappled').exists():
-        speed = 0
-    elif participant.conditions.filter(name='restrained').exists():
-        speed = 0
-    elif participant.conditions.filter(name='paralyzed').exists():
-        speed = 0
-    elif participant.conditions.filter(name='unconscious').exists():
-        speed = 0
-    elif participant.conditions.filter(name='petrified').exists():
+    if participant.conditions.filter(name='grappled').exists() or participant.conditions.filter(name='restrained').exists() or participant.conditions.filter(name='paralyzed').exists() or participant.conditions.filter(name='unconscious').exists() or participant.conditions.filter(name='petrified').exists():
         speed = 0
     
     # Exhaustion level 2: half speed

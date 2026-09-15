@@ -10,6 +10,7 @@ This script tests:
 
 import os
 import sys
+
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 import django
 
@@ -17,12 +18,19 @@ os.environ.setdefault('DJANGO_SETTINGS_MODULE', 'dnd_backend.settings')
 django.setup()
 
 from django.contrib.auth.models import User
+
+from campaigns.background_features_data import apply_background_features_to_character, get_background_features
 from characters.models import (
-    Character, CharacterStats, CharacterClass, CharacterRace, 
-    CharacterBackground, CharacterFeature, Feat, CharacterFeat
+    Character,
+    CharacterBackground,
+    CharacterClass,
+    CharacterFeat,
+    CharacterFeature,
+    CharacterRace,
+    CharacterStats,
+    Feat,
 )
-from campaigns.background_features_data import get_background_features, apply_background_features_to_character
-from combat.models import CombatSession, CombatParticipant
+from combat.models import CombatParticipant, CombatSession
 from encounters.models import Encounter
 
 
@@ -326,7 +334,7 @@ def run_all_tests():
         return True
         
     except Exception as e:
-        print(f"\n[FAIL] TEST FAILED: {str(e)}")
+        print(f"\n[FAIL] TEST FAILED: {e!s}")
         import traceback
         traceback.print_exc()
         return False
@@ -334,5 +342,5 @@ def run_all_tests():
 
 if __name__ == '__main__':
     success = run_all_tests()
-    exit(0 if success else 1)
+    sys.exit(0 if success else 1)
 

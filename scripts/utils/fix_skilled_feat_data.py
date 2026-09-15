@@ -1,16 +1,19 @@
 
 import os
-import django
 
 # Setup Django environment
 import sys
+
+import django
+
 # Add project root to path
 sys.path.append('c:/dnd-backend/dnd-backend')
 os.environ.setdefault('DJANGO_SETTINGS_MODULE', 'dnd_backend.settings')
 django.setup()
 
-from characters.models import CharacterFeature, CharacterFeat
 from campaigns.feat_data import get_feat_config
+from characters.models import CharacterFeat, CharacterFeature
+
 
 def fix_skilled_feat():
     config = get_feat_config('Skilled')

@@ -3,10 +3,9 @@ Combat utilities for dice rolling and calculations
 """
 import random
 import re
-from typing import Tuple
 
 
-def roll_dice(dice_string: str) -> Tuple[int, str]:
+def roll_dice(dice_string: str) -> tuple[int, str]:
     """
     Roll dice based on a string like "2d6+3" or "1d20"
     Returns: (result, breakdown_string)
@@ -38,7 +37,7 @@ def roll_dice(dice_string: str) -> Tuple[int, str]:
     return total, breakdown
 
 
-def roll_d20(advantage: bool = False, disadvantage: bool = False) -> Tuple[int, str]:
+def roll_d20(advantage: bool = False, disadvantage: bool = False) -> tuple[int, str]:
     """
     Roll a d20, optionally with advantage or disadvantage
     Returns: (result, breakdown_string)
@@ -68,7 +67,7 @@ def calculate_attack_roll(
     proficiency_bonus: int = 0,
     proficiency: bool = False,
     other_modifiers: int = 0
-) -> Tuple[int, str]:
+) -> tuple[int, str]:
     """
     Calculate total attack roll
     Returns: (total, breakdown_string)
@@ -97,7 +96,7 @@ def calculate_damage(
     damage_string: str,
     ability_modifier: int = 0,
     critical: bool = False
-) -> Tuple[int, str]:
+) -> tuple[int, str]:
     """
     Calculate damage from a dice string
     If critical, double the dice (but not modifiers)
@@ -147,7 +146,7 @@ def calculate_saving_throw(
     proficiency_bonus: int = 0,
     proficiency: bool = False,
     other_modifiers: int = 0
-) -> Tuple[int, str]:
+) -> tuple[int, str]:
     """
     Calculate total saving throw
     Returns: (total, breakdown_string)

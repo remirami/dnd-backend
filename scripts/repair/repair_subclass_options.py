@@ -1,7 +1,8 @@
 
 import os
-import django
 import sys
+
+import django
 
 sys.path.append(os.getcwd())
 os.environ.setdefault('DJANGO_SETTINGS_MODULE', 'dnd_backend.settings')
@@ -9,6 +10,7 @@ django.setup()
 
 from characters.models import Character, CharacterFeature
 from characters.serializers import CharacterSerializer
+
 
 def repair_and_verify():
     print("--- Repairing Subclass Feature Options ---")
@@ -29,23 +31,21 @@ def repair_and_verify():
     for char in characters:
         # Fix Fighter Martial Archetype
         ma = CharacterFeature.objects.filter(character=char, name="Martial Archetype").first()
-        if ma:
-            if not ma.options:
-                print(f"Updating Martial Archetype options for {char.name}")
-                ma.options = FIGHTER_OPTIONS
-                ma.choice_limit = 1
-                ma.save()
-                updates += 1
+        if ma and not ma.options:
+            print(f"Updating Martial Archetype options for {char.name}")
+            ma.options = FIGHTER_OPTIONS
+            ma.choice_limit = 1
+            ma.save()
+            updates += 1
 
         # Fix Combat Superiority
         cs = CharacterFeature.objects.filter(character=char, name="Combat Superiority").first()
-        if cs:
-            if not cs.options:
-                print(f"Updating Combat Superiority options for {char.name}")
-                cs.options = MANEUVER_OPTIONS
-                cs.choice_limit = 3
-                cs.save()
-                updates += 1
+        if cs and not cs.options:
+            print(f"Updating Combat Superiority options for {char.name}")
+            cs.options = MANEUVER_OPTIONS
+            cs.choice_limit = 3
+            cs.save()
+            updates += 1
                 
     print(f"Updated {updates} features.")
     

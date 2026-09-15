@@ -3,14 +3,12 @@ Additional tests for characters/views.py API endpoints
 Extends existing characters/tests.py to improve coverage from 28% to 65%
 """
 
-from django.test import TestCase
 from django.contrib.auth.models import User
-from rest_framework.test import APIClient
+from django.test import TestCase
 from rest_framework import status
+from rest_framework.test import APIClient
 
-from characters.models import (
-    Character, CharacterClass, CharacterRace, CharacterStats
-)
+from characters.models import Character, CharacterClass, CharacterRace, CharacterStats
 
 
 class CharacterViewsExtendedTests(TestCase):

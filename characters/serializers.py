@@ -1,10 +1,20 @@
 from rest_framework import serializers
+
+from bestiary.serializers import DamageTypeSerializer, LanguageSerializer
+
 from .models import (
-    Character, CharacterStats, CharacterClass, CharacterRace, CharacterBackground,
-    CharacterProficiency, CharacterFeature, CharacterSpell, CharacterResistance, CharacterItem,
-    CharacterClassLevel
+    Character,
+    CharacterBackground,
+    CharacterClass,
+    CharacterClassLevel,
+    CharacterFeature,
+    CharacterItem,
+    CharacterProficiency,
+    CharacterRace,
+    CharacterResistance,
+    CharacterSpell,
+    CharacterStats,
 )
-from bestiary.serializers import LanguageSerializer, DamageTypeSerializer
 
 
 class CharacterClassSerializer(serializers.ModelSerializer):
@@ -81,6 +91,7 @@ class CharacterFeatureSerializer(serializers.ModelSerializer):
 
 
 from items.serializers import ItemSerializer
+
 
 class CharacterSpellSerializer(serializers.ModelSerializer):
     level_display = serializers.CharField(source='get_level_display', read_only=True)
@@ -342,8 +353,9 @@ class CharacterSerializer(serializers.ModelSerializer):
         """Get multiclass information"""
         try:
             from .multiclassing import (
-                calculate_multiclass_spell_slots, get_multiclass_spellcasting_ability,
-                get_multiclass_hit_dice
+                calculate_multiclass_spell_slots,
+                get_multiclass_hit_dice,
+                get_multiclass_spellcasting_ability,
             )
             return {
                 'spell_slots': calculate_multiclass_spell_slots(obj),
@@ -446,7 +458,7 @@ class CharacterSerializer(serializers.ModelSerializer):
             origin_feat_name = bg.ability_score_options.get('feat')
             if origin_feat_name:
                 try:
-                    from .models import Feat, CharacterFeat
+                    from .models import CharacterFeat, Feat
                     feat = Feat.objects.filter(name__iexact=origin_feat_name).first()
                     if feat:
                         from campaigns.feat_data import get_feat_config
@@ -700,6 +712,7 @@ class CharacterSerializer(serializers.ModelSerializer):
             # Apply Class Features for gained levels
             if instance.character_class:
                 from campaigns.class_features_data import get_class_features
+
                 from .models import CharacterFeature
                 
                 # We need to apply features for ALL levels gained in this jump
@@ -781,9 +794,10 @@ class CharacterFeatSerializer(serializers.ModelSerializer):
             feat_id = self.instance.feat_id
             
         if character and feat_id:
-            from .models import CharacterFeat, Feat
             # Check if likely duplicate, unless it's repeatable
             from campaigns.feat_data import get_feat_config
+
+            from .models import CharacterFeat, Feat
 
             duplicate_exists = not self.instance and CharacterFeat.objects.filter(character=character, feat_id=feat_id).exists()
             

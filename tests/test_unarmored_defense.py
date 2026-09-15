@@ -1,8 +1,10 @@
-from django.test import TestCase
 from django.contrib.auth.models import User
-from characters.models import Character, CharacterClass, CharacterRace, CharacterStats, CharacterItem
-from items.models import Armor, ItemCategory
+from django.test import TestCase
+
 from characters.inventory_management import recalculate_armor_class
+from characters.models import Character, CharacterClass, CharacterItem, CharacterRace, CharacterStats
+from items.models import Armor, ItemCategory
+
 
 class UnarmoredDefenseTests(TestCase):
     """Test Unarmored Defense calculation rules (Barbarian, Monk, Sorcerer)"""

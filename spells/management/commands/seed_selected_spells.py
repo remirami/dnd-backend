@@ -1,8 +1,9 @@
 import requests
 from django.core.management.base import BaseCommand
 from django.utils.text import slugify
-from spells.models import Spell
+
 from characters.models import CharacterClass
+from spells.models import Spell
 
 # List provided by user (Levels 2-9)
 APPROVED_SPELLS = [
@@ -125,7 +126,7 @@ class Command(BaseCommand):
                     created_count += 1
                     
                     # Add classes
-                    if 'dnd_class' in spell_data and spell_data['dnd_class']:
+                    if spell_data.get('dnd_class'):
                         self._add_spell_classes(spell, spell_data['dnd_class'])
                 
                 self.stdout.write(f'Processed {processed_count} spells...')

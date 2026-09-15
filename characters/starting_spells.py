@@ -245,9 +245,7 @@ def calculate_starting_spells(class_name, character_stats=None):
         # Calculate how many they can prepare (if stats provided)
         if character_stats:
             class_name_lower = class_name.lower()
-            if class_name_lower == 'cleric':
-                modifier = character_stats.wisdom_modifier
-            elif class_name_lower == 'druid':
+            if class_name_lower == 'cleric' or class_name_lower == 'druid':
                 modifier = character_stats.wisdom_modifier
             elif class_name_lower == 'paladin':
                 modifier = character_stats.charisma_modifier

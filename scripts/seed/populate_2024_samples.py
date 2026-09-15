@@ -1,13 +1,15 @@
 import os
-import django
 import sys
+
+import django
 
 # Setup Django environment
 sys.path.append(os.getcwd())
 os.environ.setdefault('DJANGO_SETTINGS_MODULE', 'dnd_backend.settings')
 django.setup()
 
-from characters.models import CharacterRace, CharacterBackground
+from characters.models import CharacterBackground, CharacterRace
+
 
 def populate_2024_data():
     print("Populating 2024 Sample Data...")
@@ -15,7 +17,7 @@ def populate_2024_data():
     # 1. Human (2024 Species)
     # Note: 2024 Humans get NO ability score increases from Species.
     # They get "Resourceful" (Heroic Inspiration) and "Skillful" (Skill + Origin Feat)
-    human_2024, created = CharacterRace.objects.get_or_create(
+    _human_2024, created = CharacterRace.objects.get_or_create(
         name='human_2024',
         defaults={
             'source_ruleset': '2024',
@@ -36,7 +38,7 @@ def populate_2024_data():
 
     # 2. Farmer (2024 Background)
     # Grants: Str/Con/Wis ASI, Tough Feat, Animal Handling, Nature
-    farmer_2024, created = CharacterBackground.objects.get_or_create(
+    _farmer_2024, created = CharacterBackground.objects.get_or_create(
         name='farmer_2024',
         defaults={
             'source_ruleset': '2024',

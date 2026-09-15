@@ -2,39 +2,65 @@
 Main CharacterViewSet for managing player characters.
 This is the core ViewSet with CRUD operations and all action endpoints.
 """
-from rest_framework import viewsets, status, permissions
+from rest_framework import permissions, status, viewsets
 from rest_framework.decorators import action
 from rest_framework.response import Response
 
+from campaigns.utils import calculate_spell_slots
+
+from ..equipment_endpoints import add_equipment_endpoints_to_viewset
+from ..hp_endpoints import add_hp_endpoints
+from ..inventory_management import (
+    calculate_carrying_capacity,
+    calculate_total_weight,
+    equip_item,
+    get_encumbrance_effects,
+    get_encumbrance_level,
+    get_equipped_armor,
+    get_equipped_shield,
+    get_equipped_weapon,
+    unequip_item,
+)
 from ..models import (
-    Character, CharacterClass, CharacterProficiency, CharacterFeature, CharacterSpell, CharacterItem,
-    CharacterClassLevel
+    Character,
+    CharacterClass,
+    CharacterClassLevel,
+    CharacterFeature,
+    CharacterItem,
+    CharacterProficiency,
+    CharacterSpell,
 )
 from ..multiclassing import (
-    can_multiclass_into, calculate_multiclass_spell_slots, get_multiclass_spellcasting_ability,
-    get_multiclass_hit_dice, get_total_level, MULTICLASS_PREREQUISITES
+    MULTICLASS_PREREQUISITES,
+    calculate_multiclass_spell_slots,
+    can_multiclass_into,
+    get_multiclass_hit_dice,
+    get_multiclass_spellcasting_ability,
+    get_total_level,
 )
+from ..rest_endpoints import add_rest_endpoints
 from ..serializers import (
-    CharacterSerializer, CharacterStatsSerializer, CharacterProficiencySerializer,
-    CharacterFeatureSerializer, CharacterSpellSerializer
+    CharacterFeatureSerializer,
+    CharacterProficiencySerializer,
+    CharacterSerializer,
+    CharacterSpellSerializer,
+    CharacterStatsSerializer,
 )
 from ..spell_management import (
-    is_prepared_caster, is_known_caster, can_cast_rituals,
-    calculate_spells_prepared, calculate_spells_known,
-    get_wizard_spellbook_size, can_learn_spell, can_add_to_spellbook,
-    get_prepared_spells, get_known_spells, get_spellbook_spells
+    calculate_spells_known,
+    calculate_spells_prepared,
+    can_add_to_spellbook,
+    can_cast_rituals,
+    can_learn_spell,
+    get_known_spells,
+    get_prepared_spells,
+    get_spellbook_spells,
+    get_wizard_spellbook_size,
+    is_known_caster,
+    is_prepared_caster,
 )
-from campaigns.utils import calculate_spell_slots
-from ..inventory_management import (
-    equip_item, unequip_item, calculate_total_weight, get_encumbrance_level, get_encumbrance_effects,
-    calculate_carrying_capacity,
-    get_equipped_weapon, get_equipped_armor, get_equipped_shield
-)
-from ..equipment_endpoints import add_equipment_endpoints_to_viewset
-from ..spell_selection_endpoints import add_spell_selection_endpoints
 from ..spell_preparation_endpoints import add_spell_preparation_endpoints
-from ..hp_endpoints import add_hp_endpoints
-from ..rest_endpoints import add_rest_endpoints
+from ..spell_selection_endpoints import add_spell_selection_endpoints
 
 
 @add_equipment_endpoints_to_viewset
@@ -71,7 +97,7 @@ class CharacterViewSet(viewsets.ModelViewSet):
         If request.data.get('preview') is True, returns generated configuration without creating DB records.
         Otherwise creates the Character, stats, equipment, and spells in the DB.
         """
-        from ..services.random_character import generate_random_character_data, create_random_character
+        from ..services.random_character import create_random_character, generate_random_character_data
 
         preview_raw = request.data.get('preview', False)
         if isinstance(preview_raw, str):
@@ -104,7 +130,7 @@ class CharacterViewSet(viewsets.ModelViewSet):
                 return Response(serialized, status=status.HTTP_201_CREATED)
         except Exception as e:
             return Response(
-                {"error": f"Failed to generate random character: {str(e)}"},
+                {"error": f"Failed to generate random character: {e!s}"},
                 status=status.HTTP_400_BAD_REQUEST
             )
     
@@ -143,7 +169,7 @@ class CharacterViewSet(viewsets.ModelViewSet):
             })
         except Exception as e:
             return Response(
-                {"error": f"Failed to apply racial features: {str(e)}"},
+                {"error": f"Failed to apply racial features: {e!s}"},
                 status=status.HTTP_500_INTERNAL_SERVER_ERROR
             )
     
@@ -285,8 +311,9 @@ class CharacterViewSet(viewsets.ModelViewSet):
         }
         """
         import random
-        from campaigns.utils import get_spellcasting_ability, calculate_spell_save_dc, calculate_spell_attack_bonus
+
         from campaigns.class_features_data import get_class_features, get_subclass_features
+        from campaigns.utils import calculate_spell_attack_bonus, calculate_spell_save_dc, get_spellcasting_ability
         
         def dlog(msg):
             print(f"[LEVEL_UP_DEBUG] {msg}")  # Console output
@@ -295,9 +322,9 @@ class CharacterViewSet(viewsets.ModelViewSet):
                 import os
                 log_path = os.path.join(os.getcwd(), 'debug_level_up.log')
                 with open(log_path, 'a') as f:
-                    f.write(f"{datetime.datetime.now()}: {msg}\n")
+                    f.write(f"{datetime.datetime.now(datetime.UTC)}: {msg}\n")
             except Exception as e:
-                print(f"[DLOG_ERROR] {str(e)}")
+                print(f"[DLOG_ERROR] {e!s}")
         
         character = self.get_object()
         
@@ -568,7 +595,7 @@ class CharacterViewSet(viewsets.ModelViewSet):
             try:
                 self._calculate_pending_spells(character, target_class, new_class_level, features_gained)
             except Exception as e:
-                print(f"Error calculating pending spells: {str(e)}")
+                print(f"Error calculating pending spells: {e!s}")
 
             character.save()
             
@@ -639,9 +666,8 @@ class CharacterViewSet(viewsets.ModelViewSet):
         
         # Handle Ability Score Improvements (ASI) at levels 4, 8, 12, 16, 19
         asi_levels = [4, 8, 12, 16, 19]
-        if new_level in asi_levels:
-            if new_level not in character.pending_asi_levels:
-                character.pending_asi_levels.append(new_level)
+        if new_level in asi_levels and new_level not in character.pending_asi_levels:
+            character.pending_asi_levels.append(new_level)
         
         # Check if subclass selection is needed
         subclass_levels_2014 = {
@@ -718,7 +744,7 @@ class CharacterViewSet(viewsets.ModelViewSet):
         try:
             self._calculate_pending_spells(character, primary_class, new_level, features_gained)
         except Exception as e:
-            print(f"Error calculating pending spells (Single Class): {str(e)}")
+            print(f"Error calculating pending spells (Single Class): {e!s}")
         
         character.save()
         dlog(f"DEBUG: Saved Character {character.id}. Pending field in DB: {character.pending_spell_choices}")
@@ -776,7 +802,7 @@ class CharacterViewSet(viewsets.ModelViewSet):
             "feat_id": 5  // ID of the feat to take
         }
         """
-        from ..models import Feat, CharacterFeat
+        from ..models import CharacterFeat, Feat
         
         character = self.get_object()
         level = request.data.get('level')
@@ -985,7 +1011,12 @@ class CharacterViewSet(viewsets.ModelViewSet):
     def eligible_subclasses(self, request, pk=None):
         """Get list of eligible subclasses for the character (handling multiclassing)"""
         character = self.get_object()
-        from campaigns.class_features_data import AVAILABLE_SUBCLASSES_2014, AVAILABLE_SUBCLASSES_2024, SUBCLASS_FEATURES_2014, SUBCLASS_FEATURES_2024
+        from campaigns.class_features_data import (
+            AVAILABLE_SUBCLASSES_2014,
+            AVAILABLE_SUBCLASSES_2024,
+            SUBCLASS_FEATURES_2014,
+            SUBCLASS_FEATURES_2024,
+        )
         
         # Select ruleset data
         if character.ruleset_version == '2024':
@@ -1111,9 +1142,8 @@ class CharacterViewSet(viewsets.ModelViewSet):
             
             class_name = character.character_class.name
             # Handle case mismatch
-            if class_name not in AVAILABLE_SUBCLASSES:
-                if class_name.title() in AVAILABLE_SUBCLASSES:
-                    class_name = class_name.title()
+            if class_name not in AVAILABLE_SUBCLASSES and class_name.title() in AVAILABLE_SUBCLASSES:
+                class_name = class_name.title()
             
             if class_name not in AVAILABLE_SUBCLASSES or subclass_name not in AVAILABLE_SUBCLASSES[class_name]:
                 return Response({"error": f"Invalid subclass '{subclass_name}' for class '{class_name}'"}, status=status.HTTP_400_BAD_REQUEST)
@@ -1189,7 +1219,7 @@ class CharacterViewSet(viewsets.ModelViewSet):
         except Exception as e:
             import traceback
             traceback.print_exc()
-            return Response({"error": f"Server Error: {str(e)}"}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+            return Response({"error": f"Server Error: {e!s}"}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
     @action(detail=True, methods=['get'])
     def eligible_languages(self, request, pk=None):
@@ -1226,6 +1256,7 @@ class CharacterViewSet(viewsets.ModelViewSet):
             return Response({"error": f"You can only choose {character.pending_language_choices} languages"}, status=status.HTTP_400_BAD_REQUEST)
             
         from bestiary.models import Language
+
         from ..models import CharacterProficiency
         
         languages = Language.objects.filter(id__in=language_ids)
@@ -2000,6 +2031,7 @@ class CharacterViewSet(viewsets.ModelViewSet):
         else:
             # Calculate spell slots based on class and level
             from campaigns.utils import calculate_spell_slots
+
             from ..multiclassing import calculate_multiclass_spell_slots
             
             # Check if multiclass
@@ -2390,13 +2422,12 @@ class CharacterViewSet(viewsets.ModelViewSet):
             )
         
         # Check limit (only for Known Casters)
-        if is_known_caster(character):
-            if not can_learn_spell(character, spell_level):
-                spells_known_limit = calculate_spells_known(character)
-                return Response(
-                    {"error": f"Cannot learn more spells (limit: {spells_known_limit})"},
-                    status=status.HTTP_400_BAD_REQUEST
-                )
+        if is_known_caster(character) and not can_learn_spell(character, spell_level):
+            spells_known_limit = calculate_spells_known(character)
+            return Response(
+                {"error": f"Cannot learn more spells (limit: {spells_known_limit})"},
+                status=status.HTTP_400_BAD_REQUEST
+            )
         
         # Create spell
         spell = CharacterSpell.objects.create(

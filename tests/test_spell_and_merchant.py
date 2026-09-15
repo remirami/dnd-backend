@@ -2,15 +2,16 @@
 Test suite for Spell Library and Merchant System
 Tests spell imports, merchant discovery, weight progression, and purchases
 """
-from django.test import TestCase, TransactionTestCase
 from django.contrib.auth.models import User
+from django.test import TestCase, TransactionTestCase
 from rest_framework.test import APIClient
-from spells.models import Spell
-from merchants.models import MerchantEncounter, MerchantInventoryItem, MerchantTransaction
-from merchants.rarity_weights import get_rarity_weights, generate_merchant_name
+
 from campaigns.models import Campaign, CampaignCharacter
 from characters.models import Character, CharacterClass, CharacterRace, CharacterStats
 from items.models import Item
+from merchants.models import MerchantEncounter, MerchantInventoryItem, MerchantTransaction
+from merchants.rarity_weights import generate_merchant_name, get_rarity_weights
+from spells.models import Spell
 
 
 class SpellLibraryTests(TransactionTestCase):

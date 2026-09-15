@@ -4,9 +4,10 @@ Run with: python test_combat_logging.py
 
 Make sure you've run: python manage.py test_combat_logging first
 """
-import requests
 import json
 import sys
+
+import requests
 
 SESSION = requests.Session()
 
@@ -163,7 +164,7 @@ def test_combat_logging():
             
             participants = analytics.get('participant_performance', {})
             print("\n  Participant Performance:")
-            for pid, perf in participants.items():
+            for perf in participants.values():
                 print(f"    {perf.get('name', 'Unknown')}:")
                 print(f"      Hit Rate: {perf.get('hit_rate', 0)}%")
                 print(f"      Critical Hit Rate: {perf.get('critical_hit_rate', 0)}%")

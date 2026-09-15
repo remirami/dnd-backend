@@ -1,6 +1,7 @@
 from django.core.management.base import BaseCommand
-from encounters.models import Encounter, EncounterEnemy
+
 from bestiary.models import Enemy, EnemyStats
+from encounters.models import Encounter, EncounterEnemy
 
 
 class Command(BaseCommand):

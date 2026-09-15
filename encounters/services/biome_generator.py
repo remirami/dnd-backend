@@ -6,6 +6,7 @@ Generates encounters with biome-based distribution (60/20/15/5 endemic/adapted/t
 import random
 
 from encounters.models import BiomeEncounterWeight
+
 from .encounter_generator import EncounterGenerator
 
 

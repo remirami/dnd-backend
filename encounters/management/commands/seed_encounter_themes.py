@@ -6,11 +6,8 @@ Usage: python manage.py seed_encounter_themes
 from django.core.management.base import BaseCommand
 from django.db import transaction
 
-from encounters.models import (
-    EncounterTheme, EnemyThemeAssociation, ThemeIncompatibility,
-    BiomeEncounterWeight
-)
 from bestiary.models import Enemy
+from encounters.models import BiomeEncounterWeight, EncounterTheme, EnemyThemeAssociation, ThemeIncompatibility
 
 
 class Command(BaseCommand):

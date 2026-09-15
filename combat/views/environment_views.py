@@ -4,15 +4,18 @@ Environment Views - Environmental effects, positions, tactical delegations.
 Contains the CombatEnvironmentMixin with environment, position, stats,
 and tactical combat action endpoints.
 """
-from rest_framework.decorators import action
-from rest_framework.response import Response
-from rest_framework import status
 import logging
 
-from combat.models import EnvironmentalEffect, ParticipantPosition, CombatParticipant
+from rest_framework import status
+from rest_framework.decorators import action
+from rest_framework.response import Response
+
 from combat.environmental_effects import get_environmental_effects_summary
+from combat.models import CombatParticipant, EnvironmentalEffect, ParticipantPosition
 from combat.serializers import (
-    CombatLogSerializer, EnvironmentalEffectSerializer, ParticipantPositionSerializer,
+    CombatLogSerializer,
+    EnvironmentalEffectSerializer,
+    ParticipantPositionSerializer,
 )
 
 logger = logging.getLogger('combat')

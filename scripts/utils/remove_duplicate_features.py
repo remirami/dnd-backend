@@ -3,12 +3,14 @@ Script to remove duplicate character features and proficiencies.
 Run with: python manage.py shell < remove_duplicate_features.py
 """
 import os
+
 import django
 
 os.environ.setdefault('DJANGO_SETTINGS_MODULE', 'dnd_backend.settings')
 django.setup()
 
 from characters.models import Character, CharacterFeature, CharacterProficiency
+
 
 def remove_duplicate_features():
     """Remove duplicate character features while keeping one copy."""

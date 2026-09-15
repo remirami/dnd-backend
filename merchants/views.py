@@ -1,15 +1,17 @@
-from rest_framework import viewsets, status
+from django.db import transaction
+from rest_framework import status, viewsets
 from rest_framework.decorators import action
 from rest_framework.response import Response
-from django.db import transaction
+
+from campaigns.models import CampaignCharacter
+
 from .models import MerchantEncounter, MerchantInventoryItem, MerchantTransaction
 from .serializers import (
     MerchantEncounterSerializer,
     MerchantInventoryItemSerializer,
     MerchantTransactionSerializer,
-    PurchaseItemSerializer
+    PurchaseItemSerializer,
 )
-from campaigns.models import CampaignCharacter
 
 
 class MerchantViewSet(viewsets.ModelViewSet):

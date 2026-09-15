@@ -1,5 +1,14 @@
 from django.contrib import admin
-from .models import Campaign, CampaignCharacter, CampaignEncounter, TreasureRoom, TreasureRoomReward, RecruitableCharacter, RecruitmentRoom
+
+from .models import (
+    Campaign,
+    CampaignCharacter,
+    CampaignEncounter,
+    RecruitableCharacter,
+    RecruitmentRoom,
+    TreasureRoom,
+    TreasureRoomReward,
+)
 
 
 class CampaignCharacterInline(admin.TabularInline):

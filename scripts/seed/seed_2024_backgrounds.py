@@ -1,6 +1,7 @@
 import os
-import django
 import sys
+
+import django
 
 # Setup Django environment
 sys.path.append(os.getcwd())
@@ -8,6 +9,7 @@ os.environ.setdefault('DJANGO_SETTINGS_MODULE', 'dnd_backend.settings')
 django.setup()
 
 from characters.models import CharacterBackground
+
 
 def seed_backgrounds():
     print("Seeding 2024 Backgrounds (SRD 5.2 Strict)...")
@@ -54,7 +56,7 @@ def seed_backgrounds():
             "feat": bg['feat']
         }
         
-        obj, created = CharacterBackground.objects.update_or_create(
+        _obj, created = CharacterBackground.objects.update_or_create(
             name=bg['name'],
             defaults={
                 'description': bg['description'],

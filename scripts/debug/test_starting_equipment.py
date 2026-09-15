@@ -1,11 +1,13 @@
 import os
+
 import django
 
 #Setup Django environment
 os.environ.setdefault('DJANGO_SETTINGS_MODULE', 'dnd_backend.settings')
 django.setup()
 
-from characters.starting_equipment import get_starting_equipment_for_class, get_all_packs
+from characters.starting_equipment import get_all_packs, get_starting_equipment_for_class
+
 
 def test_starting_equipment_data():
     print("=== Testing Starting Equipment Data Structure ===\n")

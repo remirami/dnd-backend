@@ -1,8 +1,7 @@
-from django.core.management.base import BaseCommand
-from characters.models import (
-    Character, CharacterStats, CharacterClass, CharacterRace, CharacterBackground
-)
 from django.contrib.auth.models import User
+from django.core.management.base import BaseCommand
+
+from characters.models import Character, CharacterBackground, CharacterClass, CharacterRace, CharacterStats
 
 
 class Command(BaseCommand):

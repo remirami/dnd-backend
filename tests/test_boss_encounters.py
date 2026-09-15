@@ -1,15 +1,15 @@
 """
 Tests for Boss Encounter Integration in Campaign System
 """
-from django.test import TestCase
 from django.contrib.auth.models import User
-from rest_framework.test import APIClient
+from django.test import TestCase
 from rest_framework import status
+from rest_framework.test import APIClient
 
+from bestiary.models import Enemy, EnemyStats
+from campaigns.boss_encounters import get_all_bosses_for_biome, get_random_boss_for_biome
 from campaigns.models import Campaign
 from campaigns.services.campaign_generator import CampaignGenerator
-from campaigns.boss_encounters import get_random_boss_for_biome, get_all_bosses_for_biome
-from bestiary.models import Enemy, EnemyStats
 from encounters.models import EncounterTheme, EnemyThemeAssociation
 
 

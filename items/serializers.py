@@ -1,5 +1,6 @@
 from rest_framework import serializers
-from .models import Item, Weapon, Armor, Consumable, MagicItem, ItemCategory, ItemProperty
+
+from .models import Armor, Consumable, Item, ItemCategory, ItemProperty, MagicItem, Weapon
 
 
 class ItemPropertySerializer(serializers.ModelSerializer):

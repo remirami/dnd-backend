@@ -5,8 +5,8 @@ Feats are special abilities that characters can take instead of Ability Score Im
 at levels 4, 8, 12, 16, and 19.
 """
 
+from django.core.validators import MaxValueValidator, MinValueValidator
 from django.db import models
-from django.core.validators import MinValueValidator, MaxValueValidator
 
 
 class Feat(models.Model):

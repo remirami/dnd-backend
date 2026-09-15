@@ -4,18 +4,22 @@ Participant Views - CombatParticipantViewSet.
 Contains the full CombatParticipantViewSet with damage, heal, move,
 hazard, condition, and concentration endpoints.
 """
-from rest_framework import viewsets, status
-from rest_framework.decorators import action
-from rest_framework.response import Response
 import logging
 
-from combat.models import (
-    CombatParticipant, CombatAction, ConditionApplication,
-    EnvironmentalEffect, ParticipantPosition
-)
+from rest_framework import status, viewsets
+from rest_framework.decorators import action
+from rest_framework.response import Response
+
 from combat.environmental_effects import calculate_movement_cost
+from combat.models import (
+    CombatAction,
+    CombatParticipant,
+    ConditionApplication,
+    EnvironmentalEffect,
+    ParticipantPosition,
+)
 from combat.serializers import CombatParticipantSerializer, ParticipantPositionSerializer
-from combat.utils import roll_d20, calculate_damage, calculate_saving_throw
+from combat.utils import calculate_damage, calculate_saving_throw, roll_d20
 
 logger = logging.getLogger('combat')
 
@@ -247,7 +251,7 @@ class CombatParticipantViewSet(viewsets.ModelViewSet):
                 continue
             
             # Roll damage
-            damage_amount, damage_breakdown = calculate_damage(damage_dice, 0, False)
+            damage_amount, _damage_breakdown = calculate_damage(damage_dice, 0, False)
             
             # Make saving throw if applicable
             if save_type and save_dc:
@@ -260,7 +264,7 @@ class CombatParticipantViewSet(viewsets.ModelViewSet):
                     damage_amount = damage_amount // 2  # Half damage on successful save
             
             # Apply damage
-            new_hp, _ = participant.take_damage(damage_amount)
+            _new_hp, _ = participant.take_damage(damage_amount)
             
             # Apply condition if applicable
             if condition:

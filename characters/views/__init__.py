@@ -9,29 +9,28 @@ Usage:
 """
 
 # Import from reference views (Classes, Races, Backgrounds, etc.)
-from .reference_views import (
-    CharacterClassViewSet,
-    CharacterRaceViewSet,
-    CharacterBackgroundViewSet,
-    CharacterStatsViewSet,
-    CharacterProficiencyViewSet,
-    CharacterFeatureViewSet,
-    CharacterSpellViewSet,
-    CharacterResistanceViewSet,
-)
-
 # Import the main CharacterViewSet
 from .character_views import CharacterViewSet
+from .reference_views import (
+    CharacterBackgroundViewSet,
+    CharacterClassViewSet,
+    CharacterFeatureViewSet,
+    CharacterProficiencyViewSet,
+    CharacterRaceViewSet,
+    CharacterResistanceViewSet,
+    CharacterSpellViewSet,
+    CharacterStatsViewSet,
+)
 
 # Export all for backwards compatibility
 __all__ = [
-    'CharacterViewSet',
-    'CharacterClassViewSet',
-    'CharacterRaceViewSet',
     'CharacterBackgroundViewSet',
-    'CharacterStatsViewSet',
-    'CharacterProficiencyViewSet',
+    'CharacterClassViewSet',
     'CharacterFeatureViewSet',
-    'CharacterSpellViewSet',
+    'CharacterProficiencyViewSet',
+    'CharacterRaceViewSet',
     'CharacterResistanceViewSet',
+    'CharacterSpellViewSet',
+    'CharacterStatsViewSet',
+    'CharacterViewSet',
 ]

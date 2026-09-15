@@ -3,14 +3,14 @@ Phase 3 Tests: Participant Actions
 
 Tests for damage, heal, add_condition, remove_condition endpoints
 """
-from django.test import TestCase
 from django.contrib.auth.models import User
-from rest_framework.test import APIClient
+from django.test import TestCase
 from rest_framework import status
+from rest_framework.test import APIClient
 
-from combat.models import CombatSession, CombatParticipant
-from characters.models import Character, CharacterClass, CharacterRace, CharacterStats
 from bestiary.models import Condition
+from characters.models import Character, CharacterClass, CharacterRace, CharacterStats
+from combat.models import CombatParticipant, CombatSession
 from encounters.models import Encounter
 
 

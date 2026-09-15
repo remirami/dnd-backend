@@ -1,13 +1,15 @@
 
 import os
-import django
 import sys
+
+import django
 
 sys.path.append(os.getcwd())
 os.environ.setdefault('DJANGO_SETTINGS_MODULE', 'dnd_backend.settings')
 django.setup()
 
 from characters.models import Character, CharacterFeature
+
 
 def check_duplicates():
     try:

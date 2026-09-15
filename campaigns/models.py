@@ -1,10 +1,11 @@
-from django.db import models
-from django.core.validators import MinValueValidator, MaxValueValidator
-from django.utils import timezone
 from django.contrib.auth.models import User
-from encounters.models import Encounter
+from django.core.validators import MaxValueValidator, MinValueValidator
+from django.db import models
+from django.utils import timezone
+
 from characters.models import Character
 from combat.models import CombatSession
+from encounters.models import Encounter
 
 
 class Campaign(models.Model):
@@ -308,7 +309,7 @@ class CampaignCharacter(models.Model):
             # Get the first available hit dice type
             if not self.hit_dice_remaining:
                 return 0, "No hit dice remaining"
-            dice_type = list(self.hit_dice_remaining.keys())[0]
+            dice_type = next(iter(self.hit_dice_remaining.keys()))
         
         if dice_type not in self.hit_dice_remaining or self.hit_dice_remaining[dice_type] <= 0:
             return 0, "No hit dice of that type remaining"
@@ -467,7 +468,7 @@ class CharacterXP(models.Model):
             'xp_gained': amount,
             'current_xp': self.current_xp,
             'level_gained': new_level > old_level,
-            'new_level': new_level if new_level > old_level else old_level
+            'new_level': max(old_level, new_level)
         }
     
     def _calculate_level(self, xp):
@@ -560,7 +561,12 @@ class CharacterXP(models.Model):
                 self.campaign_character.hit_dice_remaining[hit_dice_type] = 1
         
         # Update spell slots based on new level
-        from .utils import calculate_spell_slots, get_spellcasting_ability, calculate_spell_save_dc, calculate_spell_attack_bonus
+        from .utils import (
+            calculate_spell_attack_bonus,
+            calculate_spell_save_dc,
+            calculate_spell_slots,
+            get_spellcasting_ability,
+        )
         class_name = character.character_class.name
         new_slots = calculate_spell_slots(class_name, new_level)
         if new_slots:
@@ -606,6 +612,7 @@ class CharacterXP(models.Model):
         
         # Apply class features - create CharacterFeature instances
         from characters.models import CharacterFeature
+
         from .class_features_data import get_class_features, get_subclass_features
         
         features_gained = []

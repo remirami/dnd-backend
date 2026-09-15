@@ -9,15 +9,15 @@ ons - no database operations needed.
 from django.test import TestCase
 
 from combat.environmental_effects import (
-    calculate_movement_cost,
     calculate_cover_ac_bonus,
     calculate_cover_save_bonus,
-    has_full_cover,
+    calculate_hazard_damage,
+    calculate_movement_cost,
+    can_see_target,
+    get_environmental_effects_summary,
     get_lighting_attack_modifier,
     get_weather_ranged_modifier,
-    calculate_hazard_damage,
-    can_see_target,
-    get_environmental_effects_summary
+    has_full_cover,
 )
 
 
@@ -120,7 +120,7 @@ class HazardTests(TestCase):
     
     def test_lava_damage(self):
         """Test lava hazard"""
-        dice, dmg_type, save_type, save_dc, _ = calculate_hazard_damage('lava')
+        dice, dmg_type, _save_type, save_dc, _ = calculate_hazard_damage('lava')
         self.assertEqual(dice, '6d10')
         self.assertEqual(dmg_type, 'fire')
         self.assertEqual(save_dc, 15)

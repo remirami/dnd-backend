@@ -1,14 +1,19 @@
 """
 Test Character Sheet Endpoint
 """
-from django.test import TestCase
 from django.contrib.auth.models import User
-from rest_framework.test import APIClient
+from django.test import TestCase
 from rest_framework import status
+from rest_framework.test import APIClient
 
 from characters.models import (
-    Character, CharacterClass, CharacterRace, CharacterBackground,
-    CharacterStats, CharacterProficiency, CharacterFeature
+    Character,
+    CharacterBackground,
+    CharacterClass,
+    CharacterFeature,
+    CharacterProficiency,
+    CharacterRace,
+    CharacterStats,
 )
 
 

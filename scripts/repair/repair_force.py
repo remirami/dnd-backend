@@ -1,11 +1,13 @@
 import os
+
 import django
 
 os.environ.setdefault('DJANGO_SETTINGS_MODULE', 'dnd_backend.settings')
 django.setup()
 
-from characters.models import Character
 from campaigns.utils import calculate_spell_slots
+from characters.models import Character
+
 
 def repair_force():
     print("=== FORCE REPAIR ===")

@@ -1,4 +1,5 @@
 from django.test import TestCase
+
 from .models import Enemy, EnemyStats
 from .serializers import EnemySerializer
 

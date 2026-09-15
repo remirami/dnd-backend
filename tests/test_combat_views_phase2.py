@@ -3,14 +3,14 @@ Phase 2 Tests: Advanced Combat Mechanics
 
 Tests for opportunity_attack, use_reaction, environmental_effects, set_participant_position
 """
-from django.test import TestCase
 from django.contrib.auth.models import User
-from rest_framework.test import APIClient
+from django.test import TestCase
 from rest_framework import status
+from rest_framework.test import APIClient
 
-from combat.models import CombatSession, CombatParticipant, EnvironmentalEffect, ParticipantPosition
-from characters.models import Character, CharacterClass, CharacterRace, CharacterStats
 from bestiary.models import Enemy, EnemyStats
+from characters.models import Character, CharacterClass, CharacterRace, CharacterStats
+from combat.models import CombatParticipant, CombatSession, EnvironmentalEffect, ParticipantPosition
 from encounters.models import Encounter, EncounterEnemy
 
 

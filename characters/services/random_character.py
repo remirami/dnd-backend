@@ -2,19 +2,24 @@
 Service for generating randomized Level 1 characters.
 """
 import random
-from typing import Dict, Any, Optional
+from typing import Any
+
 from django.contrib.auth.models import User
+
+from characters.inventory_management import equip_item, recalculate_armor_class
 from characters.models import (
-    Character, CharacterClass, CharacterRace, CharacterBackground,
-    CharacterStats, CharacterItem, CharacterSpell
+    Character,
+    CharacterBackground,
+    CharacterClass,
+    CharacterItem,
+    CharacterRace,
+    CharacterSpell,
 )
 from characters.serializers import CharacterSerializer
-from characters.starting_equipment import get_starting_equipment_for_class, get_equipment_pack
+from characters.starting_equipment import get_equipment_pack, get_starting_equipment_for_class
 from characters.starting_spells import get_spell_selection_requirements
-from characters.inventory_management import equip_item, recalculate_armor_class
-from spells.models import Spell
 from items.models import Item, ItemCategory
-
+from spells.models import Spell
 
 # Class ability stat priorities (descending: primary -> secondary -> tertiary -> dump)
 CLASS_STAT_PRIORITIES = {
@@ -118,7 +123,7 @@ BACKGROUND_STARTING_GOLD = {
 }
 
 
-def calculate_starting_gold(background: Optional[CharacterBackground] = None) -> int:
+def calculate_starting_gold(background: CharacterBackground | None = None) -> int:
     """
     Calculate starting gold based on D&D 5e background pouch wealth.
     Since random characters already receive complete starting equipment
@@ -146,10 +151,10 @@ ITEM_NAME_ALIASES = {
 
 def calculate_preview_ac(
     clean_class_name: str,
-    ability_scores: Dict[str, int],
-    equip_data: Optional[Dict[str, Any]],
-    equipment_selections: Dict[str, str],
-    subclass: Optional[str] = None
+    ability_scores: dict[str, int],
+    equip_data: dict[str, Any] | None,
+    equipment_selections: dict[str, str],
+    subclass: str | None = None
 ) -> int:
     """Calculate realistic preview Armor Class based on rolled gear and class defense features."""
     dex_mod = (ability_scores.get('dexterity', 10) - 10) // 2
@@ -199,10 +204,7 @@ def calculate_preview_ac(
         elif 'studded leather' in nl:
             armor_base, armor_type = 12, 'light'
             break
-        elif 'leather' in nl and 'studded' not in nl:
-            armor_base, armor_type = 11, 'light'
-            break
-        elif 'padded' in nl:
+        elif 'leather' in nl and 'studded' not in nl or 'padded' in nl:
             armor_base, armor_type = 11, 'light'
             break
 
@@ -251,9 +253,9 @@ def generate_random_name(race_name: str) -> str:
     # Try exact match or partial match in FANTASY_NAMES_BY_RACE
     name_data = FANTASY_NAMES_BY_RACE.get(clean_race)
     if not name_data:
-        for key in FANTASY_NAMES_BY_RACE:
+        for key, val in FANTASY_NAMES_BY_RACE.items():
             if key in clean_race:
-                name_data = FANTASY_NAMES_BY_RACE[key]
+                name_data = val
                 break
 
     if not name_data:
@@ -264,7 +266,7 @@ def generate_random_name(race_name: str) -> str:
     return f"{first} {last}"
 
 
-def select_random_subclass(class_name: str, ruleset_version: str = '2014') -> Optional[str]:
+def select_random_subclass(class_name: str, ruleset_version: str = '2014') -> str | None:
     """Pick level 1 subclass if class gets one at level 1 (e.g. 2014 Cleric, Sorcerer, Warlock)."""
     clean_class = class_name.split('(')[0].strip().lower()
     if ruleset_version == '2014':
@@ -279,9 +281,9 @@ def select_random_subclass(class_name: str, ruleset_version: str = '2014') -> Op
 
 def generate_random_character_data(
     ruleset_version: str = '2014',
-    character_class_id: Optional[int] = None,
-    race_id: Optional[int] = None
-) -> Dict[str, Any]:
+    character_class_id: int | None = None,
+    race_id: int | None = None
+) -> dict[str, Any]:
     """
     Generate the complete configuration data for a random level 1 character.
     Used for previewing in the wizard or direct creation.
@@ -431,7 +433,6 @@ def generate_random_character_data(
     # Equipment list & defense details
     equipment_names = []
     has_scale_mail = False
-    has_shield = False
     if equip_data:
         for it in equip_data.get('default_items', []):
             qty = it.get('quantity', 1)
@@ -452,8 +453,6 @@ def generate_random_character_data(
                             equipment_names.append(f"{it_name} ×{qty}" if qty > 1 else it_name)
                             if 'scale mail' in it_name.lower():
                                 has_scale_mail = True
-                            if 'shield' in it_name.lower():
-                                has_shield = True
 
     # Defense summary
     if clean_class_name == 'barbarian':
@@ -510,9 +509,9 @@ def generate_random_character_data(
 def create_random_character(
     user: User,
     ruleset_version: str = '2014',
-    character_class_id: Optional[int] = None,
-    race_id: Optional[int] = None,
-    character_data: Optional[Dict[str, Any]] = None
+    character_class_id: int | None = None,
+    race_id: int | None = None,
+    character_data: dict[str, Any] | None = None
 ) -> Character:
     """
     Generate and persist a full, playable level 1 character to the database.

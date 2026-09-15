@@ -2,9 +2,10 @@
 Simple script to test the combat system
 Run with: python test_combat.py
 """
-import requests
 import json
 import sys
+
+import requests
 
 SESSION = requests.Session()
 

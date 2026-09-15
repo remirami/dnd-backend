@@ -1,4 +1,5 @@
 import json
+
 from django.core.management.base import BaseCommand, CommandError
 from django.db import transaction
 
@@ -9,8 +10,16 @@ except ImportError:
     REQUESTS_AVAILABLE = False
 
 from bestiary.models import (
-    Enemy, EnemyStats, EnemyAttack, EnemyAbility, EnemySpell, EnemySpellSlot,
-    DamageType, EnemyResistance, Language, EnemyLanguage
+    DamageType,
+    Enemy,
+    EnemyAbility,
+    EnemyAttack,
+    EnemyLanguage,
+    EnemyResistance,
+    EnemySpell,
+    EnemySpellSlot,
+    EnemyStats,
+    Language,
 )
 
 
@@ -79,7 +88,7 @@ class Command(BaseCommand):
             elif source == 'json':
                 self.import_from_json(options['file'], dry_run, update_existing)
         except Exception as e:
-            raise CommandError(f'Import failed: {str(e)}')
+            raise CommandError(f'Import failed: {e!s}')
 
     def import_from_open5e(self, dry_run, update_existing, limit=None, cr_min=None, cr_max=None, srd_only=True):
         """Import monsters from Open5e API"""
@@ -131,7 +140,7 @@ class Command(BaseCommand):
                 page += 1
                 
             except requests.RequestException as e:
-                self.stdout.write(self.style.WARNING(f'Failed to fetch page {page}: {str(e)}'))
+                self.stdout.write(self.style.WARNING(f'Failed to fetch page {page}: {e!s}'))
                 break
         
         return monsters
@@ -144,7 +153,7 @@ class Command(BaseCommand):
         except FileNotFoundError:
             raise CommandError(f'File not found: {file_path}')
         except json.JSONDecodeError as e:
-            raise CommandError(f'Invalid JSON: {str(e)}')
+            raise CommandError(f'Invalid JSON: {e!s}')
 
         if isinstance(data, list):
             monsters = data
@@ -192,7 +201,7 @@ class Command(BaseCommand):
                 error_count += 1
                 self.stdout.write(
                     self.style.ERROR(
-                        f'[!] Failed to import {monster_data.get("name", "Unknown")}: {str(e)}'
+                        f'[!] Failed to import {monster_data.get("name", "Unknown")}: {e!s}'
                     )
                 )
 

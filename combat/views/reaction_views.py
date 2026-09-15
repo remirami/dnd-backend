@@ -3,16 +3,15 @@ Reaction Views - Death saves, concentration, reactions, legendary actions.
 
 Contains the CombatReactionMixin with special combat mechanic actions.
 """
-from rest_framework.decorators import action
-from rest_framework.response import Response
-from rest_framework import status
 import logging
 
-from combat.models import CombatParticipant, CombatAction
+from rest_framework import status
+from rest_framework.decorators import action
+from rest_framework.response import Response
+
+from combat.models import CombatAction, CombatParticipant
 from combat.serializers import CombatActionSerializer
-from combat.utils import (
-    roll_d20, calculate_attack_roll, calculate_damage, check_hit
-)
+from combat.utils import calculate_attack_roll, calculate_damage, check_hit, roll_d20
 
 logger = logging.getLogger('combat')
 
@@ -249,14 +248,13 @@ class CombatReactionMixin:
         # Calculate damage if hit
         damage_amount = 0
         damage_breakdown = ""
-        concentration_broken = False
         if hit:
             # Add magic item damage bonus
             damage_modifier = ability_mod + magic_bonuses['to_damage']
             damage_amount, damage_breakdown = calculate_damage(
                 damage_string, damage_modifier, critical
             )
-            new_hp, concentration_broken = target.take_damage(damage_amount)
+            _new_hp, _concentration_broken = target.take_damage(damage_amount)
         
         # Mark reaction as used
         attacker.reaction_used = True

@@ -2,16 +2,18 @@
 Quick test to see the actual spell cast error
 """
 import os
+
 import django
 
 os.environ.setdefault('DJANGO_SETTINGS_MODULE', 'dnd_backend.settings')
 django.setup()
 
 from rest_framework.test import APIClient
-from combat.models import CombatSession, CombatParticipant
-from encounters.models import Encounter, EncounterEnemy
-from characters.models import Character, CharacterClass, CharacterRace, CharacterStats, CharacterSpell
+
 from bestiary.models import Enemy, EnemyStats
+from characters.models import Character, CharacterClass, CharacterRace, CharacterSpell, CharacterStats
+from combat.models import CombatParticipant, CombatSession
+from encounters.models import Encounter, EncounterEnemy
 
 # Create test data
 client = APIClient()

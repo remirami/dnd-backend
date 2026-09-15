@@ -2,19 +2,29 @@
 Reference ViewSets for lookup data (Classes, Races, Backgrounds, etc.)
 These are simpler read-only or basic CRUD ViewSets for reference data.
 """
-from rest_framework import viewsets, permissions
+from rest_framework import permissions, viewsets
 from rest_framework.decorators import action
 from rest_framework.response import Response
 
 from ..models import (
-    CharacterClass, CharacterRace, CharacterBackground,
-    CharacterStats, CharacterProficiency, CharacterFeature,
-    CharacterSpell, CharacterResistance
+    CharacterBackground,
+    CharacterClass,
+    CharacterFeature,
+    CharacterProficiency,
+    CharacterRace,
+    CharacterResistance,
+    CharacterSpell,
+    CharacterStats,
 )
 from ..serializers import (
-    CharacterClassSerializer, CharacterRaceSerializer, CharacterBackgroundSerializer,
-    CharacterStatsSerializer, CharacterProficiencySerializer, CharacterFeatureSerializer,
-    CharacterSpellSerializer, CharacterResistanceSerializer
+    CharacterBackgroundSerializer,
+    CharacterClassSerializer,
+    CharacterFeatureSerializer,
+    CharacterProficiencySerializer,
+    CharacterRaceSerializer,
+    CharacterResistanceSerializer,
+    CharacterSpellSerializer,
+    CharacterStatsSerializer,
 )
 
 
@@ -136,19 +146,18 @@ class CharacterFeatureViewSet(viewsets.ModelViewSet):
         }
         
         for item in feature.selection:
-            if item in ALL_SKILLS:
-                if not CharacterProficiency.objects.filter(
+            if item in ALL_SKILLS and not CharacterProficiency.objects.filter(
+                character=feature.character,
+                proficiency_type='skill',
+                skill_name=item
+            ).exists():
+                CharacterProficiency.objects.create(
                     character=feature.character,
                     proficiency_type='skill',
-                    skill_name=item
-                ).exists():
-                    CharacterProficiency.objects.create(
-                        character=feature.character,
-                        proficiency_type='skill',
-                        skill_name=item,
-                        proficiency_level='proficient',
-                        source=f"Feature: {feature.name}"
-                    )
+                    skill_name=item,
+                    proficiency_level='proficient',
+                    source=f"Feature: {feature.name}"
+                )
 
 
 class CharacterSpellViewSet(viewsets.ModelViewSet):

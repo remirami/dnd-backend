@@ -1,13 +1,15 @@
 import os
-import django
 import sys
+
+import django
 
 # Setup Django environment
 sys.path.append(os.getcwd())
 os.environ.setdefault('DJANGO_SETTINGS_MODULE', 'dnd_backend.settings')
 django.setup()
 
-from characters.models import CharacterRace, CharacterBackground, Feat
+from characters.models import CharacterBackground, CharacterRace, Feat
+
 
 def seed_2024_data():
     print("Seeding 2024 Data...")
@@ -32,7 +34,7 @@ def seed_2024_data():
         print("Updated Human (2024)")
 
     # 2. Feat (Tough - for Origin Feat)
-    tough, _ = Feat.objects.get_or_create(
+    _tough, _ = Feat.objects.get_or_create(
         name='Tough',
         defaults={
             'description': 'Your hit point maximum increases.',

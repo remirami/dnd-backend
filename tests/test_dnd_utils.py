@@ -6,19 +6,20 @@ are implemented correctly according to the official rules.
 """
 
 from django.test import TestCase
+
 from core.dnd_utils import (
     calculate_ability_modifier,
-    calculate_proficiency_bonus,
-    get_xp_for_level,
-    get_level_from_xp,
-    roll_dice,
-    calculate_hit_points,
-    calculate_spell_save_dc,
-    calculate_spell_attack_bonus,
     calculate_armor_class,
-    calculate_initiative,
     calculate_carrying_capacity,
+    calculate_hit_points,
+    calculate_initiative,
+    calculate_proficiency_bonus,
+    calculate_spell_attack_bonus,
+    calculate_spell_save_dc,
     get_encumbrance_thresholds,
+    get_level_from_xp,
+    get_xp_for_level,
+    roll_dice,
 )
 
 
@@ -158,7 +159,7 @@ class DiceRollingTests(TestCase):
     
     def test_dice_with_negative_modifier(self):
         """Test dice with negative modifier"""
-        total, rolls, modifier = roll_dice('1d8-2')
+        _total, rolls, modifier = roll_dice('1d8-2')
         self.assertEqual(len(rolls), 1)
         self.assertTrue(1 <= rolls[0] <= 8)
         self.assertEqual(modifier, -2)

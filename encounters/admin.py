@@ -1,7 +1,12 @@
 from django.contrib import admin
+
 from .models import (
-    Encounter, EncounterEnemy, EncounterTheme,
-    EnemyThemeAssociation, BiomeEncounterWeight, ThemeIncompatibility
+    BiomeEncounterWeight,
+    Encounter,
+    EncounterEnemy,
+    EncounterTheme,
+    EnemyThemeAssociation,
+    ThemeIncompatibility,
 )
 
 

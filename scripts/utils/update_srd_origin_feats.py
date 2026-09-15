@@ -1,6 +1,7 @@
 import os
-import django
 import sys
+
+import django
 
 # Set up Django environment
 sys.path.append('c:\\dnd-backend\\dnd-backend')
@@ -8,6 +9,7 @@ os.environ.setdefault('DJANGO_SETTINGS_MODULE', 'dnd_backend.settings')
 django.setup()
 
 from characters.models import Feat
+
 
 def update_origin_feats():
     print("Enforcing Strict SRD 5.2 Origin Feats...")
@@ -30,7 +32,7 @@ Repeatable. You can take this feat more than once."""
 
     # 2. Update/Create the Allowed Feats
     for name, description in allowed_feats.items():
-        feat, created = Feat.objects.update_or_create(
+        _feat, created = Feat.objects.update_or_create(
             name=name,
             defaults={
                 'description': description,

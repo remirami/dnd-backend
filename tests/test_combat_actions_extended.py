@@ -4,13 +4,13 @@ Focus on model-level testing for reliable coverage improvement
 Target: Improve coverage from 34% to 50%+
 """
 
-from django.test import TestCase
 from django.contrib.auth.models import User
+from django.test import TestCase
 
-from combat.models import CombatSession, CombatParticipant
-from encounters.models import Encounter, EncounterEnemy
-from characters.models import Character, CharacterClass, CharacterRace, CharacterStats
 from bestiary.models import Enemy, EnemyStats
+from characters.models import Character, CharacterClass, CharacterRace, CharacterStats
+from combat.models import CombatParticipant, CombatSession
+from encounters.models import Encounter, EncounterEnemy
 
 
 class CombatModelsExtendedTests(TestCase):

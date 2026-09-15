@@ -6,7 +6,6 @@ Handles spell preparation, learning, and spellbook management.
 
 from .models import CharacterSpell
 
-
 # Spellcasting types
 PREPARED_CASTERS = ['cleric', 'druid', 'paladin', 'wizard']
 KNOWN_CASTERS = ['bard', 'ranger', 'sorcerer', 'warlock']
@@ -35,10 +34,7 @@ def is_known_caster(character):
     subclass = (character.subclass or '').lower()
     if class_name == 'rogue' and 'arcane trickster' in subclass:
         return True
-    if class_name == 'fighter' and 'eldritch knight' in subclass:
-        return True
-        
-    return False
+    return bool(class_name == 'fighter' and 'eldritch knight' in subclass)
 
 
 def can_cast_rituals(character):
@@ -327,10 +323,7 @@ def can_cast_spell(character, spell_name, allow_ritual=True):
             return True
         
         # Or if it's a ritual and they can cast rituals
-        if allow_ritual and spell.is_ritual and can_cast_rituals(character):
-            return True
-        
-        return False
+        return bool(allow_ritual and spell.is_ritual and can_cast_rituals(character))
     
     elif is_known_caster(character):
         # Known casters can cast if they know the spell

@@ -2,9 +2,10 @@
 Equipment endpoints for CharacterViewSet
 This file adds starting equipment endpoints that should be imported in views.py
 """
+from rest_framework import permissions, status
 from rest_framework.decorators import action
 from rest_framework.response import Response
-from rest_framework import permissions, status
+
 from characters.models import CharacterItem
 
 
@@ -17,7 +18,7 @@ def add_equipment_endpoints_to_viewset(cls):
     @action(detail=False, methods=['get'], permission_classes=[permissions.AllowAny])
     def starting_equipment_choices(self, request):
         """Get starting equipment choices for a specific class"""
-        from characters.starting_equipment import get_starting_equipment_for_class, get_all_packs
+        from characters.starting_equipment import get_all_packs, get_starting_equipment_for_class
         
         class_name = request.query_params.get('class_name')
         if not class_name:
@@ -46,7 +47,7 @@ def add_equipment_endpoints_to_viewset(cls):
     @action(detail=True, methods=['post'])
     def apply_starting_equipment(self, request, pk=None):
         """Apply selected starting equipment to a character"""
-        from characters.starting_equipment import get_starting_equipment_for_class, get_equipment_pack
+        from characters.starting_equipment import get_equipment_pack, get_starting_equipment_for_class
         
         character = self.get_object()
         selections = request.data.get('selections', {})
@@ -146,7 +147,7 @@ def add_equipment_endpoints_to_viewset(cls):
                         # Ensure category exists
                         gear_cat, _ = ItemCategory.objects.get_or_create(name="Adventuring Gear")
                         
-                        pack_item, created = Item.objects.get_or_create(
+                        _pack_item, _created = Item.objects.get_or_create(
                             name=pack_name,
                             defaults={
                                 'description': contents_desc,
@@ -195,7 +196,7 @@ def add_equipment_endpoints_to_viewset(cls):
                 added_items.append(f"{item_name} x{quantity}")
                 
             except Exception as e:
-                failed_items.append(f"{item_name}: {str(e)}")
+                failed_items.append(f"{item_name}: {e!s}")
         
         # Add starting gold
         import random

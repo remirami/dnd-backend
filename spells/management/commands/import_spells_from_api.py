@@ -1,8 +1,9 @@
 import requests
 from django.core.management.base import BaseCommand
 from django.utils.text import slugify
-from spells.models import Spell
+
 from characters.models import CharacterClass
+from spells.models import Spell
 
 
 class Command(BaseCommand):
@@ -124,7 +125,7 @@ class Command(BaseCommand):
                     self.stdout.write(f'  Updated: {spell_name}')
                 
                 # Add classes that can learn this spell
-                if 'dnd_class' in spell_data and spell_data['dnd_class']:
+                if spell_data.get('dnd_class'):
                     self._add_spell_classes(spell, spell_data['dnd_class'])
                 
             except Exception as e:

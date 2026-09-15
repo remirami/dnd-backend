@@ -3,13 +3,13 @@ Comprehensive Tests for Concentration Mechanics
 
 Tests concentration checks, breaking concentration, and spell interactions.
 """
-from django.test import TestCase
 from django.contrib.auth.models import User
-from rest_framework.test import APIClient
+from django.test import TestCase
 from rest_framework import status
+from rest_framework.test import APIClient
 
-from combat.models import CombatSession, CombatParticipant
 from characters.models import Character, CharacterClass, CharacterRace, CharacterStats
+from combat.models import CombatParticipant, CombatSession
 from encounters.models import Encounter
 
 

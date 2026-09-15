@@ -2,8 +2,8 @@
 Utility functions for campaign roguelite features
 """
 import random
-from django.db import transaction
 
+from django.db import transaction
 
 # D&D 5e Spell Slot Tables
 # Format: {class_name: {level: {slot_level: count}}}
@@ -240,8 +240,9 @@ def grant_encounter_xp(campaign_encounter, campaign_characters):
     Returns:
         dict: Results of XP granting
     """
-    from .models import CharacterXP
     from encounters.models import EncounterEnemy
+
+    from .models import CharacterXP
     
     results = {
         'characters': [],
@@ -277,7 +278,7 @@ def grant_encounter_xp(campaign_encounter, campaign_characters):
     # Grant XP to each character
     with transaction.atomic():
         for campaign_char in alive_characters:
-            xp_tracking, created = CharacterXP.objects.get_or_create(
+            xp_tracking, _created = CharacterXP.objects.get_or_create(
                 campaign_character=campaign_char
             )
             
@@ -318,8 +319,9 @@ class TreasureGenerator:
         Returns:
             TreasureRoom object
         """
-        from .models import TreasureRoom
         from items.models import Item
+
+        from .models import TreasureRoom
         
         # Determine room type (weighted random)
         room_type = TreasureGenerator._select_room_type(encounter_number, campaign.total_encounters)
@@ -417,8 +419,9 @@ class TreasureGenerator:
         )
         
         # Create individual reward entries for per-character claiming
-        from .models import TreasureRoomReward
         from items.models import Item
+
+        from .models import TreasureRoomReward
         
         # Create item rewards
         for item_data in rewards.get('items', []):
@@ -519,7 +522,7 @@ class RecruitmentGenerator:
         Returns:
             RecruitmentRoom object
         """
-        from .models import RecruitmentRoom, RecruitableCharacter
+        from .models import RecruitableCharacter, RecruitmentRoom
         
         if campaign.start_mode != 'solo':
             raise ValueError("Recruitment rooms are only available in solo mode")
@@ -720,9 +723,10 @@ class CampaignGenerator:
         Returns:
             dict: Summary of what was created
         """
-        from .models import CampaignEncounter
-        from encounters.models import Encounter, EncounterEnemy
         from bestiary.models import Enemy
+        from encounters.models import Encounter, EncounterEnemy
+
+        from .models import CampaignEncounter
         
         summary = {
             'encounters_created': 0,
@@ -790,10 +794,10 @@ class CampaignGenerator:
                         )
                         summary['treasure_rooms_created'] += 1
                     except Exception as e:
-                        summary['errors'].append(f"Failed to create treasure room for encounter {i}: {str(e)}")
+                        summary['errors'].append(f"Failed to create treasure room for encounter {i}: {e!s}")
                 
             except Exception as e:
-                summary['errors'].append(f"Failed to create encounter {i}: {str(e)}")
+                summary['errors'].append(f"Failed to create encounter {i}: {e!s}")
         
         # Update campaign total_encounters
         campaign.total_encounters = campaign.campaign_encounters.count()

@@ -19,13 +19,14 @@ def check_filtering():
     # OR just log in as 'test_user'.
     
     import os
+
     import django
     sys.path.append(os.getcwd())
     os.environ.setdefault('DJANGO_SETTINGS_MODULE', 'dnd_backend.settings')
     django.setup()
     
-    from rest_framework.test import APIClient
     from django.contrib.auth.models import User
+    from rest_framework.test import APIClient
     
     user, _ = User.objects.get_or_create(username='test_user')
     client = APIClient()

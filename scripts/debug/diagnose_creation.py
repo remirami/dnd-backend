@@ -1,12 +1,14 @@
 import os
-import django
 import time
-from datetime import datetime
+from datetime import UTC, datetime
+
+import django
 
 os.environ.setdefault('DJANGO_SETTINGS_MODULE', 'dnd_backend.settings')
 django.setup()
 
 from characters.models import Character
+
 
 def monitor_creations():
     print("=== Monitoring for New Characters ===")
@@ -21,7 +23,7 @@ def monitor_creations():
             if current_count > last_count:
                 # New character found!
                 new_char = Character.objects.last()
-                print(f"\n[NEW DETECTED] {datetime.now()}")
+                print(f"\n[NEW DETECTED] {datetime.now(UTC)}")
                 print(f"Name: {new_char.name}")
                 print(f"Class: {new_char.character_class.name if new_char.character_class else 'None'}")
                 print(f"Level: {new_char.level}")

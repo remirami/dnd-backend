@@ -1,5 +1,6 @@
 from django.contrib import admin
-from .models import CombatSession, CombatParticipant, CombatAction, CombatLog
+
+from .models import CombatAction, CombatLog, CombatParticipant, CombatSession
 
 
 class CombatParticipantInline(admin.TabularInline):

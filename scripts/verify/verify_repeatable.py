@@ -1,15 +1,17 @@
 
 import os
-import django
 import sys
+
+import django
 
 # Setup Django environment
 sys.path.append('c:/dnd-backend/dnd-backend')
 os.environ.setdefault('DJANGO_SETTINGS_MODULE', 'dnd_backend.settings')
 django.setup()
 
-from characters.models import Character, Feat, CharacterFeat
 from campaigns.feat_data import get_feat_config
+from characters.models import Character, CharacterFeat, Feat
+
 
 def verify_repeatable_feat():
     # 1. Get a test character

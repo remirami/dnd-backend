@@ -1,5 +1,6 @@
 from django.core.management.base import BaseCommand
-from items.models import ItemCategory, ItemProperty, Weapon, Armor, Consumable, DamageType
+
+from items.models import Armor, Consumable, DamageType, ItemCategory, ItemProperty, Weapon
 
 
 class Command(BaseCommand):
@@ -19,7 +20,7 @@ class Command(BaseCommand):
         }
         
         for name, desc in categories.items():
-            category, created = ItemCategory.objects.get_or_create(name=name, defaults={'description': desc})
+            _category, created = ItemCategory.objects.get_or_create(name=name, defaults={'description': desc})
             if created:
                 self.stdout.write(f'  Created category: {name}')
         

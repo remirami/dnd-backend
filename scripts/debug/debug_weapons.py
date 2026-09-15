@@ -1,7 +1,8 @@
 
 import os
-import django
 import sys
+
+import django
 
 # Setup Django environment
 sys.path.append('c:/dnd-backend/dnd-backend')

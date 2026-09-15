@@ -3,14 +3,14 @@ Tests for enemy spell slot enforcement.
 
 Verifies that enemies cannot spam spells and are properly limited by their stat blocks.
 """
-from django.test import TestCase
 from django.contrib.auth.models import User
+from django.test import TestCase
 from rest_framework.test import APIClient
 
 from bestiary.models import Enemy, EnemySpell, EnemySpellSlot
-from encounters.models import Encounter, EncounterEnemy
-from combat.models import CombatSession, CombatParticipant
 from characters.models import Character
+from combat.models import CombatParticipant, CombatSession
+from encounters.models import Encounter, EncounterEnemy
 
 
 class EnemySpellSlotEnforcementTests(TestCase):
@@ -25,7 +25,7 @@ class EnemySpellSlotEnforcementTests(TestCase):
         self.client.force_authenticate(user=self.user)
         
         # Create race and class for character
-        from characters.models import CharacterRace, CharacterClass
+        from characters.models import CharacterClass, CharacterRace
         human_race = CharacterRace.objects.create(name="Human")
         wizard_class = CharacterClass.objects.create(name="Wizard")
         

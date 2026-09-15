@@ -6,8 +6,9 @@ Make sure you have:
 - At least 2 characters with stats
 - At least 3 encounters with enemies
 """
-import requests
 import json
+
+import requests
 
 BASE_URL = "http://127.0.0.1:8000/api"
 SESSION = requests.Session()

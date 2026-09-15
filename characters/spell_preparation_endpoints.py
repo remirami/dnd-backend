@@ -1,16 +1,13 @@
 """
 Spell Preparation endpoints for CharacterViewSet
 """
+from rest_framework import status
 from rest_framework.decorators import action
 from rest_framework.response import Response
-from rest_framework import status
 
 from characters.models import CharacterSpell
-from characters.spell_management import (
-    is_prepared_caster,
-    calculate_spells_prepared
-)
 from characters.serializers import CharacterSpellSerializer
+from characters.spell_management import calculate_spells_prepared, is_prepared_caster
 
 
 def add_spell_preparation_endpoints(cls):

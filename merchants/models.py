@@ -1,8 +1,10 @@
+import random
+
 from django.db import models
 from django.utils import timezone
+
 from campaigns.models import Campaign, CampaignCharacter
 from items.models import Item
-import random
 
 
 class MerchantEncounter(models.Model):

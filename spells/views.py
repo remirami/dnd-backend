@@ -1,14 +1,14 @@
-from rest_framework import viewsets, filters, status
+from django.conf import settings
+from django.utils.decorators import method_decorator
+from django.views.decorators.cache import cache_page
+from rest_framework import filters, status, viewsets
 from rest_framework.decorators import action
 from rest_framework.response import Response
-from django.views.decorators.cache import cache_page
-from django.utils.decorators import method_decorator
-from django.conf import settings
 
 from core.throttles import SpellLookupThrottle
 
 from .models import Spell
-from .serializers import SpellSerializer, SpellListSerializer
+from .serializers import SpellListSerializer, SpellSerializer
 
 
 class SpellViewSet(viewsets.ModelViewSet):

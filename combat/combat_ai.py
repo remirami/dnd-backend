@@ -4,8 +4,9 @@ Simple Combat AI for enemy turns.
 Resolves an enemy's turn by selecting targets and executing attacks
 based on the enemy's available actions and basic tactical rules.
 """
-import re
 import random
+import re
+
 from combat.utils import roll_d20
 
 
@@ -55,7 +56,7 @@ def resolve_enemy_turn(session, participant):
         return actions
     
     # Check for multiattack
-    has_multiattack, attack_count = _check_multiattack(participant)
+    _has_multiattack, attack_count = _check_multiattack(participant)
     
     # Execute attacks
     for i in range(attack_count):
@@ -174,7 +175,7 @@ def _execute_attack(session, attacker, target, attack):
     damage_str = attack['damage']
     
     # Roll attack
-    roll, roll_breakdown = roll_d20()
+    roll, _roll_breakdown = roll_d20()
     attack_total = roll + attack_bonus
     
     # Determine hit
@@ -292,13 +293,12 @@ def _format_attack_description(result):
     if result['fumble']:
         return f"{attacker} attacks {target} with {attack_name} but fumbles! (rolled 1)"
     
-    if result['critical']:
-        if result['hit']:
-            return (
-                f"{attacker} CRITICALLY HITS {target} with {attack_name}! "
-                f"(rolled {result['roll']}+{result['attack_bonus']}={result['attack_total']} vs AC {result['target_ac']}) "
-                f"dealing {result['damage']} {result['damage_type']} damage."
-            )
+    if result['critical'] and result['hit']:
+        return (
+            f"{attacker} CRITICALLY HITS {target} with {attack_name}! "
+            f"(rolled {result['roll']}+{result['attack_bonus']}={result['attack_total']} vs AC {result['target_ac']}) "
+            f"dealing {result['damage']} {result['damage_type']} damage."
+        )
     
     if result['hit']:
         msg = (

@@ -3,14 +3,14 @@ Comprehensive Tests for Legendary Actions and Death Saving Throws
 
 Tests legendary action usage, tracking, reset mechanics, and death saving throws.
 """
-from django.test import TestCase
 from django.contrib.auth.models import User
-from rest_framework.test import APIClient
+from django.test import TestCase
 from rest_framework import status
+from rest_framework.test import APIClient
 
-from combat.models import CombatSession, CombatParticipant
-from characters.models import Character, CharacterClass, CharacterRace, CharacterStats
 from bestiary.models import Enemy, EnemyStats
+from characters.models import Character, CharacterClass, CharacterRace, CharacterStats
+from combat.models import CombatParticipant, CombatSession
 from encounters.models import Encounter, EncounterEnemy
 
 
@@ -79,7 +79,7 @@ class LegendaryActionTests(TestCase):
     
     def test_use_legendary_action_double_cost(self):
         """Test using a legendary action with cost 2"""
-        success, message = self.dragon_participant.use_legendary_action(action_cost=2)
+        success, _message = self.dragon_participant.use_legendary_action(action_cost=2)
         
         self.assertTrue(success)
         self.assertEqual(self.dragon_participant.legendary_actions_remaining, 1)
@@ -116,7 +116,7 @@ class LegendaryActionTests(TestCase):
     
     def test_legendary_action_zero_cost_fails(self):
         """Test cannot use legendary action with 0 cost"""
-        success, message = self.dragon_participant.use_legendary_action(action_cost=0)
+        success, _message = self.dragon_participant.use_legendary_action(action_cost=0)
         
         self.assertFalse(success)
     
@@ -303,7 +303,7 @@ class DeathSavingThrowTests(TestCase):
     def test_death_save_success(self):
         """Test successful death save (roll 10-19)"""
         # Force a success roll
-        success, is_stable, is_dead, message = self.participant.make_death_save(roll=15)
+        success, is_stable, is_dead, _message = self.participant.make_death_save(roll=15)
         
         self.assertTrue(success)  # Roll was success
         self.assertFalse(is_dead)  # Not dead
@@ -313,7 +313,7 @@ class DeathSavingThrowTests(TestCase):
     
     def test_death_save_failure(self):
         """Test failed death save (roll 1-9)"""
-        success, is_stable, is_dead, message = self.participant.make_death_save(roll=5)
+        success, _is_stable, is_dead, _message = self.participant.make_death_save(roll=5)
         
         self.assertFalse(success)  # Roll failed
         self.assertFalse(is_dead)  # Not dead yet
@@ -322,7 +322,7 @@ class DeathSavingThrowTests(TestCase):
     
     def test_death_save_natural_20(self):
         """Test natural 20 stabilizes immediately"""
-        success, is_stable, is_dead, message = self.participant.make_death_save(roll=20)
+        success, _is_stable, is_dead, message = self.participant.make_death_save(roll=20)
         
         self.assertTrue(success)
         # Natural 20 may stabilize or give 2 successes
@@ -332,7 +332,7 @@ class DeathSavingThrowTests(TestCase):
     
     def test_death_save_natural_1(self):
         """Test natural 1 counts as 2 failures"""
-        success, is_stable, is_dead, message = self.participant.make_death_save(roll=1)
+        _success, _is_stable, _is_dead, message = self.participant.make_death_save(roll=1)
         
         # Should have 2 failures
         self.assertEqual(self.participant.death_save_failures, 2)
@@ -343,7 +343,7 @@ class DeathSavingThrowTests(TestCase):
         self.participant.death_save_successes = 2
         self.participant.save()
         
-        success, is_stable, is_dead, message = self.participant.make_death_save(roll=10)
+        _success, is_stable, _is_dead, _message = self.participant.make_death_save(roll=10)
         
         # Should be stabilized
         self.assertTrue(is_stable)
@@ -355,7 +355,7 @@ class DeathSavingThrowTests(TestCase):
         self.participant.death_save_failures = 2
         self.participant.save()
         
-        success, is_stable, is_dead, message = self.participant.make_death_save(roll=5)
+        _success, _is_stable, is_dead, message = self.participant.make_death_save(roll=5)
         
         # Should be dead
         self.assertTrue(is_dead)

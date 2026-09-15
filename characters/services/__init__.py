@@ -1,6 +1,6 @@
 """
 Characters services package.
 """
-from .validators import RacialBonusCalculator, AbilityScoreValidator
+from .validators import AbilityScoreValidator, RacialBonusCalculator
 
-__all__ = ['RacialBonusCalculator', 'AbilityScoreValidator']
+__all__ = ['AbilityScoreValidator', 'RacialBonusCalculator']

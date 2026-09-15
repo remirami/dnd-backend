@@ -1,5 +1,6 @@
 from django.contrib import admin
-from .models import Item, Weapon, Armor, Consumable, MagicItem, ItemCategory, ItemProperty
+
+from .models import Armor, Consumable, Item, ItemCategory, ItemProperty, MagicItem, Weapon
 
 
 @admin.register(ItemCategory)

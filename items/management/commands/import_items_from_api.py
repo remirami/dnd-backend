@@ -1,4 +1,5 @@
 import json
+
 from django.core.management.base import BaseCommand, CommandError
 from django.db import transaction
 
@@ -8,9 +9,7 @@ try:
 except ImportError:
     REQUESTS_AVAILABLE = False
 
-from items.models import (
-    Item, ItemCategory, ItemProperty, Weapon, Armor, MagicItem, DamageType
-)
+from items.models import Armor, DamageType, Item, ItemCategory, ItemProperty, MagicItem, Weapon
 
 
 class Command(BaseCommand):
@@ -60,7 +59,7 @@ class Command(BaseCommand):
             elif source == 'json':
                 self.import_from_json(options['file'], dry_run, update_existing)
         except Exception as e:
-            raise CommandError(f'Import failed: {str(e)}')
+            raise CommandError(f'Import failed: {e!s}')
 
     def import_from_open5e(self, dry_run, update_existing, limit=None):
         """Import items from Open5e API"""
@@ -111,7 +110,7 @@ class Command(BaseCommand):
                 page += 1
                 
             except requests.RequestException as e:
-                self.stdout.write(self.style.WARNING(f'Failed to fetch page {page}: {str(e)}'))
+                self.stdout.write(self.style.WARNING(f'Failed to fetch page {page}: {e!s}'))
                 break
         
         return items
@@ -124,7 +123,7 @@ class Command(BaseCommand):
         except FileNotFoundError:
             raise CommandError(f'File not found: {file_path}')
         except json.JSONDecodeError as e:
-            raise CommandError(f'Invalid JSON: {str(e)}')
+            raise CommandError(f'Invalid JSON: {e!s}')
 
         if isinstance(data, list):
             items = [(item, 'unknown') for item in data]
@@ -166,7 +165,7 @@ class Command(BaseCommand):
             except Exception as e:
                 error_count += 1
                 self.stdout.write(
-                    self.style.ERROR(f'[!] Failed to import {item_data.get("name", "Unknown")}: {str(e)}')
+                    self.style.ERROR(f'[!] Failed to import {item_data.get("name", "Unknown")}: {e!s}')
                 )
 
         if not dry_run:

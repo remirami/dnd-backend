@@ -3,13 +3,20 @@ Comprehensive Tests for Spell Preparation System
 
 Tests preparing spells, learning spells, and spell management for different caster types.
 """
-from django.test import TestCase
 from django.contrib.auth.models import User
-from rest_framework.test import APIClient
+from django.test import TestCase
 from rest_framework import status
+from rest_framework.test import APIClient
 
-from characters.models import Character, CharacterClass, CharacterRace, CharacterStats, CharacterSpell, CharacterClassLevel
-from characters.spell_management import is_prepared_caster, is_known_caster, calculate_spells_prepared
+from characters.models import (
+    Character,
+    CharacterClass,
+    CharacterClassLevel,
+    CharacterRace,
+    CharacterSpell,
+    CharacterStats,
+)
+from characters.spell_management import calculate_spells_prepared, is_known_caster, is_prepared_caster
 
 
 class SpellPreparationTests(TestCase):

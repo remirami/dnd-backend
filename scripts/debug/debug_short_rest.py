@@ -1,11 +1,15 @@
 import os
+
 import django
+
 os.environ.setdefault('DJANGO_SETTINGS_MODULE', 'dnd_backend.settings')
 django.setup()
 
-from characters.models import Character
 from rest_framework.test import APIRequestFactory, force_authenticate
+
+from characters.models import Character
 from characters.views import CharacterViewSet
+
 
 def debug_short_rest():
     # Get a character

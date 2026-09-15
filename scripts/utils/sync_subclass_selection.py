@@ -1,7 +1,8 @@
 
 import os
-import django
 import sys
+
+import django
 
 sys.path.append(os.getcwd())
 os.environ.setdefault('DJANGO_SETTINGS_MODULE', 'dnd_backend.settings')

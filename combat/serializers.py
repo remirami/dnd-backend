@@ -1,8 +1,10 @@
 from rest_framework import serializers
-from .models import CombatSession, CombatParticipant, CombatAction, CombatLog, EnvironmentalEffect, ParticipantPosition
-from encounters.serializers import EncounterSerializer, EncounterEnemySerializer
-from characters.serializers import CharacterSerializer
+
 from bestiary.serializers import ConditionSerializer, DamageTypeSerializer
+from characters.serializers import CharacterSerializer
+from encounters.serializers import EncounterEnemySerializer, EncounterSerializer
+
+from .models import CombatAction, CombatLog, CombatParticipant, CombatSession, EnvironmentalEffect, ParticipantPosition
 
 
 class CombatParticipantSerializer(serializers.ModelSerializer):

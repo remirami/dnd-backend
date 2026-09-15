@@ -3,15 +3,12 @@ High-ROI Character Management Tests
 
 Tests level-up, ASI, multiclassing - the most-used character features.
 """
-from django.test import TestCase
 from django.contrib.auth.models import User
-from rest_framework.test import APIClient
+from django.test import TestCase
 from rest_framework import status
+from rest_framework.test import APIClient
 
-from characters.models import (
-    Character, CharacterClass, CharacterRace, CharacterStats,
-    CharacterClassLevel
-)
+from characters.models import Character, CharacterClass, CharacterClassLevel, CharacterRace, CharacterStats
 
 
 class CharacterLevelUpTests(TestCase):

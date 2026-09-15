@@ -1,6 +1,7 @@
 from django.db import models
-from characters.models import CharacterClass
+
 from bestiary.models import DamageType
+from characters.models import CharacterClass
 
 
 class Spell(models.Model):

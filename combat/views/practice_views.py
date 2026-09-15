@@ -4,13 +4,14 @@ Practice Views - Practice mode, AI turns, and export.
 Contains the CombatPracticeMixin with practice_mode, export, ai_turn,
 and auto_enemy_turns actions.
 """
-from rest_framework.decorators import action
-from rest_framework.response import Response
-from rest_framework import status
 import logging
 
-from combat.models import CombatSession, CombatParticipant
+from rest_framework import status
+from rest_framework.decorators import action
+from rest_framework.response import Response
+
 from characters.models import Character
+from combat.models import CombatParticipant, CombatSession
 
 logger = logging.getLogger('combat')
 
@@ -135,6 +136,7 @@ class CombatPracticeMixin:
         
         elif format_type == 'csv':
             import csv
+
             from django.http import HttpResponse
             
             log = session.get_or_create_log()
@@ -215,9 +217,9 @@ class CombatPracticeMixin:
                 "session": serializer.data,
             })
         except Exception as e:
-            logger.exception(f"AI turn error for {current.get_name()}: {e}")
+            logger.exception(f"AI turn error for {current.get_name()}")
             return Response(
-                {"error": f"AI turn failed: {str(e)}"},
+                {"error": f"AI turn failed: {e!s}"},
                 status=status.HTTP_500_INTERNAL_SERVER_ERROR
             )
 
@@ -285,8 +287,8 @@ class CombatPracticeMixin:
                 "session": serializer.data,
             })
         except Exception as e:
-            logger.exception(f"Auto enemy turns error: {e}")
+            logger.exception("Auto enemy turns error")
             return Response(
-                {"error": f"Auto enemy turns failed: {str(e)}"},
+                {"error": f"Auto enemy turns failed: {e!s}"},
                 status=status.HTTP_500_INTERNAL_SERVER_ERROR
             )

@@ -1,14 +1,17 @@
 import os
+
 import django
 from django.test import RequestFactory
 
 os.environ.setdefault('DJANGO_SETTINGS_MODULE', 'dnd_backend.settings')
 django.setup()
 
+from django.contrib.auth.models import User
+from rest_framework.test import force_authenticate
+
 from characters.models import Character, CharacterClass, CharacterRace
 from characters.views import CharacterViewSet
-from rest_framework.test import force_authenticate
-from django.contrib.auth.models import User
+
 
 def reproduce_levelup():
     print("Simulating Warlock Level Up...")

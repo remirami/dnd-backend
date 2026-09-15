@@ -1,5 +1,7 @@
 from django.core.management.base import BaseCommand
-from characters.models import Feat, CharacterBackground, Character
+
+from characters.models import Character, CharacterBackground, Feat
+
 
 class Command(BaseCommand):
     help = 'Purge all non-SRD feats and backgrounds from the database.'

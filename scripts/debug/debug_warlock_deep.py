@@ -1,12 +1,15 @@
 import os
+
 import django
 
 os.environ.setdefault('DJANGO_SETTINGS_MODULE', 'dnd_backend.settings')
 django.setup()
 
-from characters.models import Character
-from campaigns.utils import calculate_spell_slots, SPELL_SLOT_TABLES
 import pprint
+
+from campaigns.utils import SPELL_SLOT_TABLES, calculate_spell_slots
+from characters.models import Character
+
 
 def debug_deep():
     print("=== Deep Debugging Warlocks ===")

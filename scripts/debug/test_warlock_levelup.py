@@ -1,4 +1,5 @@
 import os
+
 import django
 from django.contrib.auth.models import User
 
@@ -7,6 +8,7 @@ django.setup()
 
 from characters.models import CharacterClass, CharacterRace
 from characters.views import CharacterViewSet
+
 # We need to simulate the viewset logic or call the method directly?
 # The level_up logic is in the ViewSet action 'level_up'.
 
@@ -61,7 +63,6 @@ def test_levelup_flow():
     # I will inspect 'characters/views.py' to see exactly what 'level_up' does and call THAT function if detached, 
     # or replicate the calls.
     
-    pass 
 
 if __name__ == '__main__':
     # Re-reading views.py quickly to find the logic function

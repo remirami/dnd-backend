@@ -1,11 +1,11 @@
-from django.test import TestCase
 from django.contrib.auth.models import User
-from rest_framework.test import APIClient
+from django.test import TestCase
 from rest_framework import status
+from rest_framework.test import APIClient
 
-from characters.models import Character, CharacterClass, CharacterRace, CharacterStats, CharacterFeature
-from combat.models import CombatSession, CombatParticipant
 from bestiary.models import Enemy, EnemyStats
+from characters.models import Character, CharacterClass, CharacterFeature, CharacterRace, CharacterStats
+from combat.models import CombatParticipant, CombatSession
 
 
 class CombatExtraAttackRound1Tests(TestCase):

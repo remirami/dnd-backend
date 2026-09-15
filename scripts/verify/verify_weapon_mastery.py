@@ -1,15 +1,17 @@
 import os
-import django
 import sys
+
+import django
 
 # Set up Django environment
 sys.path.append('c:\\dnd-backend\\dnd-backend')
 os.environ.setdefault('DJANGO_SETTINGS_MODULE', 'dnd_backend.settings')
 django.setup()
 
+from campaigns.class_features_data import get_class_features
 from items.models import Weapon
 from items.serializers import WeaponSerializer
-from campaigns.class_features_data import get_class_features
+
 
 def verify_weapon_mastery():
     print("Verifying Weapon Mastery System...")

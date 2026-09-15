@@ -1,5 +1,6 @@
-import json
 import csv
+import json
+
 from django.core.management.base import BaseCommand, CommandError
 from django.db import transaction
 
@@ -9,8 +10,16 @@ try:
 except ImportError:
     REQUESTS_AVAILABLE = False
 from bestiary.models import (
-    Enemy, EnemyStats, EnemyAttack, EnemyAbility, EnemySpell, EnemySpellSlot,
-    DamageType, EnemyResistance, Language, EnemyLanguage
+    DamageType,
+    Enemy,
+    EnemyAbility,
+    EnemyAttack,
+    EnemyLanguage,
+    EnemyResistance,
+    EnemySpell,
+    EnemySpellSlot,
+    EnemyStats,
+    Language,
 )
 
 
@@ -63,7 +72,7 @@ class Command(BaseCommand):
             elif source == 'open5e':
                 self.import_from_open5e(dry_run, update_existing)
         except Exception as e:
-            raise CommandError(f'Import failed: {str(e)}')
+            raise CommandError(f'Import failed: {e!s}')
 
     def import_from_json(self, file_path, dry_run, update_existing):
         """Import monsters from JSON file"""
@@ -73,7 +82,7 @@ class Command(BaseCommand):
         except FileNotFoundError:
             raise CommandError(f'File not found: {file_path}')
         except json.JSONDecodeError as e:
-            raise CommandError(f'Invalid JSON: {str(e)}')
+            raise CommandError(f'Invalid JSON: {e!s}')
 
         if isinstance(data, list):
             monsters = data
@@ -105,7 +114,7 @@ class Command(BaseCommand):
             response.raise_for_status()
             data = response.json()
         except requests.RequestException as e:
-            raise CommandError(f'Failed to fetch from D&D Beyond: {str(e)}')
+            raise CommandError(f'Failed to fetch from D&D Beyond: {e!s}')
 
         # Parse D&D Beyond format
         monsters = self.parse_dndbeyond_format(data)
@@ -162,7 +171,7 @@ class Command(BaseCommand):
 
             except Exception as e:
                 self.stdout.write(
-                    self.style.ERROR(f'Failed to import {monster_data.get("name", "Unknown")}: {str(e)}')
+                    self.style.ERROR(f'Failed to import {monster_data.get("name", "Unknown")}: {e!s}')
                 )
 
         if not dry_run:
@@ -302,7 +311,7 @@ class Command(BaseCommand):
         """Create enemy spells"""
         spells = data.get('spells', [])
         for spell_data in spells:
-            spell, created = EnemySpell.objects.get_or_create(
+            spell, _created = EnemySpell.objects.get_or_create(
                 enemy=monster,
                 name=spell_data.get('name', 'Spell'),
                 defaults={

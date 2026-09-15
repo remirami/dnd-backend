@@ -3,6 +3,7 @@
 
 import os
 import sys
+
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 import django
 
@@ -10,9 +11,9 @@ os.environ.setdefault('DJANGO_SETTINGS_MODULE', 'dnd_backend.settings')
 django.setup()
 
 from bestiary.models import Enemy
-from items.models import Item, Weapon, Armor, MagicItem
 from campaigns.models import Campaign
-from campaigns.utils import TreasureGenerator, CampaignGenerator
+from campaigns.utils import CampaignGenerator, TreasureGenerator
+from items.models import Armor, Item, MagicItem, Weapon
 
 print("\n" + "="*60)
 print("  DATABASE CONTENT CHECK")

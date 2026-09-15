@@ -1,6 +1,7 @@
 import os
-import django
 import sys
+
+import django
 
 # Set up Django environment
 sys.path.append('c:\\dnd-backend\\dnd-backend')
@@ -8,6 +9,7 @@ os.environ.setdefault('DJANGO_SETTINGS_MODULE', 'dnd_backend.settings')
 django.setup()
 
 from characters.models import CharacterFeature
+
 
 def repair_student_of_war():
     features = CharacterFeature.objects.filter(name="Student of War")

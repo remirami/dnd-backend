@@ -1,7 +1,8 @@
 
 import os
-import django
 import sys
+
+import django
 
 # Setup Django
 sys.path.append(os.getcwd())

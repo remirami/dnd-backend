@@ -1,14 +1,18 @@
 import os
-import django
 import sys
+
+import django
+
 # Setup Django
 sys.path.append(os.getcwd())
 os.environ.setdefault('DJANGO_SETTINGS_MODULE', 'dnd_backend.settings')
 django.setup()
 
 from rest_framework.test import APIRequestFactory
+
 from characters.models import CharacterClass
 from characters.views import CharacterClassViewSet
+
 
 def verify_api():
     print("--- Verifying Subclass API ---")

@@ -3,15 +3,13 @@ Tests for Encounter API Endpoints
 
 Tests the REST API endpoints for encounter generation
 """
-from django.test import TestCase
 from django.contrib.auth.models import User
-from rest_framework.test import APIClient
+from django.test import TestCase
 from rest_framework import status
+from rest_framework.test import APIClient
 
-from encounters.models import (
-    EncounterTheme, EnemyThemeAssociation, BiomeEncounterWeight
-)
 from bestiary.models import Enemy, EnemyStats
+from encounters.models import BiomeEncounterWeight, EncounterTheme, EnemyThemeAssociation
 
 
 class EncounterGenerateAPITests(TestCase):

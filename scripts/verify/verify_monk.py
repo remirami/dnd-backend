@@ -1,16 +1,19 @@
 
 import os
-import django
 import sys
+
+import django
 
 # Setup Django environment
 sys.path.append('c:/dnd-backend/dnd-backend')
 os.environ.setdefault('DJANGO_SETTINGS_MODULE', 'dnd_backend.settings')
 django.setup()
 
-from characters.models import CharacterClass, CharacterFeature, CharacterRace, CharacterBackground
 from django.contrib.auth.models import User
+
+from characters.models import CharacterBackground, CharacterClass, CharacterFeature, CharacterRace
 from characters.serializers import CharacterSerializer
+
 
 def verify_monk_skills():
     print("Verifying Monk Skills...")

@@ -3,14 +3,14 @@ High-ROI Spell Casting Combat Tests
 
 Tests spell casting in combat - core gameplay mechanic.
 """
-from django.test import TestCase
 from django.contrib.auth.models import User
-from rest_framework.test import APIClient
+from django.test import TestCase
 from rest_framework import status
+from rest_framework.test import APIClient
 
-from combat.models import CombatSession, CombatParticipant, CombatAction
-from characters.models import Character, CharacterClass, CharacterRace, CharacterStats, CharacterSpell
-from bestiary.models import Enemy, EnemyStats, EnemySpell, EnemySpellSlot
+from bestiary.models import Enemy, EnemySpell, EnemySpellSlot, EnemyStats
+from characters.models import Character, CharacterClass, CharacterRace, CharacterSpell, CharacterStats
+from combat.models import CombatAction, CombatParticipant, CombatSession
 from encounters.models import Encounter, EncounterEnemy
 
 

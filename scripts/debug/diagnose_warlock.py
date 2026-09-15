@@ -1,11 +1,13 @@
 import os
+
 import django
 
 os.environ.setdefault('DJANGO_SETTINGS_MODULE', 'dnd_backend.settings')
 django.setup()
 
+from campaigns.utils import SPELL_SLOT_TABLES, calculate_spell_slots
 from characters.models import Character, CharacterClass
-from campaigns.utils import calculate_spell_slots, SPELL_SLOT_TABLES
+
 
 def diagnose():
     print("--- Diagnosing Warlock Slot Calculation ---")
