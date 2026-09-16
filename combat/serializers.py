@@ -157,6 +157,25 @@ class CombatActionSerializer(serializers.ModelSerializer):
         return obj.actor.participant_type == 'enemy' if obj.actor else False
 
 
+class CombatSessionListSerializer(serializers.ModelSerializer):
+    """Lightweight serializer for combat sessions list view"""
+    status_display = serializers.CharField(source='get_status_display', read_only=True)
+    is_active = serializers.SerializerMethodField()
+    encounter = EncounterSerializer(read_only=True, allow_null=True)
+    participants = CombatParticipantSerializer(many=True, read_only=True)
+
+    class Meta:
+        model = CombatSession
+        fields = [
+            'id', 'status', 'status_display', 'is_active', 'current_round',
+            'current_turn_index', 'started_at', 'ended_at', 'is_practice',
+            'encounter', 'participants'
+        ]
+
+    def get_is_active(self, obj):
+        return obj.status == 'active'
+
+
 class CombatSessionSerializer(serializers.ModelSerializer):
     """Serializer for combat sessions"""
     status_display = serializers.CharField(source='get_status_display', read_only=True)

@@ -14,7 +14,11 @@ from rest_framework.response import Response
 
 from characters.models import Character
 from combat.models import CombatParticipant, CombatSession
-from combat.serializers import CombatParticipantSerializer, CombatSessionSerializer
+from combat.serializers import (
+    CombatParticipantSerializer,
+    CombatSessionListSerializer,
+    CombatSessionSerializer,
+)
 from combat.utils import roll_d20
 from core.throttles import CombatActionThrottle
 from encounters.models import Encounter, EncounterEnemy
@@ -42,20 +46,30 @@ class CombatSessionViewSet(
     viewsets.ModelViewSet,
 ):
     """API endpoint for managing combat sessions"""
-    queryset = CombatSession.objects.all().select_related(
-        'encounter'
-    ).prefetch_related(
-        'participants',
-        'participants__character',
-        'participants__character__stats',
-        'participants__encounter_enemy',
-        'participants__encounter_enemy__enemy',
-        'participants__encounter_enemy__enemy__stats'
-    ).order_by('-started_at')
     serializer_class = CombatSessionSerializer
-    
-    # Rate limiting: 300 requests per minute for combat
     throttle_classes = [CombatActionThrottle]
+
+    def get_serializer_class(self):
+        if self.action == 'list':
+            return CombatSessionListSerializer
+        return CombatSessionSerializer
+
+    def get_queryset(self):
+        qs = CombatSession.objects.all().select_related('encounter')
+        if self.action == 'list':
+            return qs.prefetch_related(
+                'participants',
+                'participants__character',
+                'participants__encounter_enemy__enemy'
+            ).order_by('-started_at')
+        return qs.prefetch_related(
+            'participants',
+            'participants__character',
+            'participants__character__stats',
+            'participants__encounter_enemy',
+            'participants__encounter_enemy__enemy',
+            'participants__encounter_enemy__enemy__stats'
+        ).order_by('-started_at')
     
     def perform_create(self, serializer):
         """Handle creation with optional encounter"""
