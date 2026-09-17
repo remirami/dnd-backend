@@ -1,4 +1,5 @@
 import os
+import random as python_random
 import tempfile
 
 from django.db.models import Q
@@ -25,13 +26,39 @@ class EnemyViewSet(viewsets.ModelViewSet):
 
     def get_queryset(self):
         queryset = Enemy.objects.all().order_by('name')
-        search_query = self.request.query_params.get('search', None)
+        params = self.request.query_params
+
+        search_query = params.get('search', None)
         if search_query:
             queryset = queryset.filter(
-                Q(name__icontains=search_query) | 
+                Q(name__icontains=search_query) |
                 Q(challenge_rating__icontains=search_query)
             )
+
+        # Filter by creature type (exact match, case-insensitive)
+        creature_type = params.get('type', None)
+        if creature_type:
+            queryset = queryset.filter(creature_type__iexact=creature_type)
+
+        # Filter by challenge rating (exact string match, e.g. "1", "1/4", "1/2")
+        cr = params.get('cr', None)
+        if cr:
+            queryset = queryset.filter(challenge_rating=cr)
+
         return queryset
+
+    @action(detail=False, methods=['get'])
+    def random(self, request):
+        """Return a random enemy, optionally filtered by type and/or cr."""
+        queryset = self.get_queryset()
+        count = queryset.count()
+        if count == 0:
+            return Response({'error': 'No enemies match the given filters.'}, status=status.HTTP_404_NOT_FOUND)
+        random_index = python_random.randint(0, count - 1)
+        enemy = queryset[random_index]
+        serializer = self.get_serializer(enemy)
+        return Response(serializer.data)
+
 
     @action(detail=False, methods=['post'])
     def import_json(self, request):

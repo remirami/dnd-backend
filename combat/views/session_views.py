@@ -49,6 +49,9 @@ class CombatSessionViewSet(
     serializer_class = CombatSessionSerializer
     throttle_classes = [CombatActionThrottle]
 
+    MAX_ACTIVE_COMBATS_PER_USER = 2
+    MAX_TOTAL_COMBATS_PER_USER = 10
+
     def get_serializer_class(self):
         if self.action == 'list':
             return CombatSessionListSerializer
@@ -56,6 +59,10 @@ class CombatSessionViewSet(
 
     def get_queryset(self):
         qs = CombatSession.objects.all().select_related('encounter')
+        if self.request.user and self.request.user.is_authenticated:
+            if not self.request.user.is_staff:
+                from django.db.models import Q
+                qs = qs.filter(Q(created_by=self.request.user) | Q(created_by__isnull=True))
         if self.action == 'list':
             return qs.prefetch_related(
                 'participants',
@@ -72,18 +79,33 @@ class CombatSessionViewSet(
         ).order_by('-started_at')
     
     def perform_create(self, serializer):
-        """Handle creation with optional encounter"""
+        """Handle creation with optional encounter and per-user limits"""
+        user = self.request.user if (self.request.user and self.request.user.is_authenticated) else None
+        
+        if user:
+            from rest_framework.exceptions import ValidationError
+            user_sessions = CombatSession.objects.filter(created_by=user)
+            if user_sessions.count() >= self.MAX_TOTAL_COMBATS_PER_USER:
+                raise ValidationError(
+                    {"error": f"Combat limit reached. You can have a maximum of {self.MAX_TOTAL_COMBATS_PER_USER} saved combat sessions. Please delete an older session to create a new one."}
+                )
+            active_count = user_sessions.filter(status__in=['preparing', 'active']).count()
+            if active_count >= self.MAX_ACTIVE_COMBATS_PER_USER:
+                raise ValidationError(
+                    {"error": f"Active combat limit reached. You can have a maximum of {self.MAX_ACTIVE_COMBATS_PER_USER} active combat sessions. Please finish or delete an active combat session before starting a new one."}
+                )
+
         encounter_id = self.request.data.get('encounter_id')
         is_practice = self.request.data.get('is_practice', False)
         
         if is_practice or not encounter_id:
             # Practice mode: no encounter needed
-            serializer.save(encounter=None, is_practice=True)
+            serializer.save(created_by=user, encounter=None, is_practice=True)
         else:
             # Campaign mode: require encounter
             try:
                 encounter = Encounter.objects.get(pk=encounter_id)
-                serializer.save(encounter=encounter, is_practice=False)
+                serializer.save(created_by=user, encounter=encounter, is_practice=False)
             except Encounter.DoesNotExist:
                 from rest_framework.exceptions import ValidationError
                 raise ValidationError({"encounter_id": "Encounter not found"})

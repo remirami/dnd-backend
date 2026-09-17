@@ -190,6 +190,7 @@ class CombatSessionSerializer(serializers.ModelSerializer):
     class Meta:
         model = CombatSession
         fields = "__all__"
+        read_only_fields = ['created_by']
         
     def get_is_active(self, obj):
         return obj.status == 'active'

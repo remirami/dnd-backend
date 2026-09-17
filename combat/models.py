@@ -1,3 +1,4 @@
+from django.contrib.auth.models import User
 from django.core.validators import MaxValueValidator, MinValueValidator
 from django.db import models
 from django.utils import timezone
@@ -15,6 +16,14 @@ class CombatSession(models.Model):
         ('ended', 'Ended'),
     ]
     
+    created_by = models.ForeignKey(
+        User,
+        on_delete=models.CASCADE,
+        blank=True,
+        null=True,
+        related_name='combat_sessions',
+        help_text="User who created this combat session"
+    )
     encounter = models.ForeignKey(Encounter, on_delete=models.CASCADE, related_name='combat_sessions', blank=True, null=True, help_text="Optional encounter. If null, this is a practice/simulation session.")
     is_practice = models.BooleanField(default=False, help_text="True if this is a practice/simulation session")
     status = models.CharField(max_length=20, choices=STATUS_CHOICES, default='preparing')

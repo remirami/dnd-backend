@@ -85,8 +85,16 @@ class CharacterViewSet(viewsets.ModelViewSet):
             'proficiencies'
         ).order_by('-created_at')
     
+    MAX_CHARACTERS_PER_USER = 20
+
     def perform_create(self, serializer):
-        """Automatically set the user when creating a character"""
+        """Automatically set the user when creating a character, enforcing the max limit"""
+        user_character_count = Character.objects.filter(user=self.request.user).count()
+        if user_character_count >= self.MAX_CHARACTERS_PER_USER:
+            from rest_framework.exceptions import ValidationError
+            raise ValidationError(
+                {"error": f"Character limit reached. You can have a maximum of {self.MAX_CHARACTERS_PER_USER} characters."}
+            )
         serializer.save(user=self.request.user)
         # Note: Racial and background features are already applied in CharacterSerializer.create
 
@@ -119,6 +127,13 @@ class CharacterViewSet(viewsets.ModelViewSet):
                 )
                 return Response(data, status=status.HTTP_200_OK)
             else:
+                user_character_count = Character.objects.filter(user=request.user).count()
+                if user_character_count >= self.MAX_CHARACTERS_PER_USER:
+                    return Response(
+                        {"error": f"Character limit reached. You can have a maximum of {self.MAX_CHARACTERS_PER_USER} characters."},
+                        status=status.HTTP_400_BAD_REQUEST
+                    )
+
                 character = create_random_character(
                     user=request.user,
                     ruleset_version=ruleset_version,
