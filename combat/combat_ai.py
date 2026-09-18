@@ -18,6 +18,17 @@ def resolve_enemy_turn(session, participant):
     Resolve an enemy participant's turn using enhanced AI.
     """
     actions = []
+
+    # Check if participant is incapacitated
+    if participant.is_incapacitated():
+        actions.append({
+            'type': 'skip',
+            'message': f"{participant.get_name()} is {participant.get_incapacitating_condition()} and cannot take actions.",
+        })
+        participant.action_used = True
+        participant.attacks_remaining = 0
+        participant.save(update_fields=['action_used', 'attacks_remaining'])
+        return actions
     
     # Get all living player targets
     targets = list(
@@ -240,11 +251,15 @@ def _execute_special_action(session, attacker, targets, action_obj):
     affected_summaries = []
 
     for target in targets:
-        # Roll saving throw
-        save_mod = target.get_ability_modifier(ability)
-        roll, _ = roll_d20()
-        save_total = roll + save_mod
-        saved = (save_total >= dc)
+        # Check auto-fail on STR/DEX saves
+        from combat.condition_effects import is_auto_fail_save
+        if is_auto_fail_save(target, ability):
+            saved = False
+        else:
+            save_mod = target.get_ability_modifier(ability)
+            roll, _ = roll_d20()
+            save_total = roll + save_mod
+            saved = (save_total >= dc)
 
         # Apply damage
         damage_taken = (total_damage // 2) if (saved and half_on_save) else (0 if saved else total_damage)
@@ -294,19 +309,27 @@ def _execute_special_action(session, attacker, targets, action_obj):
 def _execute_attack(session, attacker, target, attack, advantage=False):
     """Execute a single melee or ranged attack."""
     from combat.models import CombatAction
+    from combat.condition_effects import evaluate_attack_roll_conditions, is_auto_critical
 
     attack_name = attack['name']
     attack_bonus = attack['bonus']
     damage_str = attack['damage']
     action_obj = attack.get('action_obj')
 
-    roll, _roll_breakdown = roll_d20(advantage=advantage)
+    # Condition-based advantage and disadvantage
+    cond_adv, cond_disadv, _ = evaluate_attack_roll_conditions(attacker, target, is_melee=True)
+    eff_adv = (advantage or cond_adv) and not cond_disadv
+    eff_disadv = cond_disadv and not (advantage or cond_adv)
+
+    roll, _roll_breakdown = roll_d20(advantage=eff_adv, disadvantage=eff_disadv)
     attack_total = roll + attack_bonus
 
     is_critical = (roll == 20)
     is_fumble = (roll == 1)
     target_ac = target.armor_class
     hit = is_critical or (not is_fumble and attack_total >= target_ac)
+    if hit and is_auto_critical(attacker, target, is_melee=True):
+        is_critical = True
 
     result = {
         'type': 'attack',

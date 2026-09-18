@@ -251,7 +251,7 @@ def has_attack_disadvantage(participant):
     conditions = participant.conditions.all()
     condition_names = [c.name for c in conditions]
     
-    disadvantage_conditions = ['blinded', 'frightened', 'poisoned', 'restrained']
+    disadvantage_conditions = ['blinded', 'frightened', 'poisoned', 'restrained', 'prone']
     return any(name in condition_names for name in disadvantage_conditions)
 
 
@@ -262,4 +262,80 @@ def has_attack_advantage_against(participant):
     
     advantage_conditions = ['blinded', 'paralyzed', 'prone', 'restrained', 'stunned', 'unconscious']
     return any(name in condition_names for name in advantage_conditions)
+
+
+def evaluate_attack_roll_conditions(attacker, target, is_melee=True):
+    """
+    Evaluates both attacker and target conditions for attack rolls according to D&D 5e rules.
+    Returns: (advantage, disadvantage, reasons)
+    """
+    advantage = False
+    disadvantage = False
+    reasons = []
+
+    atk_conds = set(attacker.get_condition_names() if hasattr(attacker, 'get_condition_names') else [c.name.lower() for c in attacker.conditions.all()])
+    tgt_conds = set(target.get_condition_names() if hasattr(target, 'get_condition_names') else [c.name.lower() for c in target.conditions.all()])
+
+    # Attacker conditions
+    if 'blinded' in atk_conds:
+        disadvantage = True
+        reasons.append("Attacker is blinded")
+    if 'poisoned' in atk_conds:
+        disadvantage = True
+        reasons.append("Attacker is poisoned")
+    if 'frightened' in atk_conds:
+        disadvantage = True
+        reasons.append("Attacker is frightened")
+    if 'restrained' in atk_conds:
+        disadvantage = True
+        reasons.append("Attacker is restrained")
+    if 'prone' in atk_conds:
+        disadvantage = True
+        reasons.append("Attacker is prone")
+    if 'invisible' in atk_conds:
+        advantage = True
+        reasons.append("Attacker is invisible")
+
+    # Target conditions
+    for cond in ['blinded', 'paralyzed', 'restrained', 'stunned', 'unconscious']:
+        if cond in tgt_conds:
+            advantage = True
+            reasons.append(f"Target is {cond}")
+            break
+
+    if 'prone' in tgt_conds:
+        if is_melee:
+            advantage = True
+            reasons.append("Target is prone (melee advantage)")
+        else:
+            disadvantage = True
+            reasons.append("Target is prone (ranged disadvantage)")
+
+    if 'invisible' in tgt_conds:
+        disadvantage = True
+        reasons.append("Target is invisible")
+
+    return advantage, disadvantage, reasons
+
+
+def is_auto_critical(attacker, target, is_melee=True):
+    """
+    In D&D 5e, any attack that hits a paralyzed or unconscious creature is an automatic
+    critical hit if the attacker is within 5 feet (melee).
+    """
+    if not is_melee:
+        return False
+    tgt_conds = set(target.get_condition_names() if hasattr(target, 'get_condition_names') else [c.name.lower() for c in target.conditions.all()])
+    return bool(tgt_conds.intersection({'paralyzed', 'unconscious'}))
+
+
+def is_auto_fail_save(target, ability_name):
+    """
+    Paralyzed, stunned, unconscious, and petrified creatures automatically fail
+    Strength and Dexterity saving throws.
+    """
+    if str(ability_name).upper() not in ['STR', 'DEX']:
+        return False
+    tgt_conds = set(target.get_condition_names() if hasattr(target, 'get_condition_names') else [c.name.lower() for c in target.conditions.all()])
+    return bool(tgt_conds.intersection({'paralyzed', 'stunned', 'unconscious', 'petrified'}))
 

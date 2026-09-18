@@ -550,6 +550,33 @@ class CombatParticipant(models.Model):
             return enemy.traits.filter(trait_type=trait_type).exists()
         return False
 
+    def has_condition(self, name):
+        """Check if participant has a specific condition by name."""
+        if hasattr(self, '_prefetched_objects_cache') and 'conditions' in self._prefetched_objects_cache:
+            return any(c.name.lower() == name.lower() for c in self.conditions.all())
+        return self.conditions.filter(name__iexact=name).exists()
+
+    def is_incapacitated(self):
+        """Check if participant has any condition that causes the incapacitated state."""
+        incapacitating = {'incapacitated', 'paralyzed', 'petrified', 'stunned', 'unconscious'}
+        if hasattr(self, '_prefetched_objects_cache') and 'conditions' in self._prefetched_objects_cache:
+            return any(c.name in incapacitating for c in self.conditions.all())
+        return self.conditions.filter(name__in=incapacitating).exists()
+
+    def get_incapacitating_condition(self):
+        """Return the display name of the primary condition causing incapacitation."""
+        priority = ['unconscious', 'paralyzed', 'petrified', 'stunned', 'incapacitated']
+        all_conds = list(self.conditions.all())
+        for inc in priority:
+            for c in all_conds:
+                if c.name == inc:
+                    return c.get_name_display() if hasattr(c, 'get_name_display') else c.name.title()
+        return "incapacitated"
+
+    def get_condition_names(self):
+        """Return a list of lowercase names of all active conditions."""
+        return [c.name.lower() for c in self.conditions.all()]
+
     def save(self, *args, **kwargs):
         is_new = self.pk is None
         if is_new:

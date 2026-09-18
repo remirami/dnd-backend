@@ -183,6 +183,12 @@ class CombatReactionMixin:
                 {"error": "Reaction already used this turn"},
                 status=status.HTTP_400_BAD_REQUEST
             )
+
+        if attacker.is_incapacitated():
+            return Response(
+                {"error": f"{attacker.get_name()} is {attacker.get_incapacitating_condition()} and cannot take reactions."},
+                status=status.HTTP_400_BAD_REQUEST
+            )
         
         # Get attack details
         attack_name = request.data.get('attack_name', None)

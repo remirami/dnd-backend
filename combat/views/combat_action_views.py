@@ -70,6 +70,12 @@ class CombatActionMixin:
                 {"error": "Attacker is not active"},
                 status=status.HTTP_400_BAD_REQUEST
             )
+
+        if attacker.is_incapacitated():
+            return Response(
+                {"error": f"{attacker.get_name()} is {attacker.get_incapacitating_condition()} and cannot take actions."},
+                status=status.HTTP_400_BAD_REQUEST
+            )
         
         # Check if it's attacker's turn
         current = session.get_current_participant()
@@ -168,9 +174,17 @@ class CombatActionMixin:
                 save_ability = matched_action.saving_throw_ability or 'DEX'
                 save_dc = matched_action.saving_throw_dc or 15
                 save_mod = target.get_ability_modifier(save_ability)
-                s_roll, s_breakdown = roll_d20()
-                s_total = s_roll + save_mod
-                saved = (s_total >= save_dc)
+
+                from combat.condition_effects import is_auto_fail_save
+                if is_auto_fail_save(target, save_ability):
+                    saved = False
+                    s_roll = 1
+                    s_total = s_roll + save_mod
+                    s_breakdown = f"Auto-fail ({target.get_incapacitating_condition()})"
+                else:
+                    s_roll, s_breakdown = roll_d20()
+                    s_total = s_roll + save_mod
+                    saved = (s_total >= save_dc)
 
                 # Roll damage
                 damage_amount = 0
@@ -275,6 +289,20 @@ class CombatActionMixin:
                     damage_ability_mod = ability_mod
                     damage_string = "1d6"
         
+        # Determine melee vs ranged
+        is_melee = True
+        if equipped_weapon and getattr(equipped_weapon, 'range_normal', 0) > 5:
+            is_melee = False
+        elif matched_action and getattr(matched_action, 'attack_type', '') == 'ranged_weapon':
+            is_melee = False
+
+        from combat.condition_effects import evaluate_attack_roll_conditions, is_auto_critical
+        cond_adv, cond_disadv, _ = evaluate_attack_roll_conditions(attacker, target, is_melee=is_melee)
+        if cond_adv:
+            advantage = True
+        if cond_disadv:
+            disadvantage = True
+
         # Roll attack
         roll, roll_breakdown = roll_d20(advantage=advantage, disadvantage=disadvantage)
         
@@ -369,6 +397,8 @@ class CombatActionMixin:
         # Check if hit
         hit = check_hit(attack_total, target_ac)
         critical = (roll == 20)  # Natural 20 is critical
+        if hit and is_auto_critical(attacker, target, is_melee=is_melee):
+            critical = True
         
         # Calculate damage if hit
         damage_amount = 0
@@ -507,6 +537,12 @@ class CombatActionMixin:
         if not caster.is_active:
             return Response(
                 {"error": "Caster is not active"},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
+        if caster.is_incapacitated():
+            return Response(
+                {"error": f"{caster.get_name()} is {caster.get_incapacitating_condition()} and cannot take actions."},
                 status=status.HTTP_400_BAD_REQUEST
             )
         
