@@ -1,0 +1,221 @@
+import logging
+from django.db import transaction
+from django.utils import timezone
+from rest_framework import permissions, status, viewsets
+from rest_framework.decorators import action
+from rest_framework.response import Response
+
+from characters.models import Character
+from combat.models import CombatSession
+from gauntlet.models import GauntletRun, GauntletSnapshotHero
+from gauntlet.serializers import (
+    GauntletRunCreateSerializer,
+    GauntletRunSerializer,
+    RespiteRequestSerializer,
+)
+
+logger = logging.getLogger('combat')
+
+
+class GauntletViewSet(viewsets.ModelViewSet):
+    """
+    Pillar 1: Gauntlet API ViewSet.
+    Manages procedural wave-survival runs, hero snapshots,
+    respite rewards, and scoreboards.
+    """
+    permission_classes = [permissions.IsAuthenticated]
+    serializer_class = GauntletRunSerializer
+
+    def get_queryset(self):
+        user = self.request.user
+        qs = GauntletRun.objects.prefetch_related(
+            'snapshot_heroes',
+            'snapshot_heroes__character'
+        ).select_related('current_combat_session')
+
+        if user and user.is_authenticated and not user.is_staff:
+            return qs.filter(user=user)
+        return qs
+
+    def create(self, request, *args, **kwargs):
+        """Create a new Gauntlet Run and stage snapshot heroes."""
+        serializer = GauntletRunCreateSerializer(data=request.data, context={'request': request})
+        serializer.is_valid(raise_exception=True)
+
+        name = serializer.validated_data.get('name', 'The Gauntlet')
+        theme = serializer.validated_data.get('theme', 'colosseum')
+        character_ids = serializer.validated_data.get('character_ids', [])
+
+        with transaction.atomic():
+            run = GauntletRun.objects.create(
+                user=request.user,
+                name=name,
+                theme=theme,
+                status='preparing'
+            )
+
+            for char_id in character_ids:
+                char = Character.objects.get(id=char_id)
+                run.add_hero(char)
+
+            # Auto-start Wave 1
+            combat_session = run.start_run()
+
+        output_serializer = GauntletRunSerializer(run)
+        return Response(output_serializer.data, status=status.HTTP_201_CREATED)
+
+    @action(detail=True, methods=['post'])
+    def sync_wave(self, request, pk=None):
+        """
+        Syncs state from the current combat session, checking if wave is cleared
+        or if party wiped.
+        """
+        run = self.get_object()
+        session = run.current_combat_session
+
+        if not session:
+            return Response({"error": "No active combat session for this run."}, status=status.HTTP_400_BAD_REQUEST)
+
+        with transaction.atomic():
+            run.sync_from_combat_session()
+
+            alive_heroes = run.snapshot_heroes.filter(is_alive=True)
+            if not alive_heroes.exists():
+                run.status = 'failed'
+                run.completed_at = timezone.now()
+                run.save()
+                return Response({
+                    "run_status": "failed",
+                    "message": "All heroes have fallen in the Gauntlet!",
+                    "run": GauntletRunSerializer(run).data
+                })
+
+            # Check if all enemies in combat session are dead
+            active_enemies = session.participants.filter(participant_type='enemy', current_hp__gt=0, is_active=True)
+            if not active_enemies.exists():
+                # Wave cleared! Transition to respite
+                session.status = 'ended'
+                session.save()
+
+                if run.current_wave >= run.max_waves and not run.is_endless:
+                    # Completed Wave 10!
+                    run.status = 'respite'  # Allow victory claim or endless transition in respite
+                else:
+                    run.status = 'respite'
+                run.save()
+
+                return Response({
+                    "run_status": "respite",
+                    "wave_cleared": run.current_wave,
+                    "message": f"Wave {run.current_wave} cleared! Choose your respite reward.",
+                    "run": GauntletRunSerializer(run).data
+                })
+
+        return Response({
+            "run_status": run.status,
+            "run": GauntletRunSerializer(run).data
+        })
+
+    @action(detail=True, methods=['post'])
+    def respite(self, request, pk=None):
+        """Apply a respite choice between waves."""
+        run = self.get_object()
+        if run.status != 'respite':
+            return Response(
+                {"error": f"Run must be in 'respite' status to choose rewards (current: {run.status})."},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
+        serializer = RespiteRequestSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+
+        choice_type = serializer.validated_data['choice_type']
+        details = serializer.validated_data.get('details', {})
+
+        try:
+            result = run.apply_respite(choice_type, details)
+            return Response({
+                "result": result,
+                "run": GauntletRunSerializer(run).data
+            })
+        except ValueError as e:
+            return Response({"error": str(e)}, status=status.HTTP_400_BAD_REQUEST)
+
+    @action(detail=True, methods=['post'])
+    def next_wave(self, request, pk=None):
+        """Summon the next wave after completing respite."""
+        run = self.get_object()
+        if run.status not in ['respite', 'ready_for_wave']:
+            return Response(
+                {"error": f"Cannot start next wave while run status is '{run.status}'."},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
+        try:
+            session = run.advance_to_next_wave()
+            if session is None:
+                # Reached end of trial
+                return Response({
+                    "run_status": "completed",
+                    "message": "Trial completed! Claim your victory.",
+                    "run": GauntletRunSerializer(run).data
+                })
+
+            return Response({
+                "run_status": "active",
+                "current_wave": run.current_wave,
+                "combat_session_id": session.id,
+                "run": GauntletRunSerializer(run).data
+            })
+        except ValueError as e:
+            return Response({"error": str(e)}, status=status.HTTP_400_BAD_REQUEST)
+
+    @action(detail=True, methods=['post'])
+    def claim_victory(self, request, pk=None):
+        """Claim victory after Wave 10."""
+        run = self.get_object()
+        if run.current_wave < run.max_waves:
+            return Response(
+                {"error": f"Must clear all {run.max_waves} waves to claim victory."},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
+        run.status = 'completed'
+        run.completed_at = timezone.now()
+        # Victory score bonus: +5,000 points
+        run.score += 5000
+        run.save()
+
+        return Response({
+            "message": "Victory claimed! High score recorded.",
+            "run": GauntletRunSerializer(run).data
+        })
+
+    @action(detail=True, methods=['post'])
+    def enter_endless(self, request, pk=None):
+        """Transition from standard 10-wave run into endless overtime."""
+        run = self.get_object()
+        if run.current_wave < 10:
+            return Response(
+                {"error": "Must reach Wave 10 before entering Endless Overtime."},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
+        run.is_endless = True
+        run.status = 'ready_for_wave'
+        run.save()
+
+        return Response({
+            "message": "Entered Endless Overtime! Push for the ultimate high score.",
+            "run": GauntletRunSerializer(run).data
+        })
+
+    @action(detail=False, methods=['get'])
+    def leaderboard(self, request):
+        """Public leaderboard of top Gauntlet runs."""
+        top_runs = GauntletRun.objects.filter(
+            status__in=['completed', 'failed', 'respite', 'active']
+        ).order_by('-score')[:20]
+
+        serializer = GauntletRunSerializer(top_runs, many=True)
+        return Response(serializer.data)

@@ -43,6 +43,7 @@ from items.views import (
 )
 from merchants.views import MerchantViewSet
 from spells.views import SpellViewSet
+from gauntlet.views import GauntletViewSet
 
 router = DefaultRouter()
 # Bestiary routes
@@ -82,6 +83,8 @@ router.register(r'campaign-encounters', CampaignEncounterViewSet, basename='camp
 router.register(r'spells', SpellViewSet, basename='spell')
 # Merchant/shop system routes
 router.register(r'merchants', MerchantViewSet, basename='merchant')
+# Gauntlet wave survival routes
+router.register(r'gauntlet', GauntletViewSet, basename='gauntlet')
 
 
 urlpatterns = [

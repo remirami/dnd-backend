@@ -55,6 +55,7 @@ INSTALLED_APPS = [
     'logs',
     'spells',  # NEW: Spell library
     'merchants',  # NEW: Merchant/shop system
+    'gauntlet',  # Pillar 1: Wave Survival Gauntlet Mode
 ]
 
 MIDDLEWARE = [

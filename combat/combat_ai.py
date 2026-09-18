@@ -98,7 +98,7 @@ def resolve_enemy_turn(session, participant):
                 matched_atk = _select_attack(enemy_attacks)
 
             for _ in range(count):
-                target = _select_target(targets)
+                target = _select_target(targets, attacker=participant, enemy=enemy)
                 if not target:
                     break
                 res = _execute_attack(session, participant, target, matched_atk, advantage=has_pack_tactics)
@@ -107,10 +107,10 @@ def resolve_enemy_turn(session, participant):
     else:
         # Standard multiattack loop
         for _ in range(attack_count):
-            target = _select_target(targets)
+            target = _select_target(targets, attacker=participant, enemy=enemy)
             if not target:
                 break
-            attack = _select_attack(enemy_attacks)
+            attack = _select_attack(enemy_attacks, attacker=participant, enemy=enemy)
             res = _execute_attack(session, participant, target, attack, advantage=has_pack_tactics)
             actions.append(res)
             targets = [t for t in targets if t.current_hp > 0 and t.is_active]
@@ -213,20 +213,100 @@ def _check_multiattack(participant, enemy):
     return 1, []
 
 
-def _select_target(targets):
-    """Select the lowest HP target with random tiebreaker."""
+def _determine_archetype(participant, enemy):
+    """Determine the tactical archetype of the combatant."""
+    if participant and participant.has_trait('pack_tactics'):
+        return 'pack_hunter'
+
+    if enemy:
+        # Check for spellcasting
+        if enemy.actions.filter(attack_type__in=['melee_spell', 'ranged_spell']).exists():
+            return 'caster'
+        # Check for ranged attacks
+        if enemy.actions.filter(attack_type='ranged_weapon').exists():
+            return 'sniper'
+        # Check high STR or giant/brute
+        if enemy.creature_type in ['giant', 'monstrosity'] or (hasattr(enemy, 'stats') and enemy.stats and enemy.stats.strength >= 16):
+            return 'brute'
+
+    return 'skirmisher'
+
+
+def _select_target(targets, attacker=None, enemy=None):
+    """
+    Tactical Target Evaluation (Pillar 5):
+    Evaluates:
+    - Auto-crit vulnerability: Incapacitated (paralyzed/unconscious) targets receive massive priority (+50).
+    - Concentration threat: Casters & snipers target concentrating heroes to disrupt big spells (+35).
+    - Wounded/Kill shot: Targets with <=25% HP receive high focus (+30) to eliminate actions from the party.
+    - Low AC vulnerability: Brutes favor easier targets to guarantee high damage hits (+15).
+    """
     if not targets:
         return None
-    min_hp = targets[0].current_hp
-    lowest_hp_targets = [t for t in targets if t.current_hp == min_hp]
-    return random.choice(lowest_hp_targets)
+
+    archetype = _determine_archetype(attacker, enemy) if attacker else 'skirmisher'
+
+    best_target = None
+    best_score = -999999.0
+
+    for target in targets:
+        score = 0.0
+
+        # 1. Incapacitated target execution (+50)
+        if target.is_incapacitated():
+            score += 50.0
+
+        # 2. Concentration disruption
+        if getattr(target, 'is_concentrating', False):
+            score += 35.0 if archetype in ['caster', 'sniper'] else 15.0
+
+        # 3. Wounded / Low HP priority (up to +30)
+        if target.max_hp > 0:
+            hp_percent = target.current_hp / target.max_hp
+            if hp_percent <= 0.25:
+                score += 30.0
+            elif hp_percent <= 0.50:
+                score += 15.0
+            score += (1.0 - hp_percent) * 10.0
+
+        # 4. Low AC priority for Brutes
+        if archetype == 'brute':
+            target_ac = target.armor_class or 10
+            score += max(0, 18 - target_ac) * 1.5
+
+        # 5. Pack Hunter ally focus
+        if archetype == 'pack_hunter':
+            score += 15.0
+
+        # Small random jitter
+        score += random.uniform(0, 3)
+
+        if score > best_score:
+            best_score = score
+            best_target = target
+
+    return best_target or random.choice(targets)
 
 
-def _select_attack(attacks):
-    """Select the attack with highest bonus."""
+def _select_attack(attacks, attacker=None, enemy=None):
+    """Select the best attack considering archetype and bonus."""
     if not attacks:
         return None
+
+    archetype = _determine_archetype(attacker, enemy) if attacker else 'skirmisher'
+
+    if archetype == 'sniper':
+        ranged = [a for a in attacks if 'ranged' in a.get('action_obj', '').attack_type] if any(a.get('action_obj') and hasattr(a.get('action_obj'), 'attack_type') for a in attacks) else []
+        if ranged:
+            return max(ranged, key=lambda a: a['bonus'])
+
+    if archetype == 'caster':
+        spells = [a for a in attacks if a.get('action_obj') and 'spell' in getattr(a.get('action_obj'), 'attack_type', '')]
+        if spells:
+            return max(spells, key=lambda a: a['bonus'])
+
     return max(attacks, key=lambda a: a['bonus'])
+
 
 
 def _execute_special_action(session, attacker, targets, action_obj):
