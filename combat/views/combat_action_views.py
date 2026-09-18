@@ -98,6 +98,12 @@ class CombatActionMixin:
         damage_string = "1d4"  # Default unarmed
         use_ability = 'STR'  # Default to STR
         
+        # Sane defaults in case modifiers are not set
+        ability_mod = attacker.get_ability_modifier('STR')
+        damage_ability_mod = ability_mod
+        proficiency_bonus = 2
+        proficiency = True
+
         # Resolve enemy model (either from encounter or by name for practice mode)
         resolved_enemy = None
         if attacker.encounter_enemy:
@@ -114,8 +120,10 @@ class CombatActionMixin:
                 attack_name = attack_name or equipped_weapon.name
                 damage_string = equipped_weapon.damage_dice
                 
-                # Use DEX for finesse weapons, otherwise STR
-                if equipped_weapon.finesse:
+                # Check weapon type: ranged weapons use DEX, finesse can use DEX or STR
+                if getattr(equipped_weapon, 'weapon_type', None) in ['simple_ranged', 'martial_ranged']:
+                    use_ability = 'DEX'
+                elif getattr(equipped_weapon, 'finesse', False):
                     str_mod = attacker.get_ability_modifier('STR')
                     dex_mod = attacker.get_ability_modifier('DEX')
                     use_ability = 'DEX' if dex_mod > str_mod else 'STR'
@@ -123,6 +131,13 @@ class CombatActionMixin:
                     use_ability = 'STR'
             else:
                 attack_name = attack_name or 'Unarmed Strike'
+                damage_string = "1d4"
+                use_ability = 'STR'
+
+            ability_mod = attacker.get_ability_modifier(use_ability)
+            damage_ability_mod = ability_mod
+            proficiency_bonus = attacker.character.proficiency_bonus or 2
+            proficiency = True
         elif resolved_enemy:
             # Check for EnemyAction
             if attack_name:

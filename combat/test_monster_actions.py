@@ -155,3 +155,86 @@ class MonsterActionsCombatTests(TestCase):
         )
         self.assertTrue(wolf_p.has_trait('pack_tactics'))
         self.assertFalse(self.dragon_participant.has_trait('pack_tactics'))
+
+    def test_character_attack_unarmed_succeeds(self):
+        """Player character attack without weapon defaults to Unarmed Strike and succeeds without 500 error."""
+        from rest_framework.test import APIRequestFactory
+        from combat.views.session_views import CombatSessionViewSet
+
+        # Turn index 1 corresponds to character (initiative 10 vs dragon 15)
+        self.session.current_turn_index = 1
+        self.session.save()
+
+        factory = APIRequestFactory()
+        request = factory.post(
+            f'/api/combat/sessions/{self.session.id}/attack/',
+            {
+                'attacker_id': self.char_participant.id,
+                'target_id': self.dragon_participant.id,
+            },
+            format='json'
+        )
+        view = CombatSessionViewSet.as_view({'post': 'attack'})
+        response = view(request, pk=self.session.id)
+
+        self.assertEqual(response.status_code, 200)
+        self.assertIn('attack_roll', response.data)
+        self.assertIn('attack_total', response.data)
+        # Hero STR=14 (+2 mod), level 3 prof bonus (+2) -> attack modifier should be 4
+        from combat.models import CombatAction
+        last_action = CombatAction.objects.filter(actor=self.char_participant, action_type='attack').last()
+        self.assertIsNotNone(last_action)
+        self.assertEqual(last_action.attack_name, 'Unarmed Strike')
+        self.assertEqual(last_action.attack_modifier, 4)
+
+    def test_character_attack_with_finesse_weapon(self):
+        """Player character with a finesse weapon uses higher of STR or DEX and proper damage dice."""
+        from items.models import Weapon
+        from characters.models import CharacterItem
+        from rest_framework.test import APIRequestFactory
+        from combat.views.session_views import CombatSessionViewSet
+
+        # Increase DEX to 16 (+3 mod) so finesse chooses DEX over STR (14, +2)
+        char_stats = self.character.stats
+        char_stats.dexterity = 16
+        char_stats.save()
+
+        rapier = Weapon.objects.create(
+            name='Rapier',
+            weapon_type='martial_melee',
+            damage_dice='1d8',
+            finesse=True
+        )
+        CharacterItem.objects.create(
+            character=self.character,
+            item=rapier,
+            is_equipped=True,
+            equipment_slot='main_hand'
+        )
+
+        # Set character's turn and reset attacks remaining
+        self.session.current_turn_index = 1
+        self.session.save()
+        self.char_participant.attacks_remaining = 1
+        self.char_participant.action_used = False
+        self.char_participant.save()
+
+        factory = APIRequestFactory()
+        request = factory.post(
+            f'/api/combat/sessions/{self.session.id}/attack/',
+            {
+                'attacker_id': self.char_participant.id,
+                'target_id': self.dragon_participant.id,
+            },
+            format='json'
+        )
+        view = CombatSessionViewSet.as_view({'post': 'attack'})
+        response = view(request, pk=self.session.id)
+
+        self.assertEqual(response.status_code, 200)
+        from combat.models import CombatAction
+        last_action = CombatAction.objects.filter(actor=self.char_participant, action_type='attack').last()
+        self.assertIsNotNone(last_action)
+        self.assertEqual(last_action.attack_name, 'Rapier')
+        # DEX mod (+3) + prof bonus (+2) = 5
+        self.assertEqual(last_action.attack_modifier, 5)
