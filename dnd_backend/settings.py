@@ -110,6 +110,7 @@ CHANNEL_LAYERS = {
 # https://docs.djangoproject.com/en/5.0/ref/settings/#databases
 
 DATABASE_URL = config('DATABASE_URL', default=None)
+USE_LOCAL_DB = config('USE_LOCAL_DB', default=False, cast=bool)
 
 if 'test' in sys.argv or 'test_coverage' in sys.argv:
     # Use fast in-memory SQLite for automated test suites
@@ -119,7 +120,15 @@ if 'test' in sys.argv or 'test_coverage' in sys.argv:
             'NAME': ':memory:',
         }
     }
-elif DATABASE_URL:
+elif USE_LOCAL_DB or not DATABASE_URL:
+    # Local SQLite database (0ms latency, offline / poor Wi-Fi mode)
+    DATABASES = {
+        'default': {
+            'ENGINE': 'django.db.backends.sqlite3',
+            'NAME': BASE_DIR / 'db.sqlite3',
+        }
+    }
+else:
     # PostgreSQL (Neon Cloud)
     DATABASES = {
         'default': dj_database_url.config(
@@ -132,14 +141,6 @@ elif DATABASE_URL:
             'ENGINE': 'django.db.backends.sqlite3',
             'NAME': BASE_DIR / 'db.sqlite3',
         },
-    }
-else:
-    # Local fallback to SQLite file
-    DATABASES = {
-        'default': {
-            'ENGINE': 'django.db.backends.sqlite3',
-            'NAME': BASE_DIR / 'db.sqlite3',
-        }
     }
 
 REST_FRAMEWORK = {

@@ -112,19 +112,22 @@ def can_multiclass_into(character, target_class_name):
     return True, "Prerequisites met"
 
 
+def _get_class_levels(character):
+    """Get class levels for character, utilizing in-memory prefetch cache if available"""
+    if hasattr(character, '_prefetched_objects_cache') and 'class_levels' in character._prefetched_objects_cache:
+        return list(character.class_levels.all())
+    from .models import CharacterClassLevel
+    return list(CharacterClassLevel.objects.filter(character=character).select_related('character_class'))
+
+
 def calculate_multiclass_spell_slots(character):
     """
-    Calculate spell slots for multiclass spellcasters.
-    Uses the multiclass spellcaster table from D&D 5e.
-    
+    Calculate spell slots for a multiclass character based on 5e rules.
     Returns: dict mapping spell level to number of slots
     """
-    from .models import CharacterClassLevel
+    class_levels = _get_class_levels(character)
     
-    # Get all class levels
-    class_levels = CharacterClassLevel.objects.filter(character=character)
-    
-    if not class_levels.exists():
+    if not class_levels:
         return {}
     
     # Calculate caster level
@@ -176,12 +179,10 @@ def get_multiclass_spellcasting_ability(character):
     Get spellcasting ability for multiclass character.
     Uses the highest ability modifier from all spellcasting classes.
     """
-    from .models import CharacterClassLevel
-    
     if not character.stats:
         return None
     
-    class_levels = CharacterClassLevel.objects.filter(character=character)
+    class_levels = _get_class_levels(character)
     stats = character.stats
     
     spellcasting_abilities = []
@@ -210,9 +211,7 @@ def get_multiclass_hit_dice(character):
     Get hit dice for multiclass character.
     Returns dict mapping die type to count.
     """
-    from .models import CharacterClassLevel
-    
-    class_levels = CharacterClassLevel.objects.filter(character=character)
+    class_levels = _get_class_levels(character)
     hit_dice = {}
     
     for class_level in class_levels:
@@ -229,38 +228,27 @@ def get_multiclass_hit_dice(character):
 
 def get_total_level(character):
     """Get total character level (sum of all class levels)"""
-    from .models import CharacterClassLevel
-    
-    class_levels = CharacterClassLevel.objects.filter(character=character)
-    return sum(class_level.level for class_level in class_levels)
+    class_levels = _get_class_levels(character)
+    if class_levels:
+        return sum(class_level.level for class_level in class_levels)
+    return getattr(character, 'level', 1)
 
 
 def get_class_level(character, class_name):
     """Get level in a specific class"""
-    from .models import CharacterClassLevel
-    
-    # Normalize class name to lowercase
     class_name_lower = class_name.lower()
-    
-    try:
-        class_level = CharacterClassLevel.objects.get(
-            character=character,
-            character_class__name=class_name_lower
-        )
-        return class_level.level
-    except CharacterClassLevel.DoesNotExist:
-        return 0
+    for cl in _get_class_levels(character):
+        if cl.character_class.name.lower() == class_name_lower:
+            return cl.level
+    return 0
 
 
 def get_primary_class(character):
     """Get the primary class (highest level, or first if tied)"""
-    from .models import CharacterClassLevel
+    class_levels = _get_class_levels(character)
+    if class_levels:
+        sorted_levels = sorted(class_levels, key=lambda cl: (-cl.level, cl.id))
+        return sorted_levels[0].character_class
     
-    class_levels = CharacterClassLevel.objects.filter(character=character).order_by('-level', 'id')
-    
-    if class_levels.exists():
-        return class_levels.first().character_class
-    
-    # Fallback to character_class field
     return character.character_class
 

@@ -98,9 +98,9 @@ class CombatParticipantSerializer(serializers.ModelSerializer):
                     },
                 }
             
-            # Attacks
-            attacks = enemy.attacks.all()
-            if attacks.exists():
+            # Attacks (use in-memory list to leverage prefetch_related)
+            attacks = list(enemy.attacks.all())
+            if attacks:
                 data['enemy_attacks'] = [
                     {
                         'name': atk.name,
@@ -110,9 +110,9 @@ class CombatParticipantSerializer(serializers.ModelSerializer):
                     for atk in attacks
                 ]
             
-            # Abilities (Multiattack, special traits, etc.)
-            abilities = enemy.abilities.all()
-            if abilities.exists():
+            # Abilities (use in-memory list to leverage prefetch_related)
+            abilities = list(enemy.abilities.all())
+            if abilities:
                 data['enemy_abilities'] = [
                     {
                         'name': ab.name,
@@ -121,9 +121,9 @@ class CombatParticipantSerializer(serializers.ModelSerializer):
                     for ab in abilities
                 ]
             
-            # Resistances/immunities
-            resistances = enemy.resistances.all()
-            if resistances.exists():
+            # Resistances/immunities (use in-memory list to leverage prefetch_related)
+            resistances = list(enemy.resistances.all())
+            if resistances:
                 data['enemy_resistances'] = [
                     {
                         'damage_type': r.damage_type.name,
@@ -157,12 +157,27 @@ class CombatActionSerializer(serializers.ModelSerializer):
         return obj.actor.participant_type == 'enemy' if obj.actor else False
 
 
+class CombatParticipantSummarySerializer(serializers.ModelSerializer):
+    """Lightweight serializer for combat participants in list views"""
+    name = serializers.SerializerMethodField()
+
+    class Meta:
+        model = CombatParticipant
+        fields = [
+            'id', 'participant_type', 'name', 'initiative',
+            'current_hp', 'max_hp', 'armor_class', 'is_active'
+        ]
+
+    def get_name(self, obj):
+        return obj.get_name()
+
+
 class CombatSessionListSerializer(serializers.ModelSerializer):
     """Lightweight serializer for combat sessions list view"""
     status_display = serializers.CharField(source='get_status_display', read_only=True)
     is_active = serializers.SerializerMethodField()
     encounter = EncounterSerializer(read_only=True, allow_null=True)
-    participants = CombatParticipantSerializer(many=True, read_only=True)
+    participants = CombatParticipantSummarySerializer(many=True, read_only=True)
 
     class Meta:
         model = CombatSession

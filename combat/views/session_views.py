@@ -75,17 +75,27 @@ class CombatSessionViewSet(
                 status='preparing',
                 participants__isnull=True
             ).prefetch_related(
-                'participants',
-                'participants__character',
-                'participants__encounter_enemy__enemy'
+                'participants'
             ).order_by('-started_at')
-        return qs.prefetch_related(
+        return qs.select_related(
+            'encounter'
+        ).prefetch_related(
             'participants',
+            'participants__conditions',
             'participants__character',
             'participants__character__stats',
+            'participants__character__character_items__item__weapon',
+            'participants__character__character_items__item__armor',
             'participants__encounter_enemy',
             'participants__encounter_enemy__enemy',
-            'participants__encounter_enemy__enemy__stats'
+            'participants__encounter_enemy__enemy__stats',
+            'participants__encounter_enemy__enemy__attacks',
+            'participants__encounter_enemy__enemy__abilities',
+            'participants__encounter_enemy__enemy__resistances__damage_type',
+            'actions',
+            'actions__actor',
+            'actions__target',
+            'actions__damage_type',
         ).order_by('-started_at')
     
     def perform_create(self, serializer):

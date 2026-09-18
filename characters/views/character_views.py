@@ -82,7 +82,12 @@ class CharacterViewSet(viewsets.ModelViewSet):
             'stats'
         ).prefetch_related(
             'features',
-            'proficiencies'
+            'proficiencies',
+            'class_levels',
+            'class_levels__character_class',
+            'character_items__item',
+            'character_items__item__weapon',
+            'character_items__item__armor',
         ).order_by('-created_at')
     
     MAX_CHARACTERS_PER_USER = 20

@@ -249,10 +249,11 @@ class CharacterSerializer(serializers.ModelSerializer):
             saves = {}
             abilities = ['strength', 'dexterity', 'constitution', 'intelligence', 'wisdom', 'charisma']
             
-            # Get proficient saves
-            proficient_saves = set(obj.proficiencies.filter(
-                proficiency_type='saving_throw'
-            ).values_list('ability_score', flat=True))
+            # Get proficient saves (using prefetched proficiencies cache in memory)
+            proficient_saves = {
+                p.ability_score for p in obj.proficiencies.all()
+                if p.proficiency_type == 'saving_throw' and p.ability_score
+            }
             
             for ability in abilities:
                 # Get modifier
@@ -303,12 +304,12 @@ class CharacterSerializer(serializers.ModelSerializer):
                 'Survival': 'wisdom'
             }
             
-            # Get proficient skills
+            # Get proficient skills (using prefetched proficiencies cache in memory)
             # proficiency_level: 'proficient' (x1) or 'expertise' (x2) or 'jack' (x0.5 - Bard)
-            # For simplicity, getting raw objects to check level
             proficiencies = {
                 p.skill_name: p.proficiency_level 
-                for p in obj.proficiencies.filter(proficiency_type='skill')
+                for p in obj.proficiencies.all()
+                if p.proficiency_type == 'skill' and p.skill_name
             }
             
             for skill_name, ability in skill_map.items():

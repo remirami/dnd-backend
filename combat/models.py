@@ -555,17 +555,23 @@ class CombatParticipant(models.Model):
         if not self.character:
             return None
         
+        # In-memory prefetch check to avoid extra DB queries
+        if hasattr(self.character, '_prefetched_objects_cache') and 'character_items' in self.character._prefetched_objects_cache:
+            for ci in self.character.character_items.all():
+                if ci.is_equipped and ci.equipment_slot == slot and hasattr(ci.item, 'weapon'):
+                    return ci.item.weapon
+            return None
+
         from characters.models import CharacterItem
-        
         try:
-            character_item = CharacterItem.objects.get(
+            character_item = CharacterItem.objects.select_related('item__weapon').get(
                 character=self.character,
                 is_equipped=True,
                 equipment_slot=slot,
                 item__weapon__isnull=False
             )
             return character_item.item.weapon
-        except CharacterItem.DoesNotExist:
+        except (CharacterItem.DoesNotExist, CharacterItem.MultipleObjectsReturned):
             return None
     
     def get_equipped_armor(self):
@@ -573,17 +579,23 @@ class CombatParticipant(models.Model):
         if not self.character:
             return None
         
+        # In-memory prefetch check to avoid extra DB queries
+        if hasattr(self.character, '_prefetched_objects_cache') and 'character_items' in self.character._prefetched_objects_cache:
+            for ci in self.character.character_items.all():
+                if ci.is_equipped and ci.equipment_slot == 'armor' and hasattr(ci.item, 'armor'):
+                    return ci.item.armor
+            return None
+
         from characters.models import CharacterItem
-        
         try:
-            character_item = CharacterItem.objects.get(
+            character_item = CharacterItem.objects.select_related('item__armor').get(
                 character=self.character,
                 is_equipped=True,
                 equipment_slot='armor',
                 item__armor__isnull=False
             )
             return character_item.item.armor
-        except CharacterItem.DoesNotExist:
+        except (CharacterItem.DoesNotExist, CharacterItem.MultipleObjectsReturned):
             return None
     
     def get_equipped_shield(self):
@@ -591,10 +603,16 @@ class CombatParticipant(models.Model):
         if not self.character:
             return None
         
+        # In-memory prefetch check to avoid extra DB queries
+        if hasattr(self.character, '_prefetched_objects_cache') and 'character_items' in self.character._prefetched_objects_cache:
+            for ci in self.character.character_items.all():
+                if ci.is_equipped and ci.equipment_slot == 'shield' and hasattr(ci.item, 'armor') and getattr(ci.item.armor, 'armor_type', None) == 'shield':
+                    return ci.item.armor
+            return None
+
         from characters.models import CharacterItem
-        
         try:
-            character_item = CharacterItem.objects.get(
+            character_item = CharacterItem.objects.select_related('item__armor').get(
                 character=self.character,
                 is_equipped=True,
                 equipment_slot='shield',
@@ -602,7 +620,7 @@ class CombatParticipant(models.Model):
                 item__armor__armor_type='shield'
             )
             return character_item.item.armor
-        except CharacterItem.DoesNotExist:
+        except (CharacterItem.DoesNotExist, CharacterItem.MultipleObjectsReturned):
             return None
     
     def can_cast_enemy_spell(self, spell_name):
