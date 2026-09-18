@@ -98,17 +98,36 @@ class CombatParticipantSerializer(serializers.ModelSerializer):
                     },
                 }
             
-            # Attacks (use in-memory list to leverage prefetch_related)
-            attacks = list(enemy.attacks.all())
-            if attacks:
-                data['enemy_attacks'] = [
-                    {
-                        'name': atk.name,
-                        'bonus': atk.bonus,
-                        'damage': atk.damage,
-                    }
-                    for atk in attacks
-                ]
+            # Structured EnemyAction records (excluding Multiattack utility entries)
+            raw_actions = list(enemy.actions.all().prefetch_related('damage_rolls', 'conditions_inflicted'))
+            actions = [act for act in raw_actions if 'multiattack' not in act.name.lower()]
+            
+            # Attacks: Prefer structured weapon actions over legacy flat strings
+            action_attacks = []
+            for act in actions:
+                if act.attack_type in ['melee_weapon', 'ranged_weapon', 'melee_spell', 'ranged_spell']:
+                    dmg_rolls = list(act.damage_rolls.all())
+                    dmg_str = " + ".join([d.formula for d in dmg_rolls]) if dmg_rolls else "1d6 bludgeoning"
+                    action_attacks.append({
+                        'name': act.name,
+                        'bonus': act.attack_bonus if act.attack_bonus is not None else (stats.strength_modifier if stats else 2),
+                        'damage': dmg_str,
+                    })
+
+            if action_attacks:
+                data['enemy_attacks'] = action_attacks
+            else:
+                # Fallback to legacy attacks, strictly excluding any named Multiattack
+                attacks = [atk for atk in enemy.attacks.all() if 'multiattack' not in atk.name.lower()]
+                if attacks:
+                    data['enemy_attacks'] = [
+                        {
+                            'name': atk.name,
+                            'bonus': atk.bonus,
+                            'damage': atk.damage,
+                        }
+                        for atk in attacks
+                    ]
             
             # Abilities (use in-memory list to leverage prefetch_related)
             abilities = list(enemy.abilities.all())
@@ -131,6 +150,63 @@ class CombatParticipantSerializer(serializers.ModelSerializer):
                     }
                     for r in resistances
                 ]
+
+            if actions:
+                data['enemy_actions'] = [
+                    {
+                        'id': act.id,
+                        'name': act.name,
+                        'description': act.description,
+                        'action_type': act.action_type,
+                        'action_type_display': act.get_action_type_display(),
+                        'attack_type': act.attack_type,
+                        'attack_type_display': act.get_attack_type_display(),
+                        'attack_bonus': act.attack_bonus,
+                        'reach_or_range': act.reach_or_range,
+                        'saving_throw_dc': act.saving_throw_dc,
+                        'saving_throw_ability': act.saving_throw_ability,
+                        'half_damage_on_save': act.half_damage_on_save,
+                        'conditions_inflicted': [c.name for c in act.conditions_inflicted.all()],
+                        'condition_save_end': act.condition_save_end,
+                        'has_recharge': act.has_recharge,
+                        'recharge_min_roll': act.recharge_min_roll,
+                        'is_charged': instance.recharge_state.get(act.name, True) if act.has_recharge else True,
+                        'damage_rolls': [
+                            {
+                                'formula': d.formula,
+                                'dice_count': d.dice_count,
+                                'dice_sides': d.dice_sides,
+                                'damage_bonus': d.damage_bonus,
+                                'damage_type': d.damage_type.name if d.damage_type else None,
+                                'is_secondary': d.is_secondary,
+                            }
+                            for d in act.damage_rolls.all()
+                        ]
+                    }
+                    for act in actions
+                ]
+
+            # Multiattack
+            if hasattr(enemy, 'multiattack') and enemy.multiattack:
+                data['multiattack'] = {
+                    'description': enemy.multiattack.description,
+                    'action_count': enemy.multiattack.action_count,
+                    'sequence': enemy.multiattack.sequence,
+                }
+
+            # Traits
+            traits = list(enemy.traits.all())
+            if traits:
+                data['enemy_traits'] = [
+                    {
+                        'name': t.name,
+                        'description': t.description,
+                        'trait_type': t.trait_type,
+                    }
+                    for t in traits
+                ]
+
+            data['recharge_state'] = instance.recharge_state
         
         return data
 

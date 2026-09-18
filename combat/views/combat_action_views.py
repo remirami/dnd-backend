@@ -4,6 +4,7 @@ Combat Action Views - Core combat action endpoints.
 Contains the CombatActionMixin with attack, cast_spell, and saving_throw actions.
 """
 import logging
+import random
 
 from rest_framework import status
 from rest_framework.decorators import action
@@ -105,6 +106,7 @@ class CombatActionMixin:
             from bestiary.models import Enemy as EnemyModel
             resolved_enemy = EnemyModel.objects.filter(name=attacker.name).first()
         
+        matched_action = None
         if attacker.character:
             # Try to get equipped weapon
             equipped_weapon = attacker.get_equipped_weapon(weapon_slot)
@@ -122,45 +124,144 @@ class CombatActionMixin:
             else:
                 attack_name = attack_name or 'Unarmed Strike'
         elif resolved_enemy:
-            # Try to find enemy attack — match by name if provided, else use best
-            attacks = resolved_enemy.attacks.all()
-            if attacks.exists():
-                if attack_name:
-                    enemy_attack = attacks.filter(name__iexact=attack_name).first() or attacks.first()
+            # Check for EnemyAction
+            if attack_name:
+                matched_action = resolved_enemy.actions.filter(name__iexact=attack_name).first()
+                if not matched_action:
+                    matched_action = resolved_enemy.actions.filter(name__icontains=attack_name.split()[0]).first()
+
+            # Check Pack Tactics
+            if attacker.has_trait('pack_tactics'):
+                ally_count = session.participants.filter(
+                    participant_type='enemy',
+                    is_active=True,
+                    current_hp__gt=0,
+                ).exclude(id=attacker.id).count()
+                if ally_count > 0:
+                    advantage = True
+
+            # Handle Saving Throw actions (e.g. Fire Breath)
+            if matched_action and matched_action.attack_type == 'saving_throw':
+                if matched_action.has_recharge:
+                    is_ready = attacker.recharge_state.get(matched_action.name, True)
+                    if not is_ready:
+                        return Response(
+                            {"error": f"{matched_action.name} is still recharging and cannot be used."},
+                            status=status.HTTP_400_BAD_REQUEST
+                        )
+
+                save_ability = matched_action.saving_throw_ability or 'DEX'
+                save_dc = matched_action.saving_throw_dc or 15
+                save_mod = target.get_ability_modifier(save_ability)
+                s_roll, s_breakdown = roll_d20()
+                s_total = s_roll + save_mod
+                saved = (s_total >= save_dc)
+
+                # Roll damage
+                damage_amount = 0
+                dmg_rolls = list(matched_action.damage_rolls.all())
+                if dmg_rolls:
+                    for d in dmg_rolls:
+                        roll_sum = sum(random.randint(1, d.dice_sides) for _ in range(d.dice_count)) + d.damage_bonus
+                        damage_amount += max(0, roll_sum)
                 else:
-                    enemy_attack = attacks.first()
-                attack_name = attack_name or enemy_attack.name
-                damage_string = enemy_attack.damage
+                    damage_amount, _ = calculate_damage(damage_string, 0, False)
+
+                if saved and matched_action.half_damage_on_save:
+                    damage_amount = damage_amount // 2
+                elif saved:
+                    damage_amount = 0
+
+                _new_hp, concentration_broken = target.take_damage(damage_amount)
+
+                cond_applied = None
+                if not saved and matched_action.conditions_inflicted.exists():
+                    for c in matched_action.conditions_inflicted.all():
+                        target.conditions.add(c)
+                        cond_applied = c.name
+
+                if matched_action.has_recharge:
+                    attacker.recharge_state[matched_action.name] = False
+                    attacker.save(update_fields=['recharge_state'])
+
+                attacker.attacks_remaining -= 1
+                if attacker.attacks_remaining <= 0:
+                    attacker.action_used = True
+                attacker.save()
+
+                save_desc = f"{target.get_name()} rolled {s_breakdown} + {save_mod} = {s_total} vs DC {save_dc} {save_ability} save ({'SUCCESS' if saved else 'FAILED'}). Took {damage_amount} damage."
+                if cond_applied:
+                    save_desc += f" Inflicted {cond_applied}!"
+
+                CombatAction.objects.create(
+                    combat_session=session,
+                    actor=attacker,
+                    target=target,
+                    action_type='attack',
+                    attack_name=matched_action.name,
+                    attack_roll=s_roll,
+                    attack_modifier=save_mod,
+                    attack_total=s_total,
+                    hit=not saved,
+                    damage_amount=damage_amount,
+                    round_number=session.current_round,
+                    turn_number=session.current_turn_index,
+                    description=save_desc,
+                )
+
+                return Response({
+                    "message": f"{attacker.get_name()} uses {matched_action.name} against {target.get_name()}",
+                    "saving_throw": {
+                        "ability": save_ability,
+                        "dc": save_dc,
+                        "roll": s_roll,
+                        "total": s_total,
+                        "saved": saved,
+                    },
+                    "hit": not saved,
+                    "damage": damage_amount,
+                    "target_hp": target.current_hp,
+                    "attacks_remaining": attacker.attacks_remaining,
+                    "concentration_broken": concentration_broken,
+                    "condition_applied": cond_applied,
+                    "breakdown": {"save": save_desc},
+                })
+
+            # Try to find enemy action or attack
+            if matched_action:
+                attack_name = matched_action.name
+                if matched_action.attack_bonus is not None:
+                    ability_mod = matched_action.attack_bonus
+                    proficiency_bonus = 0
+                    proficiency = False
+                else:
+                    ability_mod = attacker.get_ability_modifier('STR')
+                    proficiency_bonus = 2
+                    proficiency = True
+                damage_ability_mod = 0
+            else:
+                valid_attacks = resolved_enemy.attacks.exclude(name__icontains='multiattack')
+                if valid_attacks.exists():
+                    enemy_atk = valid_attacks.filter(name__iexact=attack_name).first() if attack_name else valid_attacks.first()
+                    if not enemy_atk:
+                        enemy_atk = valid_attacks.first()
+                    attack_name = enemy_atk.name
+                    damage_string = enemy_atk.damage
+                    ability_mod = enemy_atk.bonus
+                    proficiency_bonus = 0
+                    proficiency = False
+                    has_mod = bool(re.search(r'[+-]\s*\d+', damage_string))
+                    damage_ability_mod = 0 if has_mod else attacker.get_ability_modifier('STR')
+                else:
+                    attack_name = attack_name or "Slam"
+                    ability_mod = attacker.get_ability_modifier('STR')
+                    proficiency_bonus = 2
+                    proficiency = True
+                    damage_ability_mod = ability_mod
+                    damage_string = "1d6"
         
         # Roll attack
         roll, roll_breakdown = roll_d20(advantage=advantage, disadvantage=disadvantage)
-        
-        # Calculate attack modifier
-        ability_mod = attacker.get_ability_modifier(use_ability)
-        damage_ability_mod = ability_mod  # Separate tracker for damage (may differ from attack bonus for enemies)
-        if attacker.character:
-            proficiency_bonus = attacker.character.proficiency_bonus
-            # Check weapon proficiency (simplified - check if character has weapon proficiency)
-            proficiency = True  # TODO: Check actual weapon proficiency
-        elif resolved_enemy:
-            # Use enemy's actual attack bonus directly (includes prof + ability mod)
-            enemy_atk = resolved_enemy.attacks.filter(name__iexact=attack_name).first() if attack_name else resolved_enemy.attacks.first()
-            if enemy_atk:
-                # EnemyAttack.bonus already includes proficiency + ability modifier
-                # Keep damage_ability_mod as the raw ability modifier for damage calculation
-                damage_ability_mod = ability_mod
-                ability_mod = enemy_atk.bonus
-                proficiency_bonus = 0
-                proficiency = False
-            else:
-                try:
-                    proficiency_bonus = resolved_enemy.stats.proficiency_bonus or 2
-                except Exception:
-                    proficiency_bonus = 2
-                proficiency = True
-        else:
-            proficiency_bonus = 2
-            proficiency = True
         
         # Get magic item bonuses
         magic_bonuses = attacker.get_magic_item_bonuses()
@@ -259,12 +360,45 @@ class CombatActionMixin:
         damage_breakdown = ""
         concentration_broken = False
         if hit:
-            # Add magic item damage bonus
-            damage_modifier = damage_ability_mod + magic_bonuses['to_damage']
-            damage_amount, damage_breakdown = calculate_damage(
-                damage_string, damage_modifier, critical
-            )
+            if matched_action and matched_action.damage_rolls.exists():
+                total_dmg = 0
+                dmg_parts = []
+                for d in matched_action.damage_rolls.all():
+                    n_dice = d.dice_count * (2 if critical else 1)
+                    rolls = [random.randint(1, d.dice_sides) for _ in range(n_dice)]
+                    subtotal = sum(rolls) + d.damage_bonus
+                    total_dmg += max(0, subtotal)
+                    dt_name = f" {d.damage_type.name}" if d.damage_type else ""
+                    rolls_str = ', '.join(map(str, rolls))
+                    dmg_parts.append(f"{rolls_str} + {d.damage_bonus} = {subtotal}{dt_name}")
+                damage_amount = max(1, total_dmg)
+                damage_breakdown = " | ".join(dmg_parts)
+            else:
+                damage_modifier = damage_ability_mod + magic_bonuses['to_damage']
+                damage_amount, damage_breakdown = calculate_damage(
+                    damage_string, damage_modifier, critical
+                )
+
             _new_hp, concentration_broken = target.take_damage(damage_amount)
+
+            # Check condition riders on hit (e.g. Wolf bite knock prone)
+            if matched_action and matched_action.saving_throw_dc and matched_action.conditions_inflicted.exists():
+                rider_ability = matched_action.saving_throw_ability or 'STR'
+                rider_dc = matched_action.saving_throw_dc
+                t_mod = target.get_ability_modifier(rider_ability)
+                r_roll, r_breakdown = roll_d20()
+                if (r_roll + t_mod) < rider_dc:
+                    cond_names = []
+                    for c in matched_action.conditions_inflicted.all():
+                        target.conditions.add(c)
+                        cond_names.append(c.name)
+                    if cond_names:
+                        damage_breakdown += f" | Inflicted {', '.join(cond_names)} (failed DC {rider_dc} {rider_ability} save: {r_breakdown}+{t_mod})"
+
+            # Lock recharge if applicable
+            if matched_action and matched_action.has_recharge:
+                attacker.recharge_state[matched_action.name] = False
+                attacker.save(update_fields=['recharge_state'])
         
         # Create combat action
         combat_action = CombatAction.objects.create(

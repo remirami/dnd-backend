@@ -5,19 +5,64 @@ from .models import (
     DamageType,
     Enemy,
     EnemyAbility,
+    EnemyAction,
+    EnemyActionDamage,
     EnemyAttack,
     EnemyConditionImmunity,
     EnemyEnvironment,
     EnemyLanguage,
     EnemyLegendaryAction,
+    EnemyMultiattack,
     EnemyResistance,
     EnemySpell,
     EnemySpellSlot,
     EnemyStats,
+    EnemyTrait,
     EnemyTreasure,
     Environment,
     Language,
 )
+
+
+class EnemyActionDamageSerializer(serializers.ModelSerializer):
+    damage_type_name = serializers.CharField(source='damage_type.name', read_only=True, allow_null=True)
+    formula = serializers.ReadOnlyField()
+
+    class Meta:
+        model = EnemyActionDamage
+        fields = ('id', 'dice_count', 'dice_sides', 'damage_bonus', 'damage_type_name', 'is_secondary', 'formula')
+
+
+class EnemyActionSerializer(serializers.ModelSerializer):
+    damage_rolls = EnemyActionDamageSerializer(many=True, read_only=True)
+    conditions_inflicted_names = serializers.SlugRelatedField(
+        many=True, read_only=True, slug_field='name', source='conditions_inflicted'
+    )
+    action_type_display = serializers.CharField(source='get_action_type_display', read_only=True)
+    attack_type_display = serializers.CharField(source='get_attack_type_display', read_only=True)
+
+    class Meta:
+        model = EnemyAction
+        fields = (
+            'id', 'name', 'description', 'action_type', 'action_type_display',
+            'attack_type', 'attack_type_display', 'attack_bonus', 'reach_or_range',
+            'saving_throw_dc', 'saving_throw_ability', 'half_damage_on_save',
+            'conditions_inflicted_names', 'condition_save_end',
+            'has_recharge', 'recharge_min_roll', 'target_count_or_area',
+            'legendary_cost', 'damage_rolls'
+        )
+
+
+class EnemyMultiattackSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = EnemyMultiattack
+        fields = ('id', 'description', 'action_count', 'sequence')
+
+
+class EnemyTraitSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = EnemyTrait
+        fields = ('id', 'name', 'description', 'trait_type')
 
 
 class EnemyAttackSerializer(serializers.ModelSerializer):
@@ -133,6 +178,9 @@ class EnemyStatsSerializer(serializers.ModelSerializer):
 
 
 class EnemySerializer(serializers.ModelSerializer):
+    actions = EnemyActionSerializer(many=True, read_only=True)
+    multiattack = EnemyMultiattackSerializer(read_only=True)
+    traits = EnemyTraitSerializer(many=True, read_only=True)
     attacks = EnemyAttackSerializer(many=True, read_only=True)
     abilities = EnemyAbilitySerializer(many=True, read_only=True)
     spells = EnemySpellSerializer(many=True, read_only=True)

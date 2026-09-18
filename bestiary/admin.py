@@ -5,19 +5,52 @@ from .models import (
     DamageType,
     Enemy,
     EnemyAbility,
+    EnemyAction,
+    EnemyActionDamage,
     EnemyAttack,
     EnemyConditionImmunity,
     EnemyEnvironment,
     EnemyLanguage,
     EnemyLegendaryAction,
+    EnemyMultiattack,
     EnemyResistance,
     EnemySpell,
     EnemySpellSlot,
     EnemyStats,
+    EnemyTrait,
     EnemyTreasure,
     Environment,
     Language,
 )
+
+
+class EnemyActionDamageInline(admin.TabularInline):
+    model = EnemyActionDamage
+    extra = 1
+
+
+@admin.register(EnemyAction)
+class EnemyActionAdmin(admin.ModelAdmin):
+    list_display = ('enemy', 'name', 'action_type', 'attack_type', 'attack_bonus', 'saving_throw_dc', 'has_recharge')
+    list_filter = ('action_type', 'attack_type', 'has_recharge')
+    search_fields = ('name', 'enemy__name')
+    inlines = [EnemyActionDamageInline]
+
+
+class EnemyActionInline(admin.TabularInline):
+    model = EnemyAction
+    extra = 0
+    show_change_link = True
+
+
+class EnemyMultiattackInline(admin.StackedInline):
+    model = EnemyMultiattack
+    extra = 0
+
+
+class EnemyTraitInline(admin.TabularInline):
+    model = EnemyTrait
+    extra = 1
 
 
 class EnemyAttackInline(admin.TabularInline):
@@ -96,7 +129,8 @@ class EnemyTreasureInline(admin.TabularInline):
 class EnemyAdmin(admin.ModelAdmin):
     fields = ('name', 'challenge_rating', 'size', 'creature_type', 'alignment')
     inlines = [
-        EnemyStatsInline, EnemyAttackInline, EnemyAbilityInline, EnemySpellInline, 
+        EnemyStatsInline, EnemyActionInline, EnemyMultiattackInline, EnemyTraitInline,
+        EnemyAttackInline, EnemyAbilityInline, EnemySpellInline, 
         EnemyResistanceInline, EnemyLanguageInline, EnemyConditionImmunityInline,
         EnemyLegendaryActionInline, EnemyEnvironmentInline, EnemyTreasureInline
     ]

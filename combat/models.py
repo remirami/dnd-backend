@@ -435,6 +435,13 @@ class CombatParticipant(models.Model):
         help_text="Tracks spell uses for enemy spellcasters. Format: {'Fireball': 3, 'Power Word Kill': 1}"
     )
     
+    # Recharge ability tracking for enemies (Format: {'Fire Breath (Recharge 5-6)': True})
+    recharge_state = models.JSONField(
+        default=dict,
+        blank=True,
+        help_text="Tracks recharge ability states for monsters."
+    )
+    
     # Phase 1: Position tracking for AOE targeting
     position_x = models.IntegerField(default=0, help_text="X coordinate on battlefield grid (in feet)")
     position_y = models.IntegerField(default=0, help_text="Y coordinate on battlefield grid (in feet)")
@@ -474,10 +481,82 @@ class CombatParticipant(models.Model):
         name = self.get_name()
         return f"{name} (Initiative: {self.initiative})"
     
+    def resolve_enemy(self):
+        """Resolve the Enemy model for this participant (supports encounter & practice mode)."""
+        if self.encounter_enemy:
+            return self.encounter_enemy.enemy
+        elif self.participant_type == 'enemy' and self.name:
+            import re
+            from bestiary.models import Enemy as EnemyModel
+            # 1. Exact match
+            enemy = EnemyModel.objects.filter(name__iexact=self.name).first()
+            if enemy:
+                return enemy
+            # 2. Strip numeric or alphabetic suffixes (e.g. "Goblin 1", "Dire Wolf #2", "Skeleton A")
+            base_name = re.sub(r'\s*(?:#?\d+|[A-Z])$', '', self.name).strip()
+            if base_name:
+                enemy = EnemyModel.objects.filter(name__iexact=base_name).first()
+                if enemy:
+                    return enemy
+            # 3. Fuzzy first word match (e.g. "Goblin Archer" -> "Goblin")
+            first_word = self.name.split()[0] if self.name.split() else ''
+            if first_word:
+                enemy = EnemyModel.objects.filter(name__iexact=first_word).first()
+                if enemy:
+                    return enemy
+        return None
+
+    def init_recharge_state(self):
+        """Initialize all recharge abilities to charged (ready)."""
+        enemy = self.resolve_enemy()
+        if enemy:
+            recharges = {}
+            for act in enemy.actions.filter(has_recharge=True):
+                recharges[act.name] = True
+            self.recharge_state = recharges
+
+    def check_recharges(self):
+        """
+        Roll d6 for uncharged abilities at start of turn.
+        Returns list of newly recharged ability names.
+        """
+        enemy = self.resolve_enemy()
+        if not enemy or not self.recharge_state:
+            return []
+        
+        import random
+        recharged = []
+        updated = False
+        recharge_actions = {a.name: a for a in enemy.actions.filter(has_recharge=True)}
+
+        for name, is_charged in list(self.recharge_state.items()):
+            if not is_charged:
+                act = recharge_actions.get(name)
+                min_roll = act.recharge_min_roll if act and act.recharge_min_roll else 5
+                roll = random.randint(1, 6)
+                if roll >= min_roll:
+                    self.recharge_state[name] = True
+                    recharged.append(name)
+                    updated = True
+
+        if updated:
+            self.save(update_fields=['recharge_state'])
+        return recharged
+
+    def has_trait(self, trait_type):
+        """Check if enemy participant has a specific trait type."""
+        enemy = self.resolve_enemy()
+        if enemy:
+            return enemy.traits.filter(trait_type=trait_type).exists()
+        return False
+
     def save(self, *args, **kwargs):
         is_new = self.pk is None
-        if is_new and (self.attacks_remaining == 1 or not self.attacks_remaining):
-            self.attacks_remaining = self._calculate_attacks_per_action()
+        if is_new:
+            if self.attacks_remaining == 1 or not self.attacks_remaining:
+                self.attacks_remaining = self._calculate_attacks_per_action()
+            if self.participant_type == 'enemy' and not self.recharge_state:
+                self.init_recharge_state()
         super().save(*args, **kwargs)
     
     def clean(self):
@@ -537,17 +616,19 @@ class CombatParticipant(models.Model):
                 'CHA': stats.charisma_modifier,
             }
             return ability_map.get(ability, 0)
-        elif self.encounter_enemy and hasattr(self.encounter_enemy.enemy, 'stats'):
-            stats = self.encounter_enemy.enemy.stats
-            ability_map = {
-                'STR': stats.strength_modifier,
-                'DEX': stats.dexterity_modifier,
-                'CON': stats.constitution_modifier,
-                'INT': stats.intelligence_modifier,
-                'WIS': stats.wisdom_modifier,
-                'CHA': stats.charisma_modifier,
-            }
-            return ability_map.get(ability, 0)
+        else:
+            enemy = self.resolve_enemy()
+            if enemy and hasattr(enemy, 'stats'):
+                stats = enemy.stats
+                ability_map = {
+                    'STR': stats.strength_modifier,
+                    'DEX': stats.dexterity_modifier,
+                    'CON': stats.constitution_modifier,
+                    'INT': stats.intelligence_modifier,
+                    'WIS': stats.wisdom_modifier,
+                    'CHA': stats.charisma_modifier,
+                }
+                return ability_map.get(ability, 0)
         return 0
     
     def get_equipped_weapon(self, slot='main_hand'):
@@ -889,6 +970,8 @@ class CombatParticipant(models.Model):
         self.reaction_used = False
         self.movement_used = 0
         self.attacks_remaining = self._calculate_attacks_per_action()
+        if self.participant_type == 'enemy':
+            self.check_recharges()
         self.save()
     
     def _calculate_attacks_per_action(self):
@@ -932,27 +1015,11 @@ class CombatParticipant(models.Model):
 
             return 1
         
-        elif self.encounter_enemy:
-            # Reuse multiattack parsing logic
-            enemy = self.encounter_enemy.enemy
-            for ability in enemy.abilities.all():
-                if 'multiattack' in ability.name.lower():
-                    desc = ability.description.lower()
-                    number_words = {
-                        'two': 2, 'three': 3, 'four': 4, 'five': 5,
-                        '2': 2, '3': 3, '4': 4, '5': 5,
-                    }
-                    for word, count in number_words.items():
-                        if word in desc:
-                            return count
-                    return 2  # Default multiattack = 2
-            return 1
-        
-        elif self.participant_type == 'enemy' and self.name:
-            # Support practice mode enemies without encounter_enemy
-            from bestiary.models import Enemy
-            enemy = Enemy.objects.filter(name__iexact=self.name).first()
+        elif self.participant_type == 'enemy':
+            enemy = self.resolve_enemy()
             if enemy:
+                if hasattr(enemy, 'multiattack'):
+                    return enemy.multiattack.action_count
                 for ability in enemy.abilities.all():
                     if 'multiattack' in ability.name.lower():
                         desc = ability.description.lower()
@@ -963,9 +1030,8 @@ class CombatParticipant(models.Model):
                         for word, count in number_words.items():
                             if word in desc:
                                 return count
-                        return 2  # Default multiattack = 2
-
-        return 1
+                        return 2
+            return 1
     
     def reset_reaction(self):
         """Reset reaction at start of round (reactions reset each round)"""

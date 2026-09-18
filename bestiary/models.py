@@ -344,3 +344,116 @@ class EnemySpellSlot(models.Model):
 
     def __str__(self):
         return f"{self.spell.name} - Level {self.level} ({self.uses} uses)"
+
+
+class EnemyAction(models.Model):
+    """Structured and executable monster actions (attacks, saving throws, breath weapons, utilities)."""
+    ACTION_TYPE_CHOICES = [
+        ('action', 'Action'),
+        ('bonus_action', 'Bonus Action'),
+        ('reaction', 'Reaction'),
+        ('legendary_action', 'Legendary Action'),
+        ('special', 'Special'),
+    ]
+
+    ATTACK_TYPE_CHOICES = [
+        ('melee_weapon', 'Melee Weapon Attack'),
+        ('ranged_weapon', 'Ranged Weapon Attack'),
+        ('melee_spell', 'Melee Spell Attack'),
+        ('ranged_spell', 'Ranged Spell Attack'),
+        ('saving_throw', 'Saving Throw'),
+        ('utility', 'Utility'),
+    ]
+
+    SAVING_THROW_ABILITY_CHOICES = [
+        ('STR', 'Strength'),
+        ('DEX', 'Dexterity'),
+        ('CON', 'Constitution'),
+        ('INT', 'Intelligence'),
+        ('WIS', 'Wisdom'),
+        ('CHA', 'Charisma'),
+    ]
+
+    enemy = models.ForeignKey(Enemy, on_delete=models.CASCADE, related_name="actions")
+    name = models.CharField(max_length=200)
+    description = models.TextField(blank=True, default="")
+    action_type = models.CharField(max_length=20, choices=ACTION_TYPE_CHOICES, default='action')
+    attack_type = models.CharField(max_length=20, choices=ATTACK_TYPE_CHOICES, default='melee_weapon')
+    
+    # Attack Roll modifier (if attack_type is melee/ranged attack)
+    attack_bonus = models.IntegerField(null=True, blank=True)
+    reach_or_range = models.CharField(max_length=100, blank=True, default="")
+    
+    # Saving Throw details (if attack_type is saving_throw or has save rider)
+    saving_throw_dc = models.IntegerField(null=True, blank=True)
+    saving_throw_ability = models.CharField(max_length=3, choices=SAVING_THROW_ABILITY_CHOICES, null=True, blank=True)
+    half_damage_on_save = models.BooleanField(default=False)
+    
+    # Conditions and debuffs
+    conditions_inflicted = models.ManyToManyField(Condition, blank=True, related_name="inflicted_by_actions")
+    condition_save_end = models.BooleanField(default=False)
+    
+    # Recharge Mechanics (e.g. Breath Weapon Recharge 5-6)
+    has_recharge = models.BooleanField(default=False)
+    recharge_min_roll = models.IntegerField(null=True, blank=True)  # e.g. 5 for Recharge 5-6, 6 for Recharge 6
+    
+    # Scope & Cost
+    target_count_or_area = models.CharField(max_length=100, blank=True, default="")
+    legendary_cost = models.IntegerField(default=1)
+
+    class Meta:
+        indexes = [
+            models.Index(fields=['enemy', 'action_type'], name='enemy_action_type_idx'),
+            models.Index(fields=['name'], name='enemy_action_name_idx'),
+        ]
+
+    def __str__(self):
+        recharge_str = f" (Recharge {self.recharge_min_roll}-6)" if self.has_recharge else ""
+        return f"{self.enemy.name} - {self.name}{recharge_str}"
+
+
+class EnemyActionDamage(models.Model):
+    """Damage roll formulas for an EnemyAction, supporting primary and secondary damage."""
+    action = models.ForeignKey(EnemyAction, on_delete=models.CASCADE, related_name="damage_rolls")
+    dice_count = models.IntegerField(default=1)
+    dice_sides = models.IntegerField(default=6)
+    damage_bonus = models.IntegerField(default=0)
+    damage_type = models.ForeignKey(DamageType, on_delete=models.SET_NULL, null=True, blank=True)
+    is_secondary = models.BooleanField(default=False)
+
+    @property
+    def formula(self):
+        bonus_str = f"+{self.damage_bonus}" if self.damage_bonus > 0 else (f"{self.damage_bonus}" if self.damage_bonus < 0 else "")
+        type_str = f" {self.damage_type.name}" if self.damage_type else ""
+        return f"{self.dice_count}d{self.dice_sides}{bonus_str}{type_str}"
+
+    def __str__(self):
+        return f"{self.action.name} damage: {self.formula}"
+
+
+class EnemyMultiattack(models.Model):
+    """Structured Multiattack rules for an enemy."""
+    enemy = models.OneToOneField(Enemy, on_delete=models.CASCADE, related_name="multiattack")
+    description = models.TextField(blank=True, default="")
+    action_count = models.IntegerField(default=2)
+    sequence = models.JSONField(default=list, blank=True)  # e.g. [{"action_name": "Bite", "count": 1}, {"action_name": "Claw", "count": 2}]
+
+    def __str__(self):
+        return f"{self.enemy.name} Multiattack ({self.action_count} attacks)"
+
+
+class EnemyTrait(models.Model):
+    """Special traits for monsters (e.g. Pack Tactics, Magic Resistance, Undead Fortitude)."""
+    enemy = models.ForeignKey(Enemy, on_delete=models.CASCADE, related_name="traits")
+    name = models.CharField(max_length=200)
+    description = models.TextField(blank=True, default="")
+    trait_type = models.CharField(max_length=50, blank=True, default="")  # e.g. pack_tactics, magic_resistance
+
+    class Meta:
+        indexes = [
+            models.Index(fields=['enemy', 'trait_type'], name='enemy_trait_type_idx'),
+        ]
+
+    def __str__(self):
+        return f"{self.enemy.name} - {self.name}"
+
