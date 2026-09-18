@@ -64,7 +64,17 @@ class CombatSessionViewSet(
                 from django.db.models import Q
                 qs = qs.filter(Q(created_by=self.request.user) | Q(created_by__isnull=True))
         if self.action == 'list':
-            return qs.prefetch_related(
+            # Purge any abandoned empty preparing sessions for authenticated users
+            if self.request.user and self.request.user.is_authenticated:
+                CombatSession.objects.filter(
+                    created_by=self.request.user,
+                    status='preparing',
+                    participants__isnull=True
+                ).delete()
+            return qs.exclude(
+                status='preparing',
+                participants__isnull=True
+            ).prefetch_related(
                 'participants',
                 'participants__character',
                 'participants__encounter_enemy__enemy'
@@ -84,12 +94,24 @@ class CombatSessionViewSet(
         
         if user:
             from rest_framework.exceptions import ValidationError
+            # Automatically delete any abandoned preparing sessions with no participants for this user
+            CombatSession.objects.filter(
+                created_by=user,
+                status='preparing',
+                participants__isnull=True
+            ).delete()
+
             user_sessions = CombatSession.objects.filter(created_by=user)
             if user_sessions.count() >= self.MAX_TOTAL_COMBATS_PER_USER:
                 raise ValidationError(
                     {"error": f"Combat limit reached. You can have a maximum of {self.MAX_TOTAL_COMBATS_PER_USER} saved combat sessions. Please delete an older session to create a new one."}
                 )
-            active_count = user_sessions.filter(status__in=['preparing', 'active']).count()
+            active_count = user_sessions.filter(
+                status__in=['preparing', 'active']
+            ).exclude(
+                status='preparing',
+                participants__isnull=True
+            ).count()
             if active_count >= self.MAX_ACTIVE_COMBATS_PER_USER:
                 raise ValidationError(
                     {"error": f"Active combat limit reached. You can have a maximum of {self.MAX_ACTIVE_COMBATS_PER_USER} active combat sessions. Please finish or delete an active combat session before starting a new one."}

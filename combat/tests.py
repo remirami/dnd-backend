@@ -605,3 +605,58 @@ class CombatAPITests(TestCase):
         self.assertIn('legendary_actions_remaining', response.data)
         participant.refresh_from_db()
         self.assertEqual(participant.legendary_actions_remaining, 2)
+
+
+class EmptyPreparingCombatCleanupTests(TestCase):
+    """Tests for auto-cleanup and exclusion of abandoned empty preparing sessions"""
+
+    def setUp(self):
+        from django.contrib.auth.models import User
+        self.client = APIClient()
+        self.user = User.objects.create_user(username='tactician', password='password123')
+        self.client.force_authenticate(user=self.user)
+
+    def test_empty_preparing_session_purged_on_new_create(self):
+        """Creating an empty preparing session and then creating another purges the first empty one"""
+        # First session created (empty)
+        res1 = self.client.post('/api/combat/sessions/', {}, format='json')
+        self.assertEqual(res1.status_code, status.HTTP_201_CREATED)
+        session1_id = res1.data['id']
+        self.assertTrue(CombatSession.objects.filter(id=session1_id).exists())
+
+        # Second session created (should auto-purge session1 because it had 0 participants)
+        res2 = self.client.post('/api/combat/sessions/', {}, format='json')
+        self.assertEqual(res2.status_code, status.HTTP_201_CREATED)
+        session2_id = res2.data['id']
+
+        # session1 should be deleted, session2 should exist
+        self.assertFalse(CombatSession.objects.filter(id=session1_id).exists())
+        self.assertTrue(CombatSession.objects.filter(id=session2_id).exists())
+
+    def test_empty_preparing_session_not_in_list(self):
+        """Listing sessions excludes and deletes abandoned empty preparing sessions"""
+        res1 = self.client.post('/api/combat/sessions/', {}, format='json')
+        self.assertEqual(res1.status_code, status.HTTP_201_CREATED)
+        session_id = res1.data['id']
+
+        # Query list
+        list_res = self.client.get('/api/combat/sessions/')
+        self.assertEqual(list_res.status_code, status.HTTP_200_OK)
+        results = list_res.data.get('results', list_res.data) if isinstance(list_res.data, dict) else list_res.data
+        ids_in_list = [s['id'] for s in results]
+        self.assertNotIn(session_id, ids_in_list)
+        # Verify it was purged from the database
+        self.assertFalse(CombatSession.objects.filter(id=session_id).exists())
+
+    def test_empty_preparing_session_does_not_block_active_limit(self):
+        """Empty preparing sessions do not count against the 2 active combats limit"""
+        # Create 2 empty sessions sequentially (each cleans up the previous empty one)
+        res1 = self.client.post('/api/combat/sessions/', {}, format='json')
+        self.assertEqual(res1.status_code, status.HTTP_201_CREATED)
+
+        res2 = self.client.post('/api/combat/sessions/', {}, format='json')
+        self.assertEqual(res2.status_code, status.HTTP_201_CREATED)
+
+        res3 = self.client.post('/api/combat/sessions/', {}, format='json')
+        self.assertEqual(res3.status_code, status.HTTP_201_CREATED)
+
