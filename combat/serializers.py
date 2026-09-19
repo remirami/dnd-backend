@@ -226,6 +226,8 @@ class CombatActionSerializer(serializers.ModelSerializer):
     target_name = serializers.SerializerMethodField()
     is_ai = serializers.SerializerMethodField()
     damage_type = DamageTypeSerializer(read_only=True, allow_null=True)
+    is_advantage = serializers.SerializerMethodField()
+    is_disadvantage = serializers.SerializerMethodField()
     
     class Meta:
         model = CombatAction
@@ -239,6 +241,18 @@ class CombatActionSerializer(serializers.ModelSerializer):
     
     def get_is_ai(self, obj):
         return obj.actor.participant_type == 'enemy' if obj.actor else False
+
+    def get_is_advantage(self, obj):
+        if getattr(obj, 'is_advantage', False):
+            return True
+        desc = (obj.description or "").lower()
+        return ('advantage' in desc and 'disadvantage' not in desc) or ('[pack tactics]' in desc)
+
+    def get_is_disadvantage(self, obj):
+        if getattr(obj, 'is_disadvantage', False):
+            return True
+        desc = (obj.description or "").lower()
+        return 'disadvantage' in desc
 
 
 class CombatParticipantSummarySerializer(serializers.ModelSerializer):

@@ -1205,6 +1205,8 @@ class CombatAction(models.Model):
     is_reaction = models.BooleanField(default=False)
     is_legendary_action = models.BooleanField(default=False)
     legendary_action_cost = models.IntegerField(default=0)  # Cost in legendary action points
+    is_advantage = models.BooleanField(default=False)
+    is_disadvantage = models.BooleanField(default=False)
     
     created_at = models.DateTimeField(auto_now_add=True)
     

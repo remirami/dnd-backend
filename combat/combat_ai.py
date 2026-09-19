@@ -432,6 +432,9 @@ def _execute_attack(session, attacker, target, attack, advantage=False):
         'target_killed': False,
         'condition_applied': None,
         'pack_tactics': advantage,
+        'is_advantage': eff_adv,
+        'is_disadvantage': eff_disadv,
+        'roll_breakdown': _roll_breakdown,
     }
 
     if hit:
@@ -472,6 +475,8 @@ def _execute_attack(session, attacker, target, attack, advantage=False):
             hit=hit,
             critical=is_critical,
             damage_amount=result['damage'] if hit else 0,
+            is_advantage=eff_adv,
+            is_disadvantage=eff_disadv,
             description=_format_attack_description(result),
         )
     except Exception:
@@ -521,15 +526,24 @@ def _format_attack_description(result):
     attacker = result['attacker']
     target = result['target']
     attack_name = result['attack_name']
-    pt = " [Pack Tactics]" if result.get('pack_tactics') else ""
+    pt = ""
+    if result.get('pack_tactics'):
+        pt = " [Pack Tactics (Advantage)]"
+    elif result.get('is_advantage'):
+        pt = " [Advantage]"
+    elif result.get('is_disadvantage'):
+        pt = " [Disadvantage]"
+
+    roll_bd = result.get('roll_breakdown', '')
+    roll_prefix = f"{roll_bd} | " if roll_bd else ""
 
     if result['fumble']:
-        return f"{attacker} attacks {target} with {attack_name}{pt} but fumbles! (rolled 1)"
+        return f"{roll_prefix}{attacker} attacks {target} with {attack_name}{pt} but fumbles! (rolled 1)"
 
     if result['critical'] and result['hit']:
         cond_str = f" Target is {result['condition_applied']}!" if result.get('condition_applied') else ""
         return (
-            f"{attacker} CRITICALLY HITS {target} with {attack_name}!{pt} "
+            f"{roll_prefix}{attacker} CRITICALLY HITS {target} with {attack_name}!{pt} "
             f"(rolled {result['roll']}+{result['attack_bonus']}={result['attack_total']} vs AC {result['target_ac']}) "
             f"dealing {result['damage']} {result['damage_type']} damage.{cond_str}"
         )
@@ -537,7 +551,7 @@ def _format_attack_description(result):
     if result['hit']:
         cond_str = f" Target is {result['condition_applied']}!" if result.get('condition_applied') else ""
         msg = (
-            f"{attacker} hits {target} with {attack_name}{pt} "
+            f"{roll_prefix}{attacker} hits {target} with {attack_name}{pt} "
             f"(rolled {result['roll']}+{result['attack_bonus']}={result['attack_total']} vs AC {result['target_ac']}) "
             f"dealing {result['damage']} {result['damage_type']} damage.{cond_str}"
         )
@@ -546,6 +560,6 @@ def _format_attack_description(result):
         return msg
 
     return (
-        f"{attacker} attacks {target} with {attack_name}{pt} but misses "
+        f"{roll_prefix}{attacker} attacks {target} with {attack_name}{pt} but misses "
         f"(rolled {result['roll']}+{result['attack_bonus']}={result['attack_total']} vs AC {result['target_ac']})."
     )

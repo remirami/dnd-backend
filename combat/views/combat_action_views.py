@@ -296,25 +296,7 @@ class CombatActionMixin:
         elif matched_action and getattr(matched_action, 'attack_type', '') == 'ranged_weapon':
             is_melee = False
 
-        from combat.condition_effects import evaluate_attack_roll_conditions, is_auto_critical
-        cond_adv, cond_disadv, _ = evaluate_attack_roll_conditions(attacker, target, is_melee=is_melee)
-        if cond_adv:
-            advantage = True
-        if cond_disadv:
-            disadvantage = True
-
-        # Roll attack
-        roll, roll_breakdown = roll_d20(advantage=advantage, disadvantage=disadvantage)
-        
-        # Get magic item bonuses
-        magic_bonuses = attacker.get_magic_item_bonuses()
-        other_modifiers += magic_bonuses['to_hit']
-        
-        attack_total, attack_breakdown = calculate_attack_roll(
-            roll, ability_mod, proficiency_bonus, proficiency, other_modifiers
-        )
-        
-        # Get environmental effects for target
+        # Check cover before rolling
         cover_bonus = 0
         target_has_full_cover = False
         target_position = None
@@ -335,7 +317,14 @@ class CombatActionMixin:
                 {"error": f"{target.get_name()} has full cover and cannot be targeted"},
                 status=status.HTTP_400_BAD_REQUEST
             )
-        
+
+        from combat.condition_effects import evaluate_attack_roll_conditions, is_auto_critical
+        cond_adv, cond_disadv, _ = evaluate_attack_roll_conditions(attacker, target, is_melee=is_melee)
+        if cond_adv:
+            advantage = True
+        if cond_disadv:
+            disadvantage = True
+
         # Get lighting effects for attacker
         lighting_modifier = None
         attacker_position = None
@@ -349,17 +338,9 @@ class CombatActionMixin:
                 lighting_mod = get_lighting_attack_modifier(attacker_position.current_lighting, has_darkvision)
                 lighting_modifier = lighting_mod
                 if lighting_mod == 'disadvantage':
-                    # Roll again and take lower
-                    roll2, _ = roll_d20()
-                    roll = min(roll, roll2)
-                    advantage = False
                     disadvantage = True
                 elif lighting_mod == 'advantage':
-                    # Roll again and take higher
-                    roll2, _ = roll_d20()
-                    roll = max(roll, roll2)
                     advantage = True
-                    disadvantage = False
         except ParticipantPosition.DoesNotExist:
             pass
         
@@ -373,20 +354,23 @@ class CombatActionMixin:
         if weather_effect and weather_effect.weather_type:
             weather_mod = get_weather_ranged_modifier(weather_effect.weather_type)
             weather_modifier = weather_mod
-            if weather_mod == 'disadvantage':
-                # Check if ranged attack
-                if equipped_weapon and equipped_weapon.range_normal > 0:
-                    roll2, _ = roll_d20()
-                    roll = min(roll, roll2)
-                    advantage = False
+            if not is_melee:
+                if weather_mod == 'disadvantage':
                     disadvantage = True
-            elif weather_mod == 'advantage' and equipped_weapon and equipped_weapon.range_normal > 0:
-                roll2, _ = roll_d20()
-                roll = max(roll, roll2)
-                advantage = True
-                disadvantage = False
+                elif weather_mod == 'advantage':
+                    advantage = True
+
+        # 5e Advantage / Disadvantage resolution: if both are present, they cancel out
+        final_advantage = bool(advantage and not disadvantage)
+        final_disadvantage = bool(disadvantage and not advantage)
+
+        # Roll attack with resolved advantage/disadvantage
+        roll, roll_breakdown = roll_d20(advantage=final_advantage, disadvantage=final_disadvantage)
         
-        # Recalculate attack total with new roll
+        # Get magic item bonuses
+        magic_bonuses = attacker.get_magic_item_bonuses()
+        other_modifiers += magic_bonuses['to_hit']
+        
         attack_total, attack_breakdown = calculate_attack_roll(
             roll, ability_mod, proficiency_bonus, proficiency, other_modifiers
         )
@@ -460,6 +444,8 @@ class CombatActionMixin:
             critical=critical,
             round_number=session.current_round,
             turn_number=session.current_turn_index,
+            is_advantage=final_advantage,
+            is_disadvantage=final_disadvantage,
             description=f"{roll_breakdown} | {attack_breakdown}"
         )
         
@@ -480,6 +466,8 @@ class CombatActionMixin:
             "magic_bonuses": magic_bonuses,
             "hit": hit,
             "critical": critical,
+            "is_advantage": final_advantage,
+            "is_disadvantage": final_disadvantage,
             "damage": damage_amount if hit else 0,
             "target_hp": target.current_hp,
             "attacks_remaining": attacker.attacks_remaining,
