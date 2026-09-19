@@ -158,6 +158,24 @@ class CombatModelTests(TestCase):
         # Test healing beyond max
         new_hp = participant.heal(20)
         self.assertEqual(new_hp, 45)  # Capped at max
+
+    def test_cannot_heal_dead_enemy(self):
+        """Test that defeated enemies (0 HP) cannot be healed or reactivated"""
+        enemy = CombatParticipant.objects.create(
+            combat_session=self.combat_session,
+            participant_type='enemy',
+            name='Goblin',
+            initiative=0,
+            current_hp=0,
+            max_hp=15,
+            armor_class=12,
+            is_active=False
+        )
+        
+        new_hp = enemy.heal(10)
+        self.assertEqual(new_hp, 0)
+        self.assertEqual(enemy.current_hp, 0)
+        self.assertFalse(enemy.is_active)
     
     def test_get_ability_modifier(self):
         """Test getting ability modifier"""
@@ -659,4 +677,107 @@ class EmptyPreparingCombatCleanupTests(TestCase):
 
         res3 = self.client.post('/api/combat/sessions/', {}, format='json')
         self.assertEqual(res3.status_code, status.HTTP_201_CREATED)
+
+
+class CombatItemAndFeatureTests(TestCase):
+    """Tests for using supplies (potions) and class features (Lay on Hands) in combat"""
+
+    def setUp(self):
+        from django.contrib.auth.models import User
+        from characters.models import Character, CharacterClass, CharacterFeature, CharacterRace
+        self.client = APIClient()
+        self.user = User.objects.create_user(username='paladin_tester', password='password123')
+        self.client.force_authenticate(user=self.user)
+
+        self.paladin_class = CharacterClass.objects.create(name='paladin', hit_dice='d10')
+        self.race = CharacterRace.objects.create(name='human', size='M', speed=30)
+        self.paladin = Character.objects.create(
+            user=self.user,
+            name='Sir Kaelen',
+            level=2,
+            character_class=self.paladin_class,
+            race=self.race
+        )
+        CharacterFeature.objects.create(
+            character=self.paladin,
+            name='Lay on Hands',
+            feature_type='class',
+            description='Pool of healing power.'
+        )
+
+        self.session = CombatSession.objects.create(status='active', current_round=1, current_turn_index=0)
+        self.paladin_part = CombatParticipant.objects.create(
+            combat_session=self.session,
+            participant_type='character',
+            character=self.paladin,
+            initiative=15,
+            current_hp=10,
+            max_hp=20,
+            armor_class=16,
+            attacks_remaining=1,
+            action_used=False
+        )
+        self.goblin_part = CombatParticipant.objects.create(
+            combat_session=self.session,
+            participant_type='enemy',
+            name='Goblin',
+            initiative=10,
+            current_hp=0,
+            max_hp=12,
+            armor_class=12,
+            is_active=False
+        )
+
+    def test_use_item_potion_heals_self_and_consumes_action(self):
+        """Drinking a healing potion heals the drinker and consumes action"""
+        response = self.client.post(
+            f'/api/combat/sessions/{self.session.id}/use_item/',
+            {
+                'participant_id': self.paladin_part.id,
+                'item_name': 'Potion of Healing'
+            },
+            format='json'
+        )
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.paladin_part.refresh_from_db()
+        self.assertTrue(self.paladin_part.action_used)
+        self.assertEqual(self.paladin_part.attacks_remaining, 0)
+        self.assertGreater(self.paladin_part.current_hp, 10)
+
+    def test_use_item_cannot_heal_enemy(self):
+        """Supplies cannot be used on an enemy"""
+        response = self.client.post(
+            f'/api/combat/sessions/{self.session.id}/use_item/',
+            {
+                'participant_id': self.paladin_part.id,
+                'target_id': self.goblin_part.id,
+                'item_name': 'Potion of Healing'
+            },
+            format='json'
+        )
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertIn("hostile enemy", response.data['error'])
+
+    def test_lay_on_hands_heals_and_tracks_pool(self):
+        """Paladin uses Lay on Hands to heal self, pool reduces correctly"""
+        max_pool = self.paladin_part.get_lay_on_hands_pool()
+        self.assertEqual(max_pool, 10)  # Level 2 Paladin = 10 HP pool
+
+        response = self.client.post(
+            f'/api/combat/sessions/{self.session.id}/use_feature/',
+            {
+                'participant_id': self.paladin_part.id,
+                'target_id': self.paladin_part.id,
+                'feature_name': 'Lay on Hands',
+                'amount': 6
+            },
+            format='json'
+        )
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(response.data['remaining_pool'], 4)
+
+        self.paladin_part.refresh_from_db()
+        self.assertEqual(self.paladin_part.current_hp, 16)  # 10 + 6
+        self.assertTrue(self.paladin_part.action_used)
+        self.assertEqual(self.paladin_part.attacks_remaining, 0)
 

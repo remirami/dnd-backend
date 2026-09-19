@@ -56,6 +56,14 @@ class CombatParticipantSerializer(serializers.ModelSerializer):
                 } if equipped_shield else None,
             }
             data['effective_ac'] = effective_ac
+
+            # Class feature resources for characters (e.g. Lay on Hands pool)
+            data['feature_uses'] = instance.feature_uses or {}
+            class_name = getattr(instance.character.character_class, 'name', '').lower()
+            is_paladin = class_name == 'paladin' or instance.character.features.filter(name__iexact='Lay on Hands').exists()
+            if is_paladin:
+                data['lay_on_hands_pool'] = instance.get_lay_on_hands_pool()
+                data['max_lay_on_hands_pool'] = (instance.character.level or 1) * 5
         
         # Add enemy stat block for enemy participants
         enemy = None

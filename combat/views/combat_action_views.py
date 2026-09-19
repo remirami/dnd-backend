@@ -821,3 +821,255 @@ class CombatActionMixin:
             },
             "action": CombatActionSerializer(combat_action).data
         })
+
+    @action(detail=True, methods=['post'])
+    def use_item(self, request, pk=None):
+        """
+        Use an item/consumable in combat (e.g. Potion of Healing).
+        Standard 5e: Consumes Action, heals drinker or target ally.
+        """
+        session = self.get_object()
+        if session.status != 'active':
+            return Response({"error": "Combat is not active"}, status=status.HTTP_400_BAD_REQUEST)
+        
+        participant_id = request.data.get('participant_id')
+        target_id = request.data.get('target_id')
+        item_name = request.data.get('item_name', 'Potion of Healing')
+        
+        try:
+            user_part = session.participants.get(id=participant_id)
+        except CombatParticipant.DoesNotExist:
+            return Response({"error": "Participant not found"}, status=status.HTTP_404_NOT_FOUND)
+        
+        if user_part.action_used or user_part.attacks_remaining <= 0:
+            return Response({"error": f"{user_part.get_name()} has already used their action this turn."}, status=status.HTTP_400_BAD_REQUEST)
+        
+        # Target defaults to self
+        if not target_id or int(target_id) == user_part.id:
+            target = user_part
+        else:
+            try:
+                target = session.participants.get(id=target_id)
+            except CombatParticipant.DoesNotExist:
+                target = user_part
+        
+        # Validate target
+        if target.participant_type == 'enemy':
+            return Response({"error": "Cannot use beneficial supplies on a hostile enemy."}, status=status.HTTP_400_BAD_REQUEST)
+        if target.current_hp <= 0 and target.death_save_failures >= 3:
+            return Response({"error": "Target is deceased. Simple potions cannot revive the dead."}, status=status.HTTP_400_BAD_REQUEST)
+        
+        # Roll healing based on potion type (Standard 5e formulas)
+        lower_name = item_name.lower()
+        if 'supreme' in lower_name:
+            heal_amount = sum(random.randint(1, 4) for _ in range(10)) + 20
+        elif 'superior' in lower_name:
+            heal_amount = sum(random.randint(1, 4) for _ in range(8)) + 8
+        elif 'greater' in lower_name:
+            heal_amount = sum(random.randint(1, 4) for _ in range(4)) + 4
+        else:
+            # Standard Potion of Healing: 2d4 + 2
+            heal_amount = random.randint(1, 4) + random.randint(1, 4) + 2
+            
+        old_hp = target.current_hp
+        target.heal(heal_amount)
+        actual_healed = target.current_hp - old_hp
+        
+        # Consume Action
+        user_part.action_used = True
+        user_part.attacks_remaining = 0
+        user_part.save(update_fields=['action_used', 'attacks_remaining'])
+        
+        # Consume from inventory if character owns this item
+        if user_part.character:
+            ci = user_part.character.character_items.filter(item__name__icontains='potion').first()
+            if ci:
+                if ci.quantity > 1:
+                    ci.quantity -= 1
+                    ci.save(update_fields=['quantity'])
+                else:
+                    ci.delete()
+        
+        # Log action
+        desc = (
+            f"{user_part.get_name()} drinks a {item_name}, restoring {heal_amount} HP."
+            if user_part.id == target.id else
+            f"{user_part.get_name()} administers a {item_name} to {target.get_name()}, restoring {heal_amount} HP."
+        )
+        combat_action = CombatAction.objects.create(
+            combat_session=session,
+            actor=user_part,
+            target=target,
+            action_type='item',
+            attack_name=item_name,
+            damage_amount=heal_amount,
+            hit=True,
+            round_number=session.current_round,
+            turn_number=session.current_turn_index,
+            description=desc
+        )
+        
+        return Response({
+            "message": desc,
+            "heal_amount": heal_amount,
+            "actual_healed": actual_healed,
+            "target_hp": target.current_hp,
+            "action": CombatActionSerializer(combat_action).data
+        })
+
+    @action(detail=True, methods=['post'])
+    def use_feature(self, request, pk=None):
+        """
+        Use a class feature or racial trait in combat (e.g. Lay on Hands, Second Wind).
+        """
+        session = self.get_object()
+        if session.status != 'active':
+            return Response({"error": "Combat is not active"}, status=status.HTTP_400_BAD_REQUEST)
+        
+        participant_id = request.data.get('participant_id')
+        target_id = request.data.get('target_id')
+        feature_name = request.data.get('feature_name', '')
+        
+        try:
+            actor = session.participants.get(id=participant_id)
+        except CombatParticipant.DoesNotExist:
+            return Response({"error": "Participant not found"}, status=status.HTTP_404_NOT_FOUND)
+        
+        if not actor.character:
+            return Response({"error": "Only player characters can use class features."}, status=status.HTTP_400_BAD_REQUEST)
+        
+        # Target defaults to actor
+        if not target_id or int(target_id) == actor.id:
+            target = actor
+        else:
+            try:
+                target = session.participants.get(id=target_id)
+            except CombatParticipant.DoesNotExist:
+                target = actor
+        
+        if target.participant_type == 'enemy':
+            return Response({"error": "Cannot use beneficial features on a hostile enemy."}, status=status.HTTP_400_BAD_REQUEST)
+        
+        clean_name = feature_name.strip().lower()
+        
+        if 'lay on hands' in clean_name:
+            if actor.action_used or actor.attacks_remaining <= 0:
+                return Response({"error": f"{actor.get_name()} has already used their action this turn."}, status=status.HTTP_400_BAD_REQUEST)
+            
+            pool = actor.get_lay_on_hands_pool()
+            if pool <= 0:
+                return Response({"error": "Lay on Hands pool is completely depleted."}, status=status.HTTP_400_BAD_REQUEST)
+            
+            cure_poison = request.data.get('cure_poison', False)
+            if cure_poison:
+                if pool < 5:
+                    return Response({"error": "Neutralizing poison requires 5 points from Lay on Hands pool."}, status=status.HTTP_400_BAD_REQUEST)
+                # Remove Poisoned condition if present
+                poison_cond = target.conditions.filter(name__iexact='Poisoned').first()
+                if poison_cond:
+                    target.conditions.remove(poison_cond)
+                
+                actor.feature_uses['lay_on_hands_pool'] = pool - 5
+                actor.action_used = True
+                actor.attacks_remaining = 0
+                actor.save(update_fields=['feature_uses', 'action_used', 'attacks_remaining'])
+                
+                desc = f"{actor.get_name()} channels Lay on Hands upon {target.get_name()}, cleansing poisons and toxins. ({actor.feature_uses['lay_on_hands_pool']} HP left in pool)"
+                combat_action = CombatAction.objects.create(
+                    combat_session=session,
+                    actor=actor,
+                    target=target,
+                    action_type='feature',
+                    attack_name='Lay on Hands (Cure Poison)',
+                    hit=True,
+                    round_number=session.current_round,
+                    turn_number=session.current_turn_index,
+                    description=desc
+                )
+                return Response({
+                    "message": desc,
+                    "remaining_pool": actor.feature_uses['lay_on_hands_pool'],
+                    "action": CombatActionSerializer(combat_action).data
+                })
+            else:
+                amount = int(request.data.get('amount', 1))
+                if amount <= 0 or amount > pool:
+                    return Response({"error": f"Invalid amount. Available pool: {pool} HP"}, status=status.HTTP_400_BAD_REQUEST)
+                
+                if target.current_hp <= 0 and target.death_save_failures >= 3:
+                    return Response({"error": "Target is deceased. Lay on Hands cannot revive the dead."}, status=status.HTTP_400_BAD_REQUEST)
+                
+                old_hp = target.current_hp
+                target.heal(amount)
+                actual_healed = target.current_hp - old_hp
+                
+                new_pool = pool - amount
+                actor.feature_uses['lay_on_hands_pool'] = new_pool
+                actor.action_used = True
+                actor.attacks_remaining = 0
+                actor.save(update_fields=['feature_uses', 'action_used', 'attacks_remaining'])
+                
+                desc = (
+                    f"{actor.get_name()} uses Lay on Hands on themselves, restoring {amount} HP ({new_pool} HP left in pool)."
+                    if actor.id == target.id else
+                    f"{actor.get_name()} lays hands upon {target.get_name()}, restoring {amount} HP ({new_pool} HP left in pool)."
+                )
+                combat_action = CombatAction.objects.create(
+                    combat_session=session,
+                    actor=actor,
+                    target=target,
+                    action_type='feature',
+                    attack_name='Lay on Hands',
+                    damage_amount=amount,
+                    hit=True,
+                    round_number=session.current_round,
+                    turn_number=session.current_turn_index,
+                    description=desc
+                )
+                return Response({
+                    "message": desc,
+                    "healed_amount": amount,
+                    "actual_healed": actual_healed,
+                    "target_hp": target.current_hp,
+                    "remaining_pool": new_pool,
+                    "action": CombatActionSerializer(combat_action).data
+                })
+                
+        elif 'second wind' in clean_name:
+            if actor.bonus_action_used:
+                return Response({"error": f"{actor.get_name()} has already used their bonus action this turn."}, status=status.HTTP_400_BAD_REQUEST)
+            if actor.feature_uses.get('second_wind_used', False):
+                return Response({"error": "Second Wind has already been used (regains after short/long rest)."}, status=status.HTTP_400_BAD_REQUEST)
+            
+            fighter_level = actor.character.level or 1
+            heal_amount = random.randint(1, 10) + fighter_level
+            old_hp = actor.current_hp
+            actor.heal(heal_amount)
+            actual_healed = actor.current_hp - old_hp
+            
+            actor.bonus_action_used = True
+            actor.feature_uses['second_wind_used'] = True
+            actor.save(update_fields=['bonus_action_used', 'feature_uses'])
+            
+            desc = f"{actor.get_name()} draws upon Second Wind, recovering {heal_amount} HP."
+            combat_action = CombatAction.objects.create(
+                combat_session=session,
+                actor=actor,
+                target=actor,
+                action_type='feature',
+                attack_name='Second Wind',
+                damage_amount=heal_amount,
+                hit=True,
+                round_number=session.current_round,
+                turn_number=session.current_turn_index,
+                description=desc
+            )
+            return Response({
+                "message": desc,
+                "healed_amount": heal_amount,
+                "target_hp": actor.current_hp,
+                "action": CombatActionSerializer(combat_action).data
+            })
+            
+        else:
+            return Response({"error": f"Feature '{feature_name}' not yet supported for active combat trigger."}, status=status.HTTP_400_BAD_REQUEST)

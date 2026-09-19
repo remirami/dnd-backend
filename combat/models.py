@@ -442,6 +442,13 @@ class CombatParticipant(models.Model):
         help_text="Tracks recharge ability states for monsters."
     )
     
+    # Combat feature uses (Format: {'lay_on_hands_pool': 5, 'second_wind_used': False})
+    feature_uses = models.JSONField(
+        default=dict,
+        blank=True,
+        help_text="Tracks active combat feature uses, e.g. lay_on_hands_pool, second_wind, rage_uses"
+    )
+    
     # Phase 1: Position tracking for AOE targeting
     position_x = models.IntegerField(default=0, help_text="X coordinate on battlefield grid (in feet)")
     position_y = models.IntegerField(default=0, help_text="Y coordinate on battlefield grid (in feet)")
@@ -883,11 +890,45 @@ class CombatParticipant(models.Model):
         """Simple version that doesn't check concentration (for backward compatibility)"""
         return self.take_damage(amount, damage_type, check_concentration=False)[0]
     
-    def heal(self, amount):
-        """Heal this participant"""
+    def get_lay_on_hands_pool(self):
+        """Get remaining Lay on Hands pool for Paladin participant"""
+        if not self.character:
+            return 0
+        
+        # Check if character has Lay on Hands feature or is a Paladin
+        has_loh = self.character.features.filter(name__iexact='Lay on Hands').exists()
+        class_name = getattr(self.character.character_class, 'name', '').lower()
+        if not has_loh and class_name != 'paladin':
+            return 0
+
+        paladin_level = self.character.level or 1
+        max_pool = paladin_level * 5
+        if not isinstance(self.feature_uses, dict):
+            self.feature_uses = {}
+        
+        return self.feature_uses.get('lay_on_hands_pool', max_pool)
+
+    def heal(self, amount, allow_revive=False):
+        """
+        Heal this participant.
+        Per 5e rules:
+        - Defeated enemies/monsters (0 HP) are dead and cannot be healed by simple healing.
+        - Characters with 3 death save failures are dead and cannot be healed without resurrection.
+        """
+        # Defeated enemies cannot be restored by healing
+        if self.participant_type == 'enemy' and (self.current_hp <= 0 or not self.is_active):
+            return self.current_hp
+        
+        # Dead characters cannot be healed without true resurrection
+        if self.death_save_failures >= 3 and not allow_revive:
+            return self.current_hp
+
         self.current_hp = min(self.max_hp, self.current_hp + amount)
         if self.current_hp > 0:
             self.is_active = True
+            # Regaining HP resets death save counts (5e PHB rules)
+            self.death_save_successes = 0
+            self.death_save_failures = 0
         self.save()
         return self.current_hp
     

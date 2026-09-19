@@ -92,6 +92,18 @@ class CombatParticipantViewSet(viewsets.ModelViewSet):
                 status=status.HTTP_400_BAD_REQUEST
             )
         
+        if participant.participant_type == 'enemy' and (participant.current_hp <= 0 or not participant.is_active):
+            return Response(
+                {"error": "Cannot heal a defeated enemy."},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+        
+        if participant.death_save_failures >= 3:
+            return Response(
+                {"error": "Character is dead. Simple healing cannot revive the dead."},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+        
         new_hp = participant.heal(amount)
         
          # Create combat action log
