@@ -203,6 +203,70 @@ class SpellCastingCombatTests(TestCase):
         self.wizard_participant.refresh_from_db()
         self.assertTrue(self.wizard_participant.action_used)
 
+    def test_player_spell_slot_deduction_and_healing(self):
+        """Test player spell slot deduction and healing spells"""
+        # Configure wizard stats with spell slots
+        stats = self.wizard.stats
+        stats.spell_slots = {"1": 2, "3": 2}
+        stats.expended_spell_slots = {"1": 0, "3": 1}
+        stats.save()
+
+        # Add Cure Wounds spell
+        CharacterSpell.objects.create(
+            character=self.wizard,
+            name="Cure Wounds",
+            level=1,
+            is_prepared=True
+        )
+
+        # Hurt the wizard participant first
+        self.wizard_participant.current_hp = 10
+        self.wizard_participant.save()
+
+        # Cast Cure Wounds on self
+        response = self.client.post(
+            f'/api/combat/sessions/{self.session.id}/cast_spell/',
+            {
+                'caster_id': self.wizard_participant.id,
+                'target_id': self.wizard_participant.id,
+                'spell_name': 'Cure Wounds',
+                'spell_level': 1,
+                'damage_string': '1d8+4',
+                'is_healing': True
+            }
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertTrue(response.data.get('is_healing'))
+        self.assertGreater(response.data.get('healing_amount', 0), 0)
+        
+        # Check HP was restored
+        self.wizard_participant.refresh_from_db()
+        self.assertGreater(self.wizard_participant.current_hp, 10)
+
+        # Check spell slot was expended
+        stats.refresh_from_db()
+        self.assertEqual(stats.expended_spell_slots.get("1"), 1)
+
+    def test_player_spell_slot_exhaustion(self):
+        """Test player cannot cast when slots are exhausted"""
+        stats = self.wizard.stats
+        stats.spell_slots = {"3": 1}
+        stats.expended_spell_slots = {"3": 1}  # Fully exhausted
+        stats.save()
+
+        response = self.client.post(
+            f'/api/combat/sessions/{self.session.id}/cast_spell/',
+            {
+                'caster_id': self.wizard_participant.id,
+                'target_id': self.goblin_participant.id,
+                'spell_name': 'Fireball',
+                'spell_level': 3
+            }
+        )
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertIn('remaining', response.data.get('error', ''))
+
 
 class EnemySpellCastingTests(TestCase):
     """Test enemy spell casting with slot enforcement"""
@@ -329,3 +393,4 @@ class EnemySpellCastingTests(TestCase):
         
         self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
         self.assertIn('slot', response.data['error'].lower())
+

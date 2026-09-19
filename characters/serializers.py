@@ -109,10 +109,14 @@ class CharacterSpellSerializer(serializers.ModelSerializer):
         }
 
     def get_spell_details(self, obj):
-        if not obj.spell:
+        spell = obj.spell
+        if not spell and obj.name:
+            from spells.models import Spell
+            spell = Spell.objects.filter(name__iexact=obj.name).first()
+        if not spell:
             return None
-        from spells.serializers import SpellListSerializer
-        return SpellListSerializer(obj.spell).data
+        from spells.serializers import SpellSerializer
+        return SpellSerializer(spell).data
     
     def validate(self, data):
         # If spell_id is provided, populate name, level, school from it

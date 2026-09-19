@@ -524,7 +524,9 @@ class CombatActionMixin:
         save_dc = data.get('save_dc')
         damage_string = data.get('damage_string', '')
         data.get('damage_type')
-        requires_concentration = request.data.get('requires_concentration', False)
+        is_healing = data.get('is_healing', False)
+        is_ritual = data.get('is_ritual', False) or request.data.get('is_ritual', False)
+        requires_concentration = data.get('requires_concentration', False) or request.data.get('requires_concentration', False)
         
         try:
             caster = session.participants.get(pk=caster_id)
@@ -554,10 +556,16 @@ class CombatActionMixin:
                 status=status.HTTP_400_BAD_REQUEST
             )
         
+        # Check if caster has action remaining this turn
+        if caster.action_used or caster.attacks_remaining <= 0:
+            return Response(
+                {"error": f"{caster.get_name()} has already used their action this turn"},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+        
         # Validate spell slots for player characters
         if caster.character:
             from characters.spell_management import can_cast_spell
-            is_ritual = request.data.get('is_ritual', False)
             
             if not can_cast_spell(caster.character, spell_name, allow_ritual=is_ritual):
                 # Check if it's a ritual spell
@@ -577,6 +585,20 @@ class CombatActionMixin:
                         {"error": f"{caster.get_name()} does not know {spell_name}"},
                         status=status.HTTP_400_BAD_REQUEST
                     )
+
+            # Check remaining spell slots
+            if spell_level and spell_level > 0 and not is_ritual and hasattr(caster.character, 'stats') and caster.character.stats:
+                stats = caster.character.stats
+                level_str = str(spell_level)
+                if stats.spell_slots and isinstance(stats.spell_slots, dict):
+                    max_slots = int(stats.spell_slots.get(level_str, 0))
+                    if max_slots > 0:
+                        expended = int((stats.expended_spell_slots or {}).get(level_str, 0))
+                        if expended >= max_slots:
+                            return Response(
+                                {"error": f"{caster.get_name()} has no level {spell_level} spell slots remaining."},
+                                status=status.HTTP_400_BAD_REQUEST
+                            )
         
         # Validate spell slots for enemies
         if caster.encounter_enemy and not caster.can_cast_enemy_spell(spell_name):
@@ -587,25 +609,39 @@ class CombatActionMixin:
         
         target = None
         if target_id:
-            try:
-                target = session.participants.get(pk=target_id)
-            except CombatParticipant.DoesNotExist:
-                return Response(
-                    {"error": "Target not found in combat"},
-                    status=status.HTTP_404_NOT_FOUND
-                )
+            if target_id == caster.id:
+                target = caster
+            else:
+                try:
+                    target = session.participants.get(pk=target_id)
+                except CombatParticipant.DoesNotExist:
+                    return Response(
+                        {"error": "Target not found in combat"},
+                        status=status.HTTP_404_NOT_FOUND
+                    )
         
         # Handle concentration
         if requires_concentration:
             caster.is_concentrating = True
             caster.concentration_spell = spell_name
-            caster.save()
+            caster.save(update_fields=['is_concentrating', 'concentration_spell'])
         
-        # Handle saving throw if applicable
+        # Handle saving throw and spell effects
         save_roll = None
+        save_total = None
         save_success = None
         damage_amount = 0
-        if save_type and save_dc and target:
+        healing_amount = 0
+        
+        # Determine if this is a healing spell
+        healing_spell_names = {'cure wounds', 'healing word', 'prayer of healing', 'mass cure wounds', 'heal', 'mass heal'}
+        if is_healing or spell_name.strip().lower() in healing_spell_names:
+            is_healing = True
+            if damage_string and target:
+                base_heal, _ = calculate_damage(damage_string, 0, False)
+                healing_amount = max(1, base_heal)
+                target.heal(healing_amount)
+        elif save_type and save_dc and target:
             save_roll, _save_breakdown = roll_d20()
             ability_mod = target.get_ability_modifier(save_type)
             proficiency_bonus = target.character.proficiency_bonus if target.character else 2
@@ -625,10 +661,15 @@ class CombatActionMixin:
                 
                 if damage_amount > 0:
                     _new_hp, _ = target.take_damage(damage_amount)
+        elif damage_string and target:
+            base_damage, _ = calculate_damage(damage_string, 0, False)
+            damage_amount = base_damage
+            if damage_amount > 0:
+                _new_hp, _ = target.take_damage(damage_amount)
         
-        # Auto-apply conditions from spell (if save failed or no save)
+        # Auto-apply conditions from spell (if not healing, and save failed or no save)
         applied_condition = None
-        if target and (not save_success or not save_type):
+        if not is_healing and target and (save_success is False or not save_type):
             applied_condition = auto_apply_condition_from_spell(target, spell_name)
             if applied_condition:
                 # Create condition application record
@@ -644,6 +685,16 @@ class CombatActionMixin:
                     source_name=spell_name
                 )
         
+        # Action description
+        if is_healing and target:
+            desc = f"{caster.get_name()} casts {spell_name} on {target.get_name()}, restoring {healing_amount} HP"
+        elif damage_amount > 0 and target:
+            desc = f"{caster.get_name()} casts {spell_name} on {target.get_name()} for {damage_amount} damage"
+        elif target:
+            desc = f"{caster.get_name()} casts {spell_name} on {target.get_name()}"
+        else:
+            desc = f"{caster.get_name()} casts {spell_name}"
+
         # Create combat action
         combat_action = CombatAction.objects.create(
             combat_session=session,
@@ -658,31 +709,50 @@ class CombatActionMixin:
             save_success=save_success,
             round_number=session.current_round,
             turn_number=session.current_turn_index,
-            description=f"{caster.get_name()} casts {spell_name}"
+            description=desc
         )
         
-        # Mark action as used
+        # Mark action as used and consume turn action
         caster.action_used = True
-        caster.save()
+        caster.attacks_remaining = 0
+        caster.save(update_fields=['action_used', 'attacks_remaining'])
+
         
+        # Decrement player character spell slots
+        if caster.character and hasattr(caster.character, 'stats') and caster.character.stats:
+            if spell_level and spell_level > 0 and not is_ritual:
+                stats = caster.character.stats
+                if not stats.expended_spell_slots or not isinstance(stats.expended_spell_slots, dict):
+                    stats.expended_spell_slots = {}
+                level_str = str(spell_level)
+                current_used = stats.expended_spell_slots.get(level_str, 0)
+                stats.expended_spell_slots[level_str] = current_used + 1
+                stats.save(update_fields=['expended_spell_slots'])
+
         # Decrement enemy spell slots
         if caster.encounter_enemy:
             caster.use_enemy_spell(spell_name)
         
         return Response({
-            "message": f"{caster.get_name()} casts {spell_name}",
+            "message": desc,
             "spell_name": spell_name,
             "spell_level": spell_level,
             "target": target.get_name() if target else None,
+            "target_id": target.id if target else None,
             "target_hp": target.current_hp if target else None,
+            "is_healing": is_healing,
+            "healing_amount": healing_amount,
             "save_type": save_type if save_type else None,
             "save_dc": save_dc,
             "save_roll": save_roll,
+            "save_total": save_total,
             "save_success": save_success,
             "damage": damage_amount,
+            "condition_applied": applied_condition.name if applied_condition else None,
             "concentration_started": requires_concentration,
             "action": CombatActionSerializer(combat_action).data
         })
+
 
     @action(detail=True, methods=['post'])
     def saving_throw(self, request, pk=None):

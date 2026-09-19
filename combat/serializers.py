@@ -317,6 +317,9 @@ class SpellRequestSerializer(serializers.Serializer):
     save_dc = serializers.IntegerField(required=False, allow_null=True)
     damage_string = serializers.CharField(required=False, allow_blank=True)
     damage_type = serializers.IntegerField(required=False, allow_null=True)  # DamageType ID
+    is_healing = serializers.BooleanField(required=False, default=False)
+    is_ritual = serializers.BooleanField(required=False, default=False)
+    requires_concentration = serializers.BooleanField(required=False, default=False)
 
 
 class CombatLogSerializer(serializers.ModelSerializer):
