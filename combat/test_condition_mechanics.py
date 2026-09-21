@@ -138,3 +138,65 @@ class ConditionMechanicsCombatTests(TestCase):
         self.assertEqual(response.status_code, 200)
         self.assertTrue(response.data['hit'])
         self.assertTrue(response.data['critical'])
+
+    def test_client_cannot_arbitrarily_claim_advantage(self):
+        """Passing advantage=True without conditions or dm_override must be ignored."""
+        from rest_framework.test import APIRequestFactory
+        from combat.views.session_views import CombatSessionViewSet
+
+        factory = APIRequestFactory()
+        request = factory.post(
+            f'/api/combat/sessions/{self.session.id}/attack/',
+            {
+                'attacker_id': self.hero_p.id,
+                'target_id': self.goblin_p.id,
+                'advantage': True,
+            },
+            format='json'
+        )
+        view = CombatSessionViewSet.as_view({'post': 'attack'})
+        response = view(request, pk=self.session.id)
+        self.assertEqual(response.status_code, 200)
+        self.assertFalse(response.data.get('advantage', False))
+
+    def test_dm_override_allows_manual_advantage(self):
+        """In test mode with dm_override=True, manual advantage is respected."""
+        from rest_framework.test import APIRequestFactory
+        from combat.views.session_views import CombatSessionViewSet
+
+        factory = APIRequestFactory()
+        request = factory.post(
+            f'/api/combat/sessions/{self.session.id}/attack/',
+            {
+                'attacker_id': self.hero_p.id,
+                'target_id': self.goblin_p.id,
+                'advantage': True,
+                'dm_override': True,
+            },
+            format='json'
+        )
+        view = CombatSessionViewSet.as_view({'post': 'attack'})
+        response = view(request, pk=self.session.id)
+        self.assertEqual(response.status_code, 200)
+        self.assertTrue(response.data.get('advantage', False))
+
+    def test_prone_target_grants_melee_advantage(self):
+        """Attacking a prone target with a melee attack automatically grants advantage."""
+        from rest_framework.test import APIRequestFactory
+        from combat.views.session_views import CombatSessionViewSet
+
+        self.goblin_p.conditions.add(self.prone)
+        factory = APIRequestFactory()
+        request = factory.post(
+            f'/api/combat/sessions/{self.session.id}/attack/',
+            {
+                'attacker_id': self.hero_p.id,
+                'target_id': self.goblin_p.id,
+            },
+            format='json'
+        )
+        view = CombatSessionViewSet.as_view({'post': 'attack'})
+        response = view(request, pk=self.session.id)
+        self.assertEqual(response.status_code, 200)
+        self.assertTrue(response.data.get('advantage', False))
+        self.assertTrue(any('prone' in r.lower() for r in response.data.get('advantage_reasons', [])))

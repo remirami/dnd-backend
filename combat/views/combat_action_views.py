@@ -94,10 +94,15 @@ class CombatActionMixin:
         
         # Get attack details
         attack_name = data.get('attack_name', None)
-        advantage = data.get('advantage', False)
-        disadvantage = data.get('disadvantage', False)
+        is_dm_override = data.get('dm_override', False)
+        has_inspiration = data.get('inspiration', False)
         other_modifiers = data.get('other_modifiers', 0)
         weapon_slot = data.get('weapon_slot', 'main_hand')
+        
+        # In 5e rules, advantage/disadvantage are governed by conditions, features, and environment.
+        # Manual client overrides are only honored in test mode with dm_override or via inspiration.
+        advantage = bool(data.get('advantage', False)) if is_dm_override else False
+        disadvantage = bool(data.get('disadvantage', False)) if is_dm_override else False
         
         # Get equipped weapon for characters
         equipped_weapon = None
@@ -318,12 +323,41 @@ class CombatActionMixin:
                 status=status.HTTP_400_BAD_REQUEST
             )
 
+        adv_reasons = []
+        disadv_reasons = []
+
         from combat.condition_effects import evaluate_attack_roll_conditions, is_auto_critical
-        cond_adv, cond_disadv, _ = evaluate_attack_roll_conditions(attacker, target, is_melee=is_melee)
+        cond_adv, cond_disadv, cond_reasons = evaluate_attack_roll_conditions(attacker, target, is_melee=is_melee)
         if cond_adv:
             advantage = True
         if cond_disadv:
             disadvantage = True
+        for cr in cond_reasons:
+            if 'advantage' in cr.lower() or 'prone (melee' in cr.lower() or ('invisible' in cr.lower() and 'target is' not in cr.lower()):
+                adv_reasons.append(cr)
+            else:
+                disadv_reasons.append(cr)
+
+        # Check Reckless Attack
+        if attacker.feature_uses and attacker.feature_uses.get('reckless_attack_active') and is_melee and use_ability == 'STR':
+            advantage = True
+            adv_reasons.append("Reckless Attack")
+        if target.feature_uses and target.feature_uses.get('reckless_attack_active'):
+            advantage = True
+            adv_reasons.append("Target is Reckless")
+
+        # Check manual inspiration or DM override if provided
+        if has_inspiration:
+            advantage = True
+            if "Heroic Inspiration" not in adv_reasons:
+                adv_reasons.append("Heroic Inspiration")
+        if is_dm_override:
+            if data.get('advantage') and "DM Override" not in adv_reasons:
+                advantage = True
+                adv_reasons.append("DM Override")
+            if data.get('disadvantage') and "DM Override" not in disadv_reasons:
+                disadvantage = True
+                disadv_reasons.append("DM Override")
 
         # Get lighting effects for attacker
         lighting_modifier = None
@@ -339,8 +373,10 @@ class CombatActionMixin:
                 lighting_modifier = lighting_mod
                 if lighting_mod == 'disadvantage':
                     disadvantage = True
+                    disadv_reasons.append("Darkness")
                 elif lighting_mod == 'advantage':
                     advantage = True
+                    adv_reasons.append("Illuminated")
         except ParticipantPosition.DoesNotExist:
             pass
         
@@ -357,8 +393,10 @@ class CombatActionMixin:
             if not is_melee:
                 if weather_mod == 'disadvantage':
                     disadvantage = True
+                    disadv_reasons.append("Harsh Weather")
                 elif weather_mod == 'advantage':
                     advantage = True
+                    adv_reasons.append("Favorable Wind")
 
         # 5e Advantage / Disadvantage resolution: if both are present, they cancel out
         final_advantage = bool(advantage and not disadvantage)
@@ -366,6 +404,14 @@ class CombatActionMixin:
 
         # Roll attack with resolved advantage/disadvantage
         roll, roll_breakdown = roll_d20(advantage=final_advantage, disadvantage=final_disadvantage)
+
+        roll_annotation = roll_breakdown
+        if final_advantage and adv_reasons:
+            roll_annotation = f"{roll_breakdown} [{', '.join(adv_reasons)}]"
+        elif final_disadvantage and disadv_reasons:
+            roll_annotation = f"{roll_breakdown} [{', '.join(disadv_reasons)}]"
+        elif advantage and disadvantage:
+            roll_annotation = f"{roll_breakdown} [Adv & Dis Canceled]"
         
         # Get magic item bonuses
         magic_bonuses = attacker.get_magic_item_bonuses()
@@ -388,7 +434,29 @@ class CombatActionMixin:
         damage_amount = 0
         damage_breakdown = ""
         concentration_broken = False
+        attack_damage_type = None
+
         if hit:
+            # Determine damage type
+            if attacker.character:
+                if equipped_weapon and getattr(equipped_weapon, 'damage_type', None):
+                    attack_damage_type = equipped_weapon.damage_type
+                elif not equipped_weapon:
+                    attack_damage_type = 'bludgeoning'
+            elif matched_action and matched_action.damage_rolls.exists():
+                first_dr = matched_action.damage_rolls.first()
+                if first_dr and first_dr.damage_type:
+                    attack_damage_type = first_dr.damage_type
+
+            if not attack_damage_type and damage_string:
+                ds_lower = str(damage_string).lower()
+                if 'slashing' in ds_lower:
+                    attack_damage_type = 'slashing'
+                elif 'piercing' in ds_lower:
+                    attack_damage_type = 'piercing'
+                elif 'bludgeoning' in ds_lower:
+                    attack_damage_type = 'bludgeoning'
+
             if matched_action and matched_action.damage_rolls.exists():
                 total_dmg = 0
                 dmg_parts = []
@@ -403,12 +471,19 @@ class CombatActionMixin:
                 damage_amount = max(1, total_dmg)
                 damage_breakdown = " | ".join(dmg_parts)
             else:
-                damage_modifier = damage_ability_mod + magic_bonuses['to_damage']
+                # Add rage damage bonus if Barbarian is raging and makes a melee Strength attack
+                rage_bonus = 0
+                if attacker.is_raging() and is_melee and use_ability == 'STR':
+                    rage_bonus = attacker.get_rage_damage_bonus()
+
+                damage_modifier = damage_ability_mod + magic_bonuses['to_damage'] + rage_bonus
                 damage_amount, damage_breakdown = calculate_damage(
                     damage_string, damage_modifier, critical
                 )
+                if rage_bonus > 0:
+                    damage_breakdown += f" (+{rage_bonus} Rage)"
 
-            _new_hp, concentration_broken = target.take_damage(damage_amount)
+            _new_hp, concentration_broken = target.take_damage(damage_amount, damage_type=attack_damage_type)
 
             # Check condition riders on hit (e.g. Wolf bite knock prone)
             if matched_action and matched_action.saving_throw_dc and matched_action.conditions_inflicted.exists():
@@ -429,6 +504,12 @@ class CombatActionMixin:
                 attacker.recharge_state[matched_action.name] = False
                 attacker.save(update_fields=['recharge_state'])
         
+        # Resolve DamageType foreign key for combat action
+        from items.models import DamageType as DamageTypeModel
+        damage_type_fk = attack_damage_type if isinstance(attack_damage_type, DamageTypeModel) else None
+        if not damage_type_fk and isinstance(attack_damage_type, str):
+            damage_type_fk = DamageTypeModel.objects.filter(name__iexact=attack_damage_type).first()
+
         # Create combat action
         combat_action = CombatAction.objects.create(
             combat_session=session,
@@ -441,12 +522,13 @@ class CombatActionMixin:
             attack_total=attack_total,
             hit=hit,
             damage_amount=damage_amount if hit else None,
+            damage_type=damage_type_fk,
             critical=critical,
             round_number=session.current_round,
             turn_number=session.current_turn_index,
             is_advantage=final_advantage,
             is_disadvantage=final_disadvantage,
-            description=f"{roll_breakdown} | {attack_breakdown}"
+            description=f"{roll_annotation} | {attack_breakdown}"
         )
         
         # Decrement attacks remaining
@@ -468,6 +550,10 @@ class CombatActionMixin:
             "critical": critical,
             "is_advantage": final_advantage,
             "is_disadvantage": final_disadvantage,
+            "advantage": final_advantage,
+            "disadvantage": final_disadvantage,
+            "advantage_reasons": adv_reasons,
+            "disadvantage_reasons": disadv_reasons,
             "damage": damage_amount if hit else 0,
             "target_hp": target.current_hp,
             "attacks_remaining": attacker.attacks_remaining,
@@ -1058,6 +1144,183 @@ class CombatActionMixin:
                 "target_hp": actor.current_hp,
                 "action": CombatActionSerializer(combat_action).data
             })
+
+        elif 'rage' in clean_name:
+            is_end = ('end' in clean_name) or bool(request.data.get('end_rage', False))
+            if is_end:
+                if not actor.is_raging():
+                    return Response({"error": f"{actor.get_name()} is not currently raging."}, status=status.HTTP_400_BAD_REQUEST)
+                actor.feature_uses['is_raging'] = False
+                actor.save(update_fields=['feature_uses'])
+                desc = f"{actor.get_name()} calms their battle fury and ceases raging."
+                combat_action = CombatAction.objects.create(
+                    combat_session=session,
+                    actor=actor,
+                    target=actor,
+                    action_type='feature',
+                    attack_name='End Rage',
+                    hit=True,
+                    round_number=session.current_round,
+                    turn_number=session.current_turn_index,
+                    description=desc
+                )
+                return Response({
+                    "message": desc,
+                    "is_raging": False,
+                    "remaining_uses": actor.get_rage_uses_remaining(),
+                    "action": CombatActionSerializer(combat_action).data
+                })
+            else:
+                if actor.is_raging():
+                    return Response({"error": f"{actor.get_name()} is already raging!"}, status=status.HTTP_400_BAD_REQUEST)
+                remaining = actor.get_rage_uses_remaining()
+                if remaining <= 0:
+                    return Response({"error": f"No Rage uses remaining (0/{actor.get_max_rage_uses()}). Regained after a long rest."}, status=status.HTTP_400_BAD_REQUEST)
+                if actor.bonus_action_used:
+                    return Response({"error": f"{actor.get_name()} has already used their bonus action this turn."}, status=status.HTTP_400_BAD_REQUEST)
+                
+                equipped_armor = actor.get_equipped_armor()
+                if equipped_armor and equipped_armor.armor_type == 'heavy':
+                    return Response({"error": "Cannot enter Rage while wearing Heavy Armor."}, status=status.HTTP_400_BAD_REQUEST)
+                
+                actor.feature_uses['is_raging'] = True
+                if actor.get_max_rage_uses() < 900:  # Not unlimited
+                    actor.feature_uses['rage_uses_remaining'] = remaining - 1
+                actor.bonus_action_used = True
+                update_fields = ['feature_uses', 'bonus_action_used']
+                if actor.is_concentrating:
+                    actor.is_concentrating = False
+                    actor.concentration_spell = ""
+                    update_fields.extend(['is_concentrating', 'concentration_spell'])
+                actor.save(update_fields=update_fields)
+                
+                rage_bonus = actor.get_rage_damage_bonus()
+                rem = actor.get_rage_uses_remaining()
+                rem_str = "Unlimited" if rem >= 900 else f"{rem} left"
+                desc = f"🔥 {actor.get_name()} roars and enters a primal Rage! Resistance to Bludgeoning, Piercing, and Slashing damage; +{rage_bonus} melee damage with Strength. ({rem_str})"
+                combat_action = CombatAction.objects.create(
+                    combat_session=session,
+                    actor=actor,
+                    target=actor,
+                    action_type='feature',
+                    attack_name='Rage',
+                    hit=True,
+                    round_number=session.current_round,
+                    turn_number=session.current_turn_index,
+                    description=desc
+                )
+                return Response({
+                    "message": desc,
+                    "is_raging": True,
+                    "remaining_uses": actor.get_rage_uses_remaining(),
+                    "action": CombatActionSerializer(combat_action).data
+                })
+
+        elif 'reckless attack' in clean_name:
+            char_lvl = (actor.character.level or 1) if actor.character else 1
+            if not actor.has_reckless_attack() and not (actor.is_barbarian() and char_lvl >= 2):
+                return Response({"error": "Reckless Attack requires Barbarian level 2+."}, status=status.HTTP_400_BAD_REQUEST)
+            if actor.feature_uses.get('reckless_attack_active', False):
+                return Response({"error": "Reckless Attack is already active for this turn."}, status=status.HTTP_400_BAD_REQUEST)
             
+            actor.feature_uses['reckless_attack_active'] = True
+            actor.save(update_fields=['feature_uses'])
+            desc = f"⚡ {actor.get_name()} attacks Recklessly! Gained advantage on Strength melee attacks this turn, but incoming attacks have advantage until next turn."
+            combat_action = CombatAction.objects.create(
+                combat_session=session,
+                actor=actor,
+                target=actor,
+                action_type='feature',
+                attack_name='Reckless Attack',
+                hit=True,
+                round_number=session.current_round,
+                turn_number=session.current_turn_index,
+                description=desc
+            )
+            return Response({
+                "message": desc,
+                "reckless_attack_active": True,
+                "action": CombatActionSerializer(combat_action).data
+            })
+
+        elif 'action surge' in clean_name:
+            char_lvl = (actor.character.level or 1) if actor.character else 1
+            if not actor.is_fighter() and not any('action surge' in f.name.lower() for f in (actor.character.features.all() if actor.character else [])):
+                return Response({"error": "Action Surge requires Fighter level 2+."}, status=status.HTTP_400_BAD_REQUEST)
+            if char_lvl < 2 and not any('action surge' in f.name.lower() for f in (actor.character.features.all() if actor.character else [])):
+                return Response({"error": "Action Surge requires Fighter level 2+."}, status=status.HTTP_400_BAD_REQUEST)
+            if actor.feature_uses.get('action_surge_used', False):
+                return Response({"error": "Action Surge has already been used (regains after short/long rest)."}, status=status.HTTP_400_BAD_REQUEST)
+            
+            actor.action_used = False
+            actor.attacks_remaining = actor._calculate_attacks_per_action()
+            actor.feature_uses['action_surge_used'] = True
+            actor.save(update_fields=['action_used', 'attacks_remaining', 'feature_uses'])
+            
+            desc = f"⚡ {actor.get_name()} pushes beyond their limits with Action Surge! Gained an additional Action this turn."
+            combat_action = CombatAction.objects.create(
+                combat_session=session,
+                actor=actor,
+                target=actor,
+                action_type='feature',
+                attack_name='Action Surge',
+                hit=True,
+                round_number=session.current_round,
+                turn_number=session.current_turn_index,
+                description=desc
+            )
+            return Response({
+                "message": desc,
+                "action_used": False,
+                "attacks_remaining": actor.attacks_remaining,
+                "action": CombatActionSerializer(combat_action).data
+            })
+
+        elif 'cunning action' in clean_name:
+            char_lvl = (actor.character.level or 1) if actor.character else 1
+            if not actor.is_rogue() and not any('cunning action' in f.name.lower() for f in (actor.character.features.all() if actor.character else [])):
+                return Response({"error": "Cunning Action requires Rogue level 2+."}, status=status.HTTP_400_BAD_REQUEST)
+            if char_lvl < 2 and not any('cunning action' in f.name.lower() for f in (actor.character.features.all() if actor.character else [])):
+                return Response({"error": "Cunning Action requires Rogue level 2+."}, status=status.HTTP_400_BAD_REQUEST)
+            if actor.bonus_action_used:
+                return Response({"error": f"{actor.get_name()} has already used their bonus action this turn."}, status=status.HTTP_400_BAD_REQUEST)
+            
+            subaction = request.data.get('subaction', 'dash').lower().strip()
+            if subaction not in ['dash', 'disengage', 'hide']:
+                return Response({"error": f"Invalid Cunning Action '{subaction}'. Must be Dash, Disengage, or Hide."}, status=status.HTTP_400_BAD_REQUEST)
+            
+            actor.bonus_action_used = True
+            extra_desc = ""
+            if subaction == 'dash':
+                actor.movement_used = max(0, actor.movement_used - actor.speed)
+                extra_desc = f"{actor.get_name()} takes Cunning Action: Dash, gaining additional movement for this turn!"
+            elif subaction == 'disengage':
+                actor.feature_uses['disengaged'] = True
+                extra_desc = f"{actor.get_name()} takes Cunning Action: Disengage. Movement will not provoke opportunity attacks this turn!"
+            elif subaction == 'hide':
+                stealth_mod = actor.get_ability_modifier('DEX')
+                h_roll, h_breakdown = roll_d20()
+                h_total = h_roll + stealth_mod
+                actor.feature_uses['hidden'] = True
+                extra_desc = f"{actor.get_name()} takes Cunning Action: Hide! Stealth roll: {h_breakdown} + {stealth_mod} = {h_total}."
+            
+            actor.save(update_fields=['bonus_action_used', 'movement_used', 'feature_uses'])
+            combat_action = CombatAction.objects.create(
+                combat_session=session,
+                actor=actor,
+                target=actor,
+                action_type='feature',
+                attack_name=f"Cunning Action: {subaction.capitalize()}",
+                hit=True,
+                round_number=session.current_round,
+                turn_number=session.current_turn_index,
+                description=extra_desc
+            )
+            return Response({
+                "message": extra_desc,
+                "bonus_action_used": True,
+                "action": CombatActionSerializer(combat_action).data
+            })
+
         else:
             return Response({"error": f"Feature '{feature_name}' not yet supported for active combat trigger."}, status=status.HTTP_400_BAD_REQUEST)

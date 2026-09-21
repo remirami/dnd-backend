@@ -200,6 +200,18 @@ class CombatPracticeMixin:
                 status=status.HTTP_400_BAD_REQUEST
             )
         
+        if current.current_hp <= 0:
+            next_participant = session.next_turn()
+            serializer = self.get_serializer(session)
+            return Response({
+                "message": f"{current.get_name()} is defeated and skipped.",
+                "actor": current.get_name(),
+                "actor_id": current.id,
+                "actions": [{'type': 'skip', 'message': f"{current.get_name()} is defeated."}],
+                "next_turn": next_participant.get_name() if next_participant else None,
+                "session": serializer.data,
+            })
+        
         try:
             # Resolve the enemy's turn
             actions = resolve_enemy_turn(session, current)

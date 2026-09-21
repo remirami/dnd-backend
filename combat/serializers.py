@@ -57,13 +57,43 @@ class CombatParticipantSerializer(serializers.ModelSerializer):
             }
             data['effective_ac'] = effective_ac
 
-            # Class feature resources for characters (e.g. Lay on Hands pool)
-            data['feature_uses'] = instance.feature_uses or {}
+            # Class feature resources for characters
+            feature_uses = instance.feature_uses or {}
+            data['feature_uses'] = feature_uses
             class_name = getattr(instance.character.character_class, 'name', '').lower()
-            is_paladin = class_name == 'paladin' or instance.character.features.filter(name__iexact='Lay on Hands').exists()
+            char_features = instance.character.features.all()
+            
+            # Paladin features
+            is_paladin = class_name == 'paladin' or any('lay on hands' in f.name.lower() for f in char_features)
+            data['is_paladin'] = is_paladin
             if is_paladin:
                 data['lay_on_hands_pool'] = instance.get_lay_on_hands_pool()
                 data['max_lay_on_hands_pool'] = (instance.character.level or 1) * 5
+
+            # Barbarian features (Rage, Reckless Attack)
+            is_barbarian = class_name == 'barbarian' or any('rage' in f.name.lower() for f in char_features)
+            data['is_barbarian'] = is_barbarian
+            if is_barbarian:
+                data['is_raging'] = instance.is_raging()
+                data['rage_uses_remaining'] = instance.get_rage_uses_remaining()
+                data['max_rage_uses'] = instance.get_max_rage_uses()
+                data['rage_damage_bonus'] = instance.get_rage_damage_bonus()
+                data['reckless_attack_active'] = bool(feature_uses.get('reckless_attack_active', False))
+                data['has_reckless_attack'] = (instance.character.level or 1) >= 2
+
+            # Fighter features (Second Wind, Action Surge)
+            is_fighter = class_name == 'fighter' or any('second wind' in f.name.lower() for f in char_features)
+            data['is_fighter'] = is_fighter
+            if is_fighter:
+                data['second_wind_used'] = bool(feature_uses.get('second_wind_used', False))
+                data['action_surge_used'] = bool(feature_uses.get('action_surge_used', False))
+                data['action_surge_available'] = (instance.character.level or 1) >= 2 and not feature_uses.get('action_surge_used', False)
+
+            # Rogue features (Cunning Action, Sneak Attack)
+            is_rogue = class_name == 'rogue' or any('sneak attack' in f.name.lower() for f in char_features)
+            data['is_rogue'] = is_rogue
+            if is_rogue:
+                data['cunning_action_available'] = (instance.character.level or 1) >= 2
         
         # Add enemy stat block for enemy participants
         enemy = None
@@ -326,6 +356,8 @@ class AttackRequestSerializer(serializers.Serializer):
     attack_name = serializers.CharField(required=False, allow_blank=True)
     advantage = serializers.BooleanField(default=False)
     disadvantage = serializers.BooleanField(default=False)
+    dm_override = serializers.BooleanField(default=False)
+    inspiration = serializers.BooleanField(default=False)
     other_modifiers = serializers.IntegerField(default=0)
 
 

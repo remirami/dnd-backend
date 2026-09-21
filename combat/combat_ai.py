@@ -19,6 +19,13 @@ def resolve_enemy_turn(session, participant):
     """
     actions = []
 
+    # Check if participant is defeated or inactive
+    if participant.current_hp <= 0 or not participant.is_active:
+        return [{
+            'type': 'skip',
+            'message': f"{participant.get_name()} is defeated and cannot act.",
+        }]
+
     # Check if participant is incapacitated
     if participant.is_incapacitated():
         actions.append({
@@ -296,7 +303,10 @@ def _select_attack(attacks, attacker=None, enemy=None):
     archetype = _determine_archetype(attacker, enemy) if attacker else 'skirmisher'
 
     if archetype == 'sniper':
-        ranged = [a for a in attacks if 'ranged' in a.get('action_obj', '').attack_type] if any(a.get('action_obj') and hasattr(a.get('action_obj'), 'attack_type') for a in attacks) else []
+        ranged = [
+            a for a in attacks
+            if a.get('action_obj') and 'ranged' in getattr(a.get('action_obj'), 'attack_type', '')
+        ]
         if ranged:
             return max(ranged, key=lambda a: a['bonus'])
 
@@ -343,16 +353,15 @@ def _execute_special_action(session, attacker, targets, action_obj):
 
         # Apply damage
         damage_taken = (total_damage // 2) if (saved and half_on_save) else (0 if saved else total_damage)
-        target.current_hp = max(0, target.current_hp - damage_taken)
-        if target.current_hp <= 0:
-            target.is_active = False
+        first_dr = action_obj.damage_rolls.first() if action_obj.damage_rolls.exists() else None
+        special_dtype = first_dr.damage_type.name if (first_dr and first_dr.damage_type) else None
+        if damage_taken > 0:
+            target.take_damage(damage_taken, damage_type=special_dtype)
 
         # Apply conditions on failed save
         if not saved and action_obj.conditions_inflicted.exists():
             for c in action_obj.conditions_inflicted.all():
                 target.conditions.add(c)
-
-        target.save()
         status_txt = f"{target.get_name()}: {'Saved' if saved else 'Failed'} (took {damage_taken} dmg)"
         affected_summaries.append(status_txt)
 
@@ -439,10 +448,8 @@ def _execute_attack(session, attacker, target, attack, advantage=False):
 
     if hit:
         damage_amount, damage_type = _parse_and_roll_damage(damage_str, is_critical)
-        target.current_hp = max(0, target.current_hp - damage_amount)
-        target_killed = target.current_hp <= 0
-        if target_killed:
-            target.is_active = False
+        new_hp, conc_broken = target.take_damage(damage_amount, damage_type=damage_type)
+        target_killed = (new_hp <= 0)
 
         # Condition rider (e.g. Wolf bite knock prone)
         if action_obj and action_obj.saving_throw_dc and action_obj.conditions_inflicted.exists():
@@ -453,11 +460,10 @@ def _execute_attack(session, attacker, target, attack, advantage=False):
                     target.conditions.add(c)
                     result['condition_applied'] = c.name
 
-        target.save()
-
         result['damage'] = damage_amount
         result['damage_type'] = damage_type
         result['target_hp_after'] = target.current_hp
+        result['target_killed'] = target_killed
         result['target_killed'] = target_killed
 
     try:

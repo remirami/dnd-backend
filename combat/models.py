@@ -868,20 +868,35 @@ class CombatParticipant(models.Model):
         return base_ac
     
     def take_damage(self, amount, damage_type=None, check_concentration=True):
-        """Apply damage to this participant"""
-        # Check for resistances/immunities
-        if damage_type:
-            # This would check resistances - simplified for now
-            pass
+        """Apply damage to this participant, factoring in resistances (e.g. Rage)"""
+        actual_damage = amount
+        was_resisted = False
         
-        self.current_hp = max(0, self.current_hp - amount)
+        # Barbarian Rage Resistance: resistance to bludgeoning, piercing, slashing damage
+        if self.is_raging():
+            dtype = ''
+            if isinstance(damage_type, str):
+                dtype = damage_type.lower()
+            elif damage_type and hasattr(damage_type, 'name'):
+                dtype = damage_type.name.lower()
+            
+            # Physical damage types or untyped weapon attacks
+            if not dtype or dtype in ['bludgeoning', 'piercing', 'slashing', 'untyped', 'physical']:
+                actual_damage = max(1, amount // 2)
+                was_resisted = True
+
+        self.current_hp = max(0, self.current_hp - actual_damage)
         if self.current_hp <= 0:
             self.is_active = False
+            # Falling unconscious drops Rage
+            if self.is_raging():
+                self.feature_uses['is_raging'] = False
+                self.feature_uses['rage_rounds_left'] = 0
         
         # Check concentration if taking damage while concentrating
         concentration_broken = False
-        if check_concentration and self.is_concentrating and amount > 0:
-            concentration_broken, _, _, _ = self.check_concentration(amount)
+        if check_concentration and self.is_concentrating and actual_damage > 0:
+            concentration_broken, _, _, _ = self.check_concentration(actual_damage)
         
         self.save()
         return self.current_hp, concentration_broken
@@ -889,6 +904,92 @@ class CombatParticipant(models.Model):
     def take_damage_simple(self, amount, damage_type=None):
         """Simple version that doesn't check concentration (for backward compatibility)"""
         return self.take_damage(amount, damage_type, check_concentration=False)[0]
+
+    def is_raging(self):
+        """Check if this participant is currently in a Barbarian Rage"""
+        if not isinstance(self.feature_uses, dict):
+            return False
+        return bool(self.feature_uses.get('is_raging', False))
+
+    def get_max_rage_uses(self):
+        """Get maximum Rage uses per long rest based on Barbarian level"""
+        if not self.character:
+            return 0
+        class_name = getattr(self.character.character_class, 'name', '').lower()
+        has_rage = self.character.features.filter(name__icontains='Rage').exists()
+        if not has_rage and class_name != 'barbarian':
+            return 0
+        lvl = self.character.level or 1
+        if lvl >= 20:
+            return 999  # Unlimited
+        elif lvl >= 17:
+            return 6
+        elif lvl >= 12:
+            return 5
+        elif lvl >= 6:
+            return 4
+        elif lvl >= 3:
+            return 3
+        else:
+            return 2
+
+    def get_rage_uses_remaining(self):
+        """Get remaining Rage uses for this Barbarian"""
+        max_uses = self.get_max_rage_uses()
+        if max_uses <= 0:
+            return 0
+        if not isinstance(self.feature_uses, dict):
+            self.feature_uses = {}
+        return self.feature_uses.get('rage_uses_remaining', max_uses)
+
+    def get_rage_damage_bonus(self):
+        """Get melee damage bonus from active Rage (+2, +3, +4 depending on level)"""
+        if not self.is_raging():
+            return 0
+        lvl = (self.character.level or 1) if self.character else 1
+        if lvl >= 16:
+            return 4
+        elif lvl >= 9:
+            return 3
+        else:
+            return 2
+
+    def is_barbarian(self):
+        """Check if participant is a barbarian or has barbarian features"""
+        if not self.character:
+            return False
+        class_name = getattr(self.character.character_class, 'name', '').lower()
+        return class_name == 'barbarian' or self.character.features.filter(name__icontains='rage').exists()
+
+    def has_reckless_attack(self):
+        """Check if participant has access to Reckless Attack"""
+        if not self.character:
+            return False
+        if self.character.features.filter(name__icontains='reckless attack').exists():
+            return True
+        class_name = getattr(self.character.character_class, 'name', '').lower()
+        return class_name == 'barbarian' and (self.character.level or 1) >= 2
+
+    def is_fighter(self):
+        """Check if participant is a fighter or has fighter features"""
+        if not self.character:
+            return False
+        class_name = getattr(self.character.character_class, 'name', '').lower()
+        return class_name == 'fighter' or self.character.features.filter(name__icontains='second wind').exists()
+
+    def is_rogue(self):
+        """Check if participant is a rogue or has rogue features"""
+        if not self.character:
+            return False
+        class_name = getattr(self.character.character_class, 'name', '').lower()
+        return class_name == 'rogue' or self.character.features.filter(name__icontains='sneak attack').exists()
+
+    def is_paladin(self):
+        """Check if participant is a paladin or has paladin features"""
+        if not self.character:
+            return False
+        class_name = getattr(self.character.character_class, 'name', '').lower()
+        return class_name == 'paladin' or self.character.features.filter(name__icontains='lay on hands').exists()
     
     def get_lay_on_hands_pool(self):
         """Get remaining Lay on Hands pool for Paladin participant"""
@@ -1038,6 +1139,8 @@ class CombatParticipant(models.Model):
         self.reaction_used = False
         self.movement_used = 0
         self.attacks_remaining = self._calculate_attacks_per_action()
+        if self.feature_uses and self.feature_uses.get('reckless_attack_active'):
+            self.feature_uses['reckless_attack_active'] = False
         if self.participant_type == 'enemy':
             self.check_recharges()
         self.save()
