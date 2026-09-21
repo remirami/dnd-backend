@@ -45,41 +45,51 @@ class CombatSession(models.Model):
             return f"Combat: {self.encounter.name} (Round {self.current_round})"
         return f"Practice Combat (Round {self.current_round})"
     
-    def get_current_participant(self):
-        """Get the participant whose turn it is"""
-        participants = self.participants.filter(is_active=True).order_by('-initiative', 'id')
-        if participants.exists() and self.current_turn_index < participants.count():
-            return participants[self.current_turn_index]
-        return None
-    
     def get_initiative_order(self):
         """Get all participants ordered by initiative (highest first)"""
-        return self.participants.filter(is_active=True).order_by('-initiative', 'id')
-    
+        return self.participants.all().order_by('-initiative', 'id')
+
+    def get_current_participant(self):
+        """Get the participant whose turn it is from the stable initiative order"""
+        participants = list(self.get_initiative_order())
+        if participants and 0 <= self.current_turn_index < len(participants):
+            return participants[self.current_turn_index]
+        return None
+
     def next_turn(self):
-        """Advance to the next turn and remove expired conditions"""
-        participants = self.get_initiative_order()
-        if not participants.exists():
+        """Advance to the next turn, skipping defeated enemies, and remove expired conditions"""
+        participants = list(self.get_initiative_order())
+        if not participants:
             return None
         
-        # Reset legendary actions and reactions for all participants at start of new round
+        # Reset legendary actions and reactions for all participants at start of round
         if self.current_turn_index == 0:
             for participant in participants:
                 if participant.legendary_actions_max > 0:
                     participant.reset_legendary_actions()
-                participant.reset_reaction()  # Reactions reset each round
-        
-        self.current_turn_index += 1
-        
-        # If we've gone through all participants, start a new round
-        if self.current_turn_index >= participants.count():
-            self.current_round += 1
-            self.current_turn_index = 0
-            # Reset legendary actions and reactions at start of new round
-            for participant in participants:
-                if participant.legendary_actions_max > 0:
-                    participant.reset_legendary_actions()
-                participant.reset_reaction()  # Reactions reset each round
+                participant.reset_reaction()
+
+        # Advance turn index, wrapping around to new rounds and skipping dead enemies
+        max_steps = len(participants) + 1
+        steps = 0
+        while steps < max_steps:
+            steps += 1
+            self.current_turn_index += 1
+            
+            # If we've gone through all participants, start a new round
+            if self.current_turn_index >= len(participants):
+                self.current_round += 1
+                self.current_turn_index = 0
+                for participant in participants:
+                    if participant.legendary_actions_max > 0:
+                        participant.reset_legendary_actions()
+                    participant.reset_reaction()
+
+            candidate = participants[self.current_turn_index]
+            # Skip dead enemies (player characters at 0 hp still get turns for death saving throws)
+            if candidate.participant_type == 'enemy' and (candidate.current_hp <= 0 or not candidate.is_active):
+                continue
+            break
         
         # Reset action economy for the new turn's participant
         current_participant = self.get_current_participant()
@@ -90,7 +100,7 @@ class CombatSession(models.Model):
         self.remove_expired_conditions()
         
         self.save()
-        return self.get_current_participant()
+        return current_participant
     
     def remove_expired_conditions(self):
         """Remove conditions that have expired"""

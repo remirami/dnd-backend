@@ -538,6 +538,11 @@ class CombatActionMixin:
             attacker.action_used = True
         attacker.save()
         
+        if hasattr(session, '_prefetched_objects_cache'):
+            session._prefetched_objects_cache.clear()
+        fresh_session = self.get_queryset().get(pk=session.pk)
+        session_data = self.get_serializer(fresh_session).data if hasattr(self, 'get_serializer') else CombatSessionSerializer(fresh_session).data
+
         return Response({
             "message": f"{attacker.get_name()} attacks {target.get_name()}",
             "attack_roll": roll,
@@ -573,7 +578,7 @@ class CombatActionMixin:
             },
             "concentration_broken": concentration_broken if hit else False,
             "action": CombatActionSerializer(combat_action).data,
-            "session": self.get_serializer(session).data if hasattr(self, 'get_serializer') else CombatSessionSerializer(session).data
+            "session": session_data
         })
 
     @action(detail=True, methods=['post'])
@@ -809,6 +814,11 @@ class CombatActionMixin:
         if caster.encounter_enemy:
             caster.use_enemy_spell(spell_name)
         
+        if hasattr(session, '_prefetched_objects_cache'):
+            session._prefetched_objects_cache.clear()
+        fresh_session = self.get_queryset().get(pk=session.pk)
+        session_data = self.get_serializer(fresh_session).data if hasattr(self, 'get_serializer') else CombatSessionSerializer(fresh_session).data
+
         return Response({
             "message": desc,
             "spell_name": spell_name,
@@ -827,7 +837,7 @@ class CombatActionMixin:
             "condition_applied": applied_condition.name if applied_condition else None,
             "concentration_started": requires_concentration,
             "action": CombatActionSerializer(combat_action).data,
-            "session": self.get_serializer(session).data if hasattr(self, 'get_serializer') else CombatSessionSerializer(session).data
+            "session": session_data
         })
 
 

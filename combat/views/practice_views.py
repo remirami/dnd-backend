@@ -230,10 +230,19 @@ class CombatPracticeMixin:
             })
         except Exception as e:
             logger.exception(f"AI turn error for {current.get_name()}")
-            return Response(
-                {"error": f"AI turn failed: {e!s}"},
-                status=status.HTTP_500_INTERNAL_SERVER_ERROR
-            )
+            try:
+                next_participant = session.next_turn()
+            except Exception:
+                next_participant = None
+            serializer = self.get_serializer(session)
+            return Response({
+                "message": f"AI turn for {current.get_name()} failed and was skipped: {e!s}",
+                "actor": current.get_name(),
+                "actor_id": current.id,
+                "actions": [{'type': 'skip', 'message': f"{current.get_name()} hesitated and ended their turn."}],
+                "next_turn": next_participant.get_name() if next_participant else None,
+                "session": serializer.data,
+            }, status=status.HTTP_200_OK)
 
     @action(detail=True, methods=['post'])
     def auto_enemy_turns(self, request, pk=None):
