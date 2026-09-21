@@ -27,6 +27,7 @@ from combat.models import (
 from combat.serializers import (
     AttackRequestSerializer,
     CombatActionSerializer,
+    CombatSessionSerializer,
     SpellRequestSerializer,
 )
 from combat.utils import calculate_attack_roll, calculate_damage, calculate_saving_throw, check_hit, roll_d20
@@ -571,7 +572,8 @@ class CombatActionMixin:
                 "damage": damage_breakdown if hit else None
             },
             "concentration_broken": concentration_broken if hit else False,
-            "action": CombatActionSerializer(combat_action).data
+            "action": CombatActionSerializer(combat_action).data,
+            "session": self.get_serializer(session).data if hasattr(self, 'get_serializer') else CombatSessionSerializer(session).data
         })
 
     @action(detail=True, methods=['post'])
@@ -824,7 +826,8 @@ class CombatActionMixin:
             "damage": damage_amount,
             "condition_applied": applied_condition.name if applied_condition else None,
             "concentration_started": requires_concentration,
-            "action": CombatActionSerializer(combat_action).data
+            "action": CombatActionSerializer(combat_action).data,
+            "session": self.get_serializer(session).data if hasattr(self, 'get_serializer') else CombatSessionSerializer(session).data
         })
 
 
