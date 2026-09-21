@@ -228,9 +228,11 @@ def get_multiclass_hit_dice(character):
 
 def get_total_level(character):
     """Get total character level (sum of all class levels)"""
-    class_levels = _get_class_levels(character)
-    if class_levels:
-        return sum(class_level.level for class_level in class_levels)
+    from django.db.models import Sum
+    from .models import CharacterClassLevel
+    total = CharacterClassLevel.objects.filter(character=character).aggregate(Sum('level'))['level__sum']
+    if total is not None and total > 0:
+        return total
     return getattr(character, 'level', 1)
 
 

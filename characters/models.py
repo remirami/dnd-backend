@@ -642,7 +642,26 @@ class CharacterClassLevel(models.Model):
     class Meta:
         unique_together = ['character', 'character_class']
         ordering = ['-level', 'character_class__name']
-    
+
+    def save(self, *args, **kwargs):
+        super().save(*args, **kwargs)
+        if self.character_id:
+            from django.db.models import Sum
+            total = CharacterClassLevel.objects.filter(character_id=self.character_id).aggregate(Sum('level'))['level__sum']
+            if total and total != getattr(self.character, 'level', None):
+                Character.objects.filter(id=self.character_id).update(level=total)
+                self.character.level = total
+
+    def delete(self, *args, **kwargs):
+        char_id = self.character_id
+        res = super().delete(*args, **kwargs)
+        if char_id:
+            from django.db.models import Sum
+            total = CharacterClassLevel.objects.filter(character_id=char_id).aggregate(Sum('level'))['level__sum']
+            if total:
+                Character.objects.filter(id=char_id).update(level=total)
+        return res
+
     def __str__(self):
         return f"{self.character.name} - {self.character_class.get_name_display()} Level {self.level}"
 

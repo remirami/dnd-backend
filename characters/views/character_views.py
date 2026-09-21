@@ -463,6 +463,9 @@ class CharacterViewSet(viewsets.ModelViewSet):
                      # "features_gained" will calculate for the new level.
                      pass
             
+            if hasattr(character, '_prefetched_objects_cache'):
+                character._prefetched_objects_cache.pop('class_levels', None)
+
             # Update total level
             total_level = get_total_level(character)
             character.level = total_level
