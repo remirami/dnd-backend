@@ -256,12 +256,16 @@ class CombatActionSerializer(serializers.ModelSerializer):
     target_name = serializers.SerializerMethodField()
     is_ai = serializers.SerializerMethodField()
     damage_type = DamageTypeSerializer(read_only=True, allow_null=True)
+    damage_type_name = serializers.SerializerMethodField()
     is_advantage = serializers.SerializerMethodField()
     is_disadvantage = serializers.SerializerMethodField()
     
     class Meta:
         model = CombatAction
         fields = "__all__"
+    
+    def get_damage_type_name(self, obj):
+        return obj.damage_type.name if obj.damage_type else None
     
     def get_actor_name(self, obj):
         return obj.actor.get_name() if obj.actor else None
