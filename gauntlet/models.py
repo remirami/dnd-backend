@@ -158,7 +158,7 @@ class GauntletRun(models.Model):
         Called upon wave completion.
         """
         session = self.current_combat_session
-        if not session:
+        if not session or self.status in ['failed', 'completed', 'victory', 'respite']:
             return
 
         # Update turns elapsed

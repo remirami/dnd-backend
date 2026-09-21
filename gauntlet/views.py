@@ -76,14 +76,39 @@ class GauntletViewSet(viewsets.ModelViewSet):
         if not session:
             return Response({"error": "No active combat session for this run."}, status=status.HTTP_400_BAD_REQUEST)
 
+        # Idempotency guard: If run has already ended or is already in respite, return current tally without re-scoring
+        if run.status in ['failed', 'completed', 'victory', 'respite']:
+            return Response({
+                "run_status": run.status,
+                "message": f"Run is already in {run.status} status.",
+                "run": GauntletRunSerializer(run).data
+            })
+
         with transaction.atomic():
-            run.sync_from_combat_session()
+            # First, sync hero vitals
+            for hero in run.snapshot_heroes.all():
+                participant = session.participants.filter(character=hero.character).first()
+                if participant:
+                    hero.current_hp = max(0, participant.current_hp)
+                    hero.is_alive = participant.is_active and participant.current_hp > 0
+                    hero.save()
 
             alive_heroes = run.snapshot_heroes.filter(is_alive=True)
             if not alive_heroes.exists():
+                session.status = 'ended'
+                session.save(update_fields=['status'])
+
                 run.status = 'failed'
                 run.completed_at = timezone.now()
+
+                # Tally enemies killed and turns in this final wave without wave-completion bonus
+                enemies_in_session = session.participants.filter(participant_type='enemy')
+                dead_enemies = enemies_in_session.filter(current_hp=0).count()
+                run.enemies_killed += dead_enemies
+                run.turns_elapsed += session.current_round
+                run.score += (dead_enemies * 150)
                 run.save()
+
                 return Response({
                     "run_status": "failed",
                     "message": "All heroes have fallen in the Gauntlet!",
@@ -95,13 +120,10 @@ class GauntletViewSet(viewsets.ModelViewSet):
             if not active_enemies.exists():
                 # Wave cleared! Transition to respite
                 session.status = 'ended'
-                session.save()
+                session.save(update_fields=['status'])
 
-                if run.current_wave >= run.max_waves and not run.is_endless:
-                    # Completed Wave 10!
-                    run.status = 'respite'  # Allow victory claim or endless transition in respite
-                else:
-                    run.status = 'respite'
+                run.sync_from_combat_session()
+                run.status = 'respite'
                 run.save()
 
                 return Response({
