@@ -19,7 +19,7 @@ from combat.serializers import (
     CombatSessionListSerializer,
     CombatSessionSerializer,
 )
-from combat.utils import roll_d20
+from combat.utils import enforce_user_combat_limits, roll_d20
 from core.throttles import CombatActionThrottle
 from encounters.models import Encounter, EncounterEnemy
 
@@ -101,31 +101,12 @@ class CombatSessionViewSet(
     def perform_create(self, serializer):
         """Handle creation with optional encounter and per-user limits"""
         user = self.request.user if (self.request.user and self.request.user.is_authenticated) else None
-        
-        if user:
-            from rest_framework.exceptions import ValidationError
-            # Automatically delete any abandoned preparing sessions with no participants for this user
-            CombatSession.objects.filter(
-                created_by=user,
-                status='preparing',
-                participants__isnull=True
-            ).delete()
+        auto_delete_oldest = self.request.data.get('auto_delete_oldest', False)
+        if isinstance(auto_delete_oldest, str):
+            auto_delete_oldest = auto_delete_oldest.lower() in ('true', '1')
 
-            user_sessions = CombatSession.objects.filter(created_by=user)
-            if user_sessions.count() >= self.MAX_TOTAL_COMBATS_PER_USER:
-                raise ValidationError(
-                    {"error": f"Combat limit reached. You can have a maximum of {self.MAX_TOTAL_COMBATS_PER_USER} saved combat sessions. Please delete an older session to create a new one."}
-                )
-            active_count = user_sessions.filter(
-                status__in=['preparing', 'active']
-            ).exclude(
-                status='preparing',
-                participants__isnull=True
-            ).count()
-            if active_count >= self.MAX_ACTIVE_COMBATS_PER_USER:
-                raise ValidationError(
-                    {"error": f"Active combat limit reached. You can have a maximum of {self.MAX_ACTIVE_COMBATS_PER_USER} active combat sessions. Please finish or delete an active combat session before starting a new one."}
-                )
+        if user:
+            enforce_user_combat_limits(user, auto_delete_oldest=bool(auto_delete_oldest))
 
         encounter_id = self.request.data.get('encounter_id')
         is_practice = self.request.data.get('is_practice', False)

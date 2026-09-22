@@ -187,6 +187,7 @@ def is_critical_hit(attack_roll: int, advantage: bool = False) -> bool:
     return attack_roll >= 20  # Simplified check
 
 
+
 def apply_resistance(damage: int, resistance_type: str) -> int:
     """
     Apply damage resistance/immunity/vulnerability
@@ -199,4 +200,96 @@ def apply_resistance(damage: int, resistance_type: str) -> int:
     elif resistance_type == 'vulnerability':
         return damage * 2  # Double damage
     return damage
+
+
+MAX_TOTAL_COMBATS_PER_USER = 10
+MAX_ACTIVE_COMBATS_PER_USER = 2
+
+
+def enforce_user_combat_limits(user, auto_delete_oldest: bool = False):
+    """
+    Enforces maximum combat session limits per user:
+      - MAX_ACTIVE_COMBATS_PER_USER = 2
+      - MAX_TOTAL_COMBATS_PER_USER = 10
+    
+    If auto_delete_oldest is True:
+      - If active battles >= 2, deletes the oldest active session(s) until active < 2.
+      - If total battles >= 10, deletes oldest sessions (preferring ended ones first) until total < 10.
+    If auto_delete_oldest is False:
+      - Raises rest_framework.exceptions.ValidationError with specific error codes.
+    """
+    if not user or not user.is_authenticated:
+        return
+
+    from rest_framework.exceptions import ValidationError
+    from combat.models import CombatSession
+    from gauntlet.models import GauntletRun
+
+    # Purge any abandoned empty preparing sessions first
+    CombatSession.objects.filter(
+        created_by=user,
+        status='preparing',
+        participants__isnull=True
+    ).delete()
+
+    user_sessions = CombatSession.objects.filter(created_by=user)
+
+    # 1. Check Active battles limit (max 2)
+    active_sessions_qs = user_sessions.filter(
+        status__in=['preparing', 'active']
+    ).exclude(
+        status='preparing',
+        participants__isnull=True
+    ).order_by('started_at', 'id')
+
+    active_count = active_sessions_qs.count()
+    if active_count >= MAX_ACTIVE_COMBATS_PER_USER:
+        if auto_delete_oldest:
+            excess_active = active_count - MAX_ACTIVE_COMBATS_PER_USER + 1
+            oldest_active_ids = list(active_sessions_qs.values_list('id', flat=True)[:excess_active])
+            GauntletRun.objects.filter(
+                current_combat_session_id__in=oldest_active_ids,
+                status__in=['preparing', 'active', 'respite']
+            ).update(status='failed')
+            CombatSession.objects.filter(id__in=oldest_active_ids).delete()
+        else:
+            raise ValidationError({
+                "error": f"Active combat limit reached. You can have a maximum of {MAX_ACTIVE_COMBATS_PER_USER} active combat sessions. Please finish or delete an active combat session before starting a new one.",
+                "code": "ACTIVE_LIMIT_REACHED",
+                "limit_type": "active",
+                "active_count": active_count,
+                "max_active": MAX_ACTIVE_COMBATS_PER_USER
+            })
+
+    # 2. Check Total battles limit (max 10)
+    user_sessions = CombatSession.objects.filter(created_by=user)
+    total_count = user_sessions.count()
+
+    if total_count >= MAX_TOTAL_COMBATS_PER_USER:
+        if auto_delete_oldest:
+            needed_deletions = total_count - MAX_TOTAL_COMBATS_PER_USER + 1
+            ended_sessions = list(user_sessions.filter(status='ended').order_by('started_at', 'id').values_list('id', flat=True))
+            to_delete_ids = ended_sessions[:needed_deletions]
+
+            if len(to_delete_ids) < needed_deletions:
+                remaining_needed = needed_deletions - len(to_delete_ids)
+                remaining_sessions = list(
+                    user_sessions.exclude(id__in=to_delete_ids).order_by('started_at', 'id').values_list('id', flat=True)[:remaining_needed]
+                )
+                to_delete_ids.extend(remaining_sessions)
+
+            GauntletRun.objects.filter(
+                current_combat_session_id__in=to_delete_ids,
+                status__in=['preparing', 'active', 'respite']
+            ).update(status='failed')
+            CombatSession.objects.filter(id__in=to_delete_ids).delete()
+        else:
+            raise ValidationError({
+                "error": f"Combat archive limit reached. You can have a maximum of {MAX_TOTAL_COMBATS_PER_USER} saved combat sessions. Please delete an older session to create a new one.",
+                "code": "TOTAL_LIMIT_REACHED",
+                "limit_type": "total",
+                "total_count": total_count,
+                "max_total": MAX_TOTAL_COMBATS_PER_USER
+            })
+
 

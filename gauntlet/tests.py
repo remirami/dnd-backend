@@ -145,3 +145,63 @@ class GauntletModelAndServiceTestCase(TestCase):
         next_resp = self.client.post(f'/api/gauntlet/{run_id}/next_wave/')
         self.assertEqual(next_resp.status_code, 200)
         self.assertEqual(next_resp.json()['current_wave'], 2)
+
+        # Verify old session was cleaned up
+        self.assertFalse(CombatSession.objects.filter(id=session_id).exists())
+
+    def test_gauntlet_active_and_total_limits_with_auto_delete(self):
+        """Verify Gauntlet creation obeys active limit (2) and total limit (10), and supports auto_delete_oldest."""
+        # 1. Create 2 active combat sessions for the user
+        s1 = CombatSession.objects.create(created_by=self.user, status='active', is_practice=True)
+        CombatParticipant.objects.create(combat_session=s1, participant_type='character', current_hp=10, max_hp=10, armor_class=12, attacks_remaining=1)
+        s2 = CombatSession.objects.create(created_by=self.user, status='active', is_practice=True)
+        CombatParticipant.objects.create(combat_session=s2, participant_type='character', current_hp=10, max_hp=10, armor_class=12, attacks_remaining=1)
+
+        # Attempt to create a Gauntlet run when 2 active combats exist -> should be rejected
+        resp = self.client.post('/api/gauntlet/', {
+            'name': 'Over Active Limit Gauntlet',
+            'theme': 'colosseum',
+            'character_ids': [self.character.id]
+        }, format='json')
+        self.assertEqual(resp.status_code, 400)
+        self.assertEqual(resp.json().get('code'), 'ACTIVE_LIMIT_REACHED')
+
+        # Now pass auto_delete_oldest=True -> should delete s1 and succeed
+        resp_ok = self.client.post('/api/gauntlet/', {
+            'name': 'Allowed Active Gauntlet',
+            'theme': 'colosseum',
+            'character_ids': [self.character.id],
+            'auto_delete_oldest': True
+        }, format='json')
+        self.assertEqual(resp_ok.status_code, 201)
+        self.assertFalse(CombatSession.objects.filter(id=s1.id).exists())
+
+        # 2. Test total limit (10)
+        # End all active sessions so active limit isn't hit
+        CombatSession.objects.filter(created_by=self.user).update(status='ended')
+
+        # Create enough ended sessions to reach 10
+        current_count = CombatSession.objects.filter(created_by=self.user).count()
+        for _ in range(10 - current_count):
+            CombatSession.objects.create(created_by=self.user, status='ended', is_practice=True)
+
+        self.assertEqual(CombatSession.objects.filter(created_by=self.user).count(), 10)
+
+        # Attempt to create Gauntlet when at total limit -> should be rejected
+        resp_full = self.client.post('/api/gauntlet/', {
+            'name': 'Over Total Limit Gauntlet',
+            'theme': 'colosseum',
+            'character_ids': [self.character.id]
+        }, format='json')
+        self.assertEqual(resp_full.status_code, 400)
+        self.assertEqual(resp_full.json().get('code'), 'TOTAL_LIMIT_REACHED')
+
+        # With auto_delete_oldest=True -> should prune oldest ended session and succeed
+        resp_pruned = self.client.post('/api/gauntlet/', {
+            'name': 'Pruned Gauntlet',
+            'theme': 'colosseum',
+            'character_ids': [self.character.id],
+            'auto_delete_oldest': True
+        }, format='json')
+        self.assertEqual(resp_pruned.status_code, 201)
+        self.assertLessEqual(CombatSession.objects.filter(created_by=self.user).count(), 10)

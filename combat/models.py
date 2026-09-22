@@ -1213,6 +1213,7 @@ class CombatParticipant(models.Model):
                                 return count
                         return 2
             return 1
+        return 1
     
     def reset_reaction(self):
         """Reset reaction at start of round (reactions reset each round)"""

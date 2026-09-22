@@ -281,6 +281,8 @@ class GauntletRun(models.Model):
             self.save()
             return None
 
+        old_session = self.current_combat_session
+
         self.current_wave += 1
         self.status = 'active'
         self.save()
@@ -293,6 +295,13 @@ class GauntletRun(models.Model):
         # Clear one-wave boons
         self.active_boons = []
         self.save()
+
+        # Clean up completed previous wave session to prevent combat archive clutter
+        if old_session and old_session != combat_session:
+            try:
+                old_session.delete()
+            except Exception:
+                pass
 
         return combat_session
 

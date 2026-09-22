@@ -74,6 +74,7 @@ class GauntletRunCreateSerializer(serializers.Serializer):
         max_length=6,
         help_text="IDs of 1 to 6 characters to enter into the Gauntlet"
     )
+    auto_delete_oldest = serializers.BooleanField(required=False, default=False)
 
     def validate_character_ids(self, value):
         user = self.context['request'].user

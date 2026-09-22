@@ -45,6 +45,20 @@ class GauntletViewSet(viewsets.ModelViewSet):
         name = serializer.validated_data.get('name', 'The Gauntlet')
         theme = serializer.validated_data.get('theme', 'colosseum')
         character_ids = serializer.validated_data.get('character_ids', [])
+        auto_delete_oldest = serializer.validated_data.get('auto_delete_oldest', False)
+
+        if request.user and request.user.is_authenticated:
+            from django.db.models import Q
+            GauntletRun.objects.filter(
+                user=request.user,
+                status__in=['preparing', 'active', 'respite'],
+            ).filter(
+                Q(current_combat_session__isnull=True) |
+                Q(current_combat_session__status='ended')
+            ).update(status='failed')
+
+            from combat.utils import enforce_user_combat_limits
+            enforce_user_combat_limits(request.user, auto_delete_oldest=bool(auto_delete_oldest))
 
         with transaction.atomic():
             run = GauntletRun.objects.create(
