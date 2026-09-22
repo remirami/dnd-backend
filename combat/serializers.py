@@ -369,6 +369,7 @@ class SpellRequestSerializer(serializers.Serializer):
     """Serializer for spell casting requests"""
     caster_id = serializers.IntegerField()
     target_id = serializers.IntegerField(required=False, allow_null=True)
+    target_ids = serializers.ListField(child=serializers.IntegerField(), required=False, default=list)
     spell_name = serializers.CharField()
     spell_level = serializers.IntegerField(required=False, allow_null=True)
     save_type = serializers.CharField(required=False, allow_blank=True)  # STR, DEX, etc.
@@ -378,6 +379,9 @@ class SpellRequestSerializer(serializers.Serializer):
     is_healing = serializers.BooleanField(required=False, default=False)
     is_ritual = serializers.BooleanField(required=False, default=False)
     requires_concentration = serializers.BooleanField(required=False, default=False)
+    is_bonus_action = serializers.BooleanField(required=False, default=False)
+    casting_time = serializers.CharField(required=False, allow_blank=True, default='')
+    half_on_save = serializers.BooleanField(required=False, default=True)
 
 
 class CombatLogSerializer(serializers.ModelSerializer):

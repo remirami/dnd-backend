@@ -102,6 +102,11 @@ class CombatActionMixin:
         
         # In 5e rules, advantage/disadvantage are governed by conditions, features, and environment.
         # Manual client overrides are only honored in test mode with dm_override or via inspiration.
+        # Restrict dm_override in gauntlet runs to staff/superusers
+        has_gauntlet = hasattr(session, 'gauntlet_runs') and session.gauntlet_runs.exists()
+        if is_dm_override and has_gauntlet and not (request.user and (request.user.is_staff or request.user.is_superuser)):
+            is_dm_override = False
+
         advantage = bool(data.get('advantage', False)) if is_dm_override else False
         disadvantage = bool(data.get('disadvantage', False)) if is_dm_override else False
         
@@ -156,16 +161,6 @@ class CombatActionMixin:
                 matched_action = resolved_enemy.actions.filter(name__iexact=attack_name).first()
                 if not matched_action:
                     matched_action = resolved_enemy.actions.filter(name__icontains=attack_name.split()[0]).first()
-
-            # Check Pack Tactics
-            if attacker.has_trait('pack_tactics'):
-                ally_count = session.participants.filter(
-                    participant_type='enemy',
-                    is_active=True,
-                    current_hp__gt=0,
-                ).exclude(id=attacker.id).count()
-                if ally_count > 0:
-                    advantage = True
 
             # Handle Saving Throw actions (e.g. Fire Breath)
             if matched_action and matched_action.attack_type == 'saving_throw':
@@ -346,6 +341,44 @@ class CombatActionMixin:
         if target.feature_uses and target.feature_uses.get('reckless_attack_active'):
             advantage = True
             adv_reasons.append("Target is Reckless")
+
+        # Check Pack Tactics
+        if attacker.has_trait('pack_tactics') or (resolved_enemy and hasattr(resolved_enemy, 'traits') and resolved_enemy.traits.filter(name__icontains='pack tactics').exists()):
+            allies = session.participants.filter(
+                participant_type=attacker.participant_type,
+                is_active=True,
+                current_hp__gt=0
+            ).exclude(id=attacker.id)
+            active_allies = [a for a in allies if not a.is_incapacitated()]
+            if active_allies:
+                advantage = True
+                if "Pack Tactics" not in adv_reasons:
+                    adv_reasons.append("Pack Tactics")
+
+        # Flanking check for melee attacks (5e DMG optional tactical rule)
+        if is_melee:
+            allies = session.participants.filter(
+                participant_type=attacker.participant_type,
+                is_active=True,
+                current_hp__gt=0
+            ).exclude(id=attacker.id)
+            active_allies = [a for a in allies if not a.is_incapacitated()]
+            if active_allies:
+                has_coords = (attacker.position_x != 0 or attacker.position_y != 0 or target.position_x != 0 or target.position_y != 0)
+                if has_coords:
+                    # Target reach within ~6ft
+                    flanking_ally = next((
+                        a for a in active_allies
+                        if ((a.position_x - target.position_x) ** 2 + (a.position_y - target.position_y) ** 2) <= 36
+                    ), None)
+                    if flanking_ally:
+                        advantage = True
+                        if "Flanking" not in adv_reasons:
+                            adv_reasons.append("Flanking")
+                else:
+                    advantage = True
+                    if "Flanking" not in adv_reasons:
+                        adv_reasons.append("Flanking")
 
         # Check manual inspiration or DM override if provided
         if has_inspiration:
@@ -599,6 +632,9 @@ class CombatActionMixin:
         data = serializer.validated_data
         caster_id = data['caster_id']
         target_id = data.get('target_id')
+        target_ids = data.get('target_ids') or []
+        if not target_ids and target_id:
+            target_ids = [target_id]
         spell_name = data['spell_name']
         spell_level = data.get('spell_level')
         save_type = data.get('save_type', '')
@@ -608,6 +644,9 @@ class CombatActionMixin:
         is_healing = data.get('is_healing', False)
         is_ritual = data.get('is_ritual', False) or request.data.get('is_ritual', False)
         requires_concentration = data.get('requires_concentration', False) or request.data.get('requires_concentration', False)
+        is_bonus_action = data.get('is_bonus_action', False) or request.data.get('is_bonus_action', False)
+        casting_time = data.get('casting_time', '') or request.data.get('casting_time', '')
+        half_on_save = data.get('half_on_save', True)
         
         try:
             caster = session.participants.get(pk=caster_id)
@@ -637,12 +676,28 @@ class CombatActionMixin:
                 status=status.HTTP_400_BAD_REQUEST
             )
         
-        # Check if caster has action remaining this turn
-        if caster.action_used or caster.attacks_remaining <= 0:
-            return Response(
-                {"error": f"{caster.get_name()} has already used their action this turn"},
-                status=status.HTTP_400_BAD_REQUEST
-            )
+        # 5e Action Economy: Determine if spell uses a Bonus Action or Main Action
+        BONUS_ACTION_SPELLS = {
+            'healing word', 'mass healing word', 'misty step', 'spiritual weapon',
+            'hunter\'s mark', 'hex', 'sanctuary', 'shield of faith', 'divine favor',
+            'expeditious retreat'
+        }
+        clean_spell_name = spell_name.strip().lower()
+        if is_bonus_action or 'bonus' in str(casting_time).lower() or clean_spell_name in BONUS_ACTION_SPELLS:
+            is_bonus_action = True
+
+        if is_bonus_action:
+            if caster.bonus_action_used:
+                return Response(
+                    {"error": f"{caster.get_name()} has already used their bonus action this turn"},
+                    status=status.HTTP_400_BAD_REQUEST
+                )
+        else:
+            if caster.action_used or caster.attacks_remaining <= 0:
+                return Response(
+                    {"error": f"{caster.get_name()} has already used their action this turn"},
+                    status=status.HTTP_400_BAD_REQUEST
+                )
         
         # Validate spell slots for player characters
         if caster.character:
@@ -688,117 +743,179 @@ class CombatActionMixin:
                 status=status.HTTP_400_BAD_REQUEST
             )
         
-        target = None
-        if target_id:
+        targets = []
+        if target_ids:
+            for tid in target_ids:
+                if tid == caster.id:
+                    targets.append(caster)
+                else:
+                    t_obj = session.participants.filter(pk=tid).first()
+                    if t_obj:
+                        targets.append(t_obj)
+        elif target_id:
             if target_id == caster.id:
-                target = caster
+                targets = [caster]
             else:
                 try:
-                    target = session.participants.get(pk=target_id)
+                    targets = [session.participants.get(pk=target_id)]
                 except CombatParticipant.DoesNotExist:
                     return Response(
                         {"error": "Target not found in combat"},
                         status=status.HTTP_404_NOT_FOUND
                     )
         
+        primary_target = targets[0] if targets else None
+
         # Handle concentration
         if requires_concentration:
             caster.is_concentrating = True
             caster.concentration_spell = spell_name
             caster.save(update_fields=['is_concentrating', 'concentration_spell'])
         
-        # Handle saving throw and spell effects
-        save_roll = None
-        save_total = None
-        save_success = None
-        damage_amount = 0
-        healing_amount = 0
-        
-        # Determine if this is a healing spell
         healing_spell_names = {'cure wounds', 'healing word', 'prayer of healing', 'mass cure wounds', 'heal', 'mass heal'}
-        if is_healing or spell_name.strip().lower() in healing_spell_names:
+        if is_healing or clean_spell_name in healing_spell_names:
             is_healing = True
-            if damage_string and target:
-                base_heal, _ = calculate_damage(damage_string, 0, False)
-                healing_amount = max(1, base_heal)
-                target.heal(healing_amount)
-        elif save_type and save_dc and target:
-            save_roll, _save_breakdown = roll_d20()
-            ability_mod = target.get_ability_modifier(save_type)
-            proficiency_bonus = target.character.proficiency_bonus if target.character else 2
-            proficiency = False  # Simplified
-            save_total, _ = calculate_saving_throw(save_roll, ability_mod, proficiency_bonus, proficiency)
-            save_success = save_total >= save_dc
-            
-            # Calculate damage
-            if damage_string:
-                if save_success:
-                    # Half damage on successful save
-                    base_damage, _ = calculate_damage(damage_string, 0, False)
-                    damage_amount = base_damage // 2
+
+        # Roll base damage/healing once (5e rules: AoE rolls damage once and applies to all affected)
+        base_damage = 0
+        damage_roll_breakdown = ""
+        if damage_string:
+            base_damage, damage_roll_breakdown = calculate_damage(damage_string, 0, False)
+
+        target_results = []
+        combat_actions = []
+        from combat.condition_effects import is_auto_fail_save
+
+        for t in targets:
+            t_save_roll = None
+            t_save_total = None
+            t_save_success = None
+            t_damage = 0
+            t_healing = 0
+            t_cond = None
+            concentration_broken = False
+
+            if is_healing:
+                t_healing = max(1, base_damage)
+                t.heal(t_healing)
+            elif save_type and save_dc:
+                if is_auto_fail_save(t, save_type):
+                    t_save_roll = 1
+                    save_mod = t.get_ability_modifier(save_type)
+                    t_save_total = t_save_roll + save_mod
+                    t_save_success = False
                 else:
-                    # Full damage on failed save
-                    damage_amount, _ = calculate_damage(damage_string, 0, False)
-                
-                if damage_amount > 0:
-                    _new_hp, _ = target.take_damage(damage_amount)
-        elif damage_string and target:
-            base_damage, _ = calculate_damage(damage_string, 0, False)
-            damage_amount = base_damage
-            if damage_amount > 0:
-                _new_hp, _ = target.take_damage(damage_amount)
-        
-        # Auto-apply conditions from spell (if not healing, and save failed or no save)
-        applied_condition = None
-        if not is_healing and target and (save_success is False or not save_type):
-            applied_condition = auto_apply_condition_from_spell(target, spell_name)
-            if applied_condition:
-                # Create condition application record
-                ConditionApplication.objects.create(
-                    participant=target,
-                    condition=applied_condition,
-                    applied_round=session.current_round,
-                    applied_turn=session.current_turn_index,
-                    duration_type='spell' if requires_concentration else 'round',
-                    duration_rounds=1 if not requires_concentration else 0,
-                    expires_at_round=session.current_round + 1 if not requires_concentration else None,
-                    source_type='spell',
-                    source_name=spell_name
-                )
-        
-        # Action description
-        if is_healing and target:
-            desc = f"{caster.get_name()} casts {spell_name} on {target.get_name()}, restoring {healing_amount} HP"
-        elif damage_amount > 0 and target:
-            desc = f"{caster.get_name()} casts {spell_name} on {target.get_name()} for {damage_amount} damage"
-        elif target:
-            desc = f"{caster.get_name()} casts {spell_name} on {target.get_name()}"
+                    t_save_roll, _ = roll_d20()
+                    save_mod = t.get_ability_modifier(save_type)
+                    prof_bonus = t.character.proficiency_bonus if t.character else 2
+                    prof = False
+                    if t.character and hasattr(t.character, 'saving_throw_proficiencies') and t.character.saving_throw_proficiencies:
+                        prof = save_type.lower() in [s.lower() for s in t.character.saving_throw_proficiencies]
+                    t_save_total, _ = calculate_saving_throw(t_save_roll, save_mod, prof_bonus, prof)
+                    t_save_success = (t_save_total >= save_dc)
+
+                if base_damage > 0:
+                    if t_save_success:
+                        t_damage = (base_damage // 2) if half_on_save else 0
+                    else:
+                        t_damage = base_damage
+                    if t_damage > 0:
+                        _new_hp, concentration_broken = t.take_damage(t_damage)
+            elif base_damage > 0:
+                t_damage = base_damage
+                _new_hp, concentration_broken = t.take_damage(t_damage)
+
+            # Auto-apply conditions from spell (if not healing, and save failed or no save)
+            if not is_healing and (t_save_success is False or not save_type):
+                t_cond = auto_apply_condition_from_spell(t, spell_name)
+                if t_cond:
+                    ConditionApplication.objects.create(
+                        participant=t,
+                        condition=t_cond,
+                        applied_round=session.current_round,
+                        applied_turn=session.current_turn_index,
+                        duration_type='spell' if requires_concentration else 'round',
+                        duration_rounds=1 if not requires_concentration else 0,
+                        expires_at_round=session.current_round + 1 if not requires_concentration else None,
+                        source_type='spell',
+                        source_name=spell_name
+                    )
+
+            target_results.append({
+                "target_id": t.id,
+                "target_name": t.get_name(),
+                "target_hp": t.current_hp,
+                "save_roll": t_save_roll,
+                "save_total": t_save_total,
+                "save_success": t_save_success,
+                "damage": t_damage,
+                "healing": t_healing,
+                "concentration_broken": concentration_broken,
+                "condition_applied": t_cond.name if t_cond else None,
+            })
+
+            # Create individual action log
+            if is_healing:
+                t_desc = f"{caster.get_name()} casts {spell_name} on {t.get_name()}, restoring {t_healing} HP"
+            elif t_damage > 0:
+                save_str = f" (rolled {t_save_total} vs DC {save_dc} - {'SAVED' if t_save_success else 'FAILED'})" if save_type else ""
+                t_desc = f"{caster.get_name()} casts {spell_name} on {t.get_name()} for {t_damage} damage{save_str}"
+            else:
+                save_str = f" (rolled {t_save_total} vs DC {save_dc} - SAVED, 0 damage)" if save_type else ""
+                t_desc = f"{caster.get_name()} casts {spell_name} on {t.get_name()}{save_str}"
+
+            act = CombatAction.objects.create(
+                combat_session=session,
+                actor=caster,
+                target=t,
+                action_type='spell',
+                attack_name=spell_name,
+                damage_amount=t_damage if t_damage > 0 else None,
+                save_type=save_type if save_type else None,
+                save_dc=save_dc,
+                save_roll=t_save_roll,
+                save_success=t_save_success,
+                round_number=session.current_round,
+                turn_number=session.current_turn_index,
+                description=t_desc
+            )
+            combat_actions.append(act)
+
+        if not targets:
+            act = CombatAction.objects.create(
+                combat_session=session,
+                actor=caster,
+                target=None,
+                action_type='spell',
+                attack_name=spell_name,
+                round_number=session.current_round,
+                turn_number=session.current_turn_index,
+                description=f"{caster.get_name()} casts {spell_name}"
+            )
+            combat_actions.append(act)
+
+        # Mark action economy resource as consumed
+        if is_bonus_action:
+            caster.bonus_action_used = True
+            caster.save(update_fields=['bonus_action_used'])
+        else:
+            caster.action_used = True
+            caster.attacks_remaining = 0
+            caster.save(update_fields=['action_used', 'attacks_remaining'])
+
+        # Action description summary
+        if len(targets) > 1:
+            total_dmg = sum(tr["damage"] for tr in target_results)
+            total_heal = sum(tr["healing"] for tr in target_results)
+            if is_healing:
+                desc = f"{caster.get_name()} casts {spell_name} healing {len(targets)} targets for {total_heal} HP total"
+            else:
+                desc = f"{caster.get_name()} casts {spell_name} hitting {len(targets)} targets for {total_dmg} damage total"
+        elif len(targets) == 1 and combat_actions:
+            desc = combat_actions[0].description
         else:
             desc = f"{caster.get_name()} casts {spell_name}"
 
-        # Create combat action
-        combat_action = CombatAction.objects.create(
-            combat_session=session,
-            actor=caster,
-            target=target,
-            action_type='spell',
-            attack_name=spell_name,
-            damage_amount=damage_amount if damage_amount > 0 else None,
-            save_type=save_type if save_type else None,
-            save_dc=save_dc,
-            save_roll=save_roll,
-            save_success=save_success,
-            round_number=session.current_round,
-            turn_number=session.current_turn_index,
-            description=desc
-        )
-        
-        # Mark action as used and consume turn action
-        caster.action_used = True
-        caster.attacks_remaining = 0
-        caster.save(update_fields=['action_used', 'attacks_remaining'])
-
-        
         # Decrement player character spell slots
         if caster.character and hasattr(caster.character, 'stats') and caster.character.stats:
             if spell_level and spell_level > 0 and not is_ritual:
@@ -819,24 +936,27 @@ class CombatActionMixin:
         fresh_session = self.get_queryset().get(pk=session.pk)
         session_data = self.get_serializer(fresh_session).data if hasattr(self, 'get_serializer') else CombatSessionSerializer(fresh_session).data
 
+        first_tr = target_results[0] if target_results else {}
         return Response({
             "message": desc,
             "spell_name": spell_name,
             "spell_level": spell_level,
-            "target": target.get_name() if target else None,
-            "target_id": target.id if target else None,
-            "target_hp": target.current_hp if target else None,
+            "is_bonus_action": is_bonus_action,
+            "target": primary_target.get_name() if primary_target else None,
+            "target_id": primary_target.id if primary_target else None,
+            "target_hp": primary_target.current_hp if primary_target else None,
+            "target_results": target_results,
             "is_healing": is_healing,
-            "healing_amount": healing_amount,
+            "healing_amount": first_tr.get("healing", 0),
             "save_type": save_type if save_type else None,
             "save_dc": save_dc,
-            "save_roll": save_roll,
-            "save_total": save_total,
-            "save_success": save_success,
-            "damage": damage_amount,
-            "condition_applied": applied_condition.name if applied_condition else None,
+            "save_roll": first_tr.get("save_roll"),
+            "save_total": first_tr.get("save_total"),
+            "save_success": first_tr.get("save_success"),
+            "damage": first_tr.get("damage", 0),
+            "condition_applied": first_tr.get("condition_applied"),
             "concentration_started": requires_concentration,
-            "action": CombatActionSerializer(combat_action).data,
+            "action": CombatActionSerializer(combat_actions[0]).data if combat_actions else None,
             "session": session_data
         })
 
