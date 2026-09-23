@@ -27,6 +27,7 @@ from combat.models import (
 from combat.serializers import (
     AttackRequestSerializer,
     CombatActionSerializer,
+    CombatParticipantSerializer,
     CombatSessionSerializer,
     SpellRequestSerializer,
 )
@@ -297,6 +298,17 @@ class CombatActionMixin:
         elif matched_action and getattr(matched_action, 'attack_type', '') == 'ranged_weapon':
             is_melee = False
 
+        # Check grid reach for melee attacks
+        has_coords = (attacker.position_x != 0 or attacker.position_y != 0 or target.position_x != 0 or target.position_y != 0)
+        if has_coords:
+            reach = attacker.get_reach() if hasattr(attacker, 'get_reach') else 5
+            dist = attacker.get_distance_to(target)
+            if is_melee and dist > reach:
+                return Response(
+                    {"error": f"{target.get_name()} is out of melee reach ({dist} ft away, maximum reach is {reach} ft). Move closer first!"},
+                    status=status.HTTP_400_BAD_REQUEST
+                )
+
         # Check cover before rolling
         cover_bonus = 0
         target_has_full_cover = False
@@ -321,6 +333,24 @@ class CombatActionMixin:
 
         adv_reasons = []
         disadv_reasons = []
+
+        # 5e Close Quarters: Ranged attack while a hostile is within 5 ft incurs disadvantage
+        if has_coords and not is_melee:
+            hostile_adjacent = [
+                opp for opp in session.participants.filter(is_active=True, current_hp__gt=0).exclude(participant_type=attacker.participant_type)
+                if attacker.is_adjacent_to(opp) and not opp.is_incapacitated()
+            ]
+            if hostile_adjacent:
+                disadvantage = True
+                if "Close Quarters (Hostile within 5 ft)" not in disadv_reasons:
+                    disadv_reasons.append("Close Quarters (Hostile within 5 ft)")
+
+        # 5e Dodge Action: Attacks against a dodging target have disadvantage
+        if target.feature_uses and target.feature_uses.get('dodge_active') and not target.is_incapacitated():
+            disadvantage = True
+            if "Target is Dodging" not in disadv_reasons:
+                disadv_reasons.append("Target is Dodging")
+
 
         from combat.condition_effects import evaluate_attack_roll_conditions, is_auto_critical
         cond_adv, cond_disadv, cond_reasons = evaluate_attack_roll_conditions(attacker, target, is_melee=is_melee)
@@ -1457,3 +1487,306 @@ class CombatActionMixin:
 
         else:
             return Response({"error": f"Feature '{feature_name}' not yet supported for active combat trigger."}, status=status.HTTP_400_BAD_REQUEST)
+
+    @action(detail=True, methods=['post'])
+    def move(self, request, pk=None):
+        """
+        Move a combat participant on the tactical battle grid.
+        POST /api/combat/sessions/{id}/move/
+        Request body: { "participant_id": 1, "target_x": 15, "target_y": 10 }
+        """
+        session = self.get_object()
+        if session.status != 'active':
+            return Response({"error": "Combat is not active."}, status=status.HTTP_400_BAD_REQUEST)
+        
+        participant_id = request.data.get('participant_id')
+        target_x = request.data.get('target_x')
+        target_y = request.data.get('target_y')
+        
+        if participant_id is None or target_x is None or target_y is None:
+            return Response({"error": "participant_id, target_x, and target_y are required."}, status=status.HTTP_400_BAD_REQUEST)
+        
+        try:
+            participant = session.participants.get(id=participant_id)
+        except CombatParticipant.DoesNotExist:
+            return Response({"error": "Participant not found."}, status=status.HTTP_404_NOT_FOUND)
+        
+        if not participant.is_active or participant.current_hp <= 0:
+            return Response({"error": f"{participant.get_name()} is defeated and cannot move."}, status=status.HTTP_400_BAD_REQUEST)
+        
+        if participant.is_incapacitated():
+            return Response({"error": f"{participant.get_name()} is {participant.get_incapacitating_condition()} and cannot move."}, status=status.HTTP_400_BAD_REQUEST)
+
+        try:
+            target_x = int(target_x)
+            target_y = int(target_y)
+        except (ValueError, TypeError):
+            return Response({"error": "target_x and target_y must be integers."}, status=status.HTTP_400_BAD_REQUEST)
+
+        # Snap to 5-ft grid
+        target_x = round(target_x / 5.0) * 5
+        target_y = round(target_y / 5.0) * 5
+
+        # Arena bounds (10x8 grid: 0..45 ft in X, 0..35 ft in Y)
+        if target_x < 0 or target_x > 45 or target_y < 0 or target_y > 35:
+            return Response({
+                "error": f"Target coordinates ({target_x}, {target_y}) are out of arena bounds (0-45ft X, 0-35ft Y)."
+            }, status=status.HTTP_400_BAD_REQUEST)
+
+        # Check occupancy by another living combatant
+        occupied = session.participants.filter(
+            position_x=target_x,
+            position_y=target_y,
+            is_active=True,
+            current_hp__gt=0
+        ).exclude(id=participant.id).exists()
+        if occupied:
+            return Response({"error": "Destination square is already occupied."}, status=status.HTTP_400_BAD_REQUEST)
+
+        # Calculate distance moved using 5e Chebyshev metric
+        dist_moved = max(abs(target_x - participant.position_x), abs(target_y - participant.position_y))
+        if dist_moved == 0:
+            return Response({
+                "message": f"{participant.get_name()} is already at ({target_x}, {target_y})",
+                "participant": CombatParticipantSerializer(participant).data,
+                "distance_moved": 0
+            })
+
+        rem_movement = participant.movement_remaining
+        if dist_moved > rem_movement:
+            return Response({
+                "error": f"Not enough movement. Requires {dist_moved} ft, but {participant.get_name()} only has {rem_movement} ft remaining."
+            }, status=status.HTTP_400_BAD_REQUEST)
+
+        # Check Opportunity Attacks
+        # Active conscious enemies that were within 5 ft reach before the move, but are NOT within 5 ft after the move
+        is_disengaged = bool(participant.feature_uses and participant.feature_uses.get('disengaged'))
+        oa_results = []
+        mover_fell_unconscious = False
+
+        if not is_disengaged:
+            enemies = session.participants.filter(
+                is_active=True,
+                current_hp__gt=0
+            ).exclude(participant_type=participant.participant_type)
+
+            for enemy in enemies:
+                if not enemy.can_use_reaction() or enemy.is_incapacitated():
+                    continue
+                old_dist = max(abs(participant.position_x - enemy.position_x), abs(participant.position_y - enemy.position_y))
+                new_dist = max(abs(target_x - enemy.position_x), abs(target_y - enemy.position_y))
+                
+                # If moving out of enemy's 5ft reach
+                if old_dist <= 5 and new_dist > 5:
+                    enemy.use_reaction()
+                    # Execute Opportunity Attack
+                    raw_d20, d20_breakdown = roll_d20()
+                    atk_bonus = 2
+                    dmg_str = "1d6+2"
+                    resolved_enemy = enemy.resolve_enemy()
+                    if resolved_enemy:
+                        melee_act = resolved_enemy.actions.filter(attack_type='melee_weapon').first()
+                        if melee_act:
+                            atk_bonus = melee_act.attack_bonus or 2
+                            dmg_rolls = list(melee_act.damage_rolls.all())
+                            if dmg_rolls:
+                                dmg_str = " + ".join([d.formula for d in dmg_rolls])
+                    elif enemy.character and enemy.character.stats:
+                        atk_bonus = enemy.character.stats.strength_modifier + 2
+                    
+                    total_atk = raw_d20 + atk_bonus
+                    target_ac = participant.calculate_effective_ac() if hasattr(participant, 'calculate_effective_ac') else participant.armor_class
+                    hit = (total_atk >= target_ac or raw_d20 == 20) and raw_d20 != 1
+                    
+                    damage_dealt = 0
+                    if hit:
+                        dmg_amount, _ = calculate_damage(dmg_str, critical=(raw_d20 == 20))
+                        damage_dealt = max(1, dmg_amount)
+                        participant.take_damage(damage_dealt)
+                        if participant.current_hp <= 0:
+                            mover_fell_unconscious = True
+                    
+                    desc = f"⚠️ Opportunity Attack! {enemy.get_name()} strikes at {participant.get_name()}: rolled {total_atk} vs AC {target_ac} ({'HIT for ' + str(damage_dealt) + ' dmg' if hit else 'MISSED'})."
+                    CombatAction.objects.create(
+                        combat_session=session,
+                        actor=enemy,
+                        target=participant,
+                        action_type='opportunity_attack',
+                        hit=hit,
+                        damage_amount=damage_dealt,
+                        round_number=session.current_round,
+                        turn_number=session.current_turn_index,
+                        description=desc
+                    )
+                    oa_results.append({
+                        "attacker": enemy.get_name(),
+                        "hit": hit,
+                        "attack_roll": total_atk,
+                        "damage": damage_dealt,
+                        "target_hp_remaining": participant.current_hp,
+                        "description": desc
+                    })
+                    if mover_fell_unconscious:
+                        break
+
+        # If mover was dropped to 0 HP by an opportunity attack, they collapse at their original tile
+        if not mover_fell_unconscious:
+            participant.position_x = target_x
+            participant.position_y = target_y
+            participant.movement_used += dist_moved
+            participant.save(update_fields=['position_x', 'position_y', 'movement_used'])
+            desc = f"{participant.get_name()} moved {dist_moved} ft to ({target_x} ft, {target_y} ft)."
+        else:
+            participant.movement_used += 5
+            participant.save(update_fields=['movement_used', 'current_hp', 'is_active'])
+            desc = f"{participant.get_name()} attempted to move {dist_moved} ft but was struck down by an opportunity attack at ({participant.position_x} ft, {participant.position_y} ft)!"
+
+        CombatAction.objects.create(
+            combat_session=session,
+            actor=participant,
+            target=participant,
+            action_type='move',
+            round_number=session.current_round,
+            turn_number=session.current_turn_index,
+            description=desc
+        )
+
+        return Response({
+            "message": desc,
+            "participant": CombatParticipantSerializer(participant).data,
+            "opportunity_attacks": oa_results,
+            "session": CombatSessionSerializer(session).data
+        })
+
+    @action(detail=True, methods=['post'])
+    def dash(self, request, pk=None):
+        """
+        Take the Dash action.
+        POST /api/combat/sessions/{id}/dash/
+        Payload: { "participant_id": 1 }
+        """
+        session = self.get_object()
+        if session.status != 'active':
+            return Response({"error": "Combat is not active."}, status=status.HTTP_400_BAD_REQUEST)
+        
+        participant_id = request.data.get('participant_id')
+        try:
+            participant = session.participants.get(id=participant_id)
+        except CombatParticipant.DoesNotExist:
+            return Response({"error": "Participant not found."}, status=status.HTTP_404_NOT_FOUND)
+        
+        if participant.action_used or participant.attacks_remaining <= 0:
+            return Response({"error": f"{participant.get_name()} has already used their action this turn."}, status=status.HTTP_400_BAD_REQUEST)
+        
+        participant.action_used = True
+        participant.attacks_remaining = 0
+        if not participant.feature_uses:
+            participant.feature_uses = {}
+        participant.feature_uses['dash_active'] = True
+        participant.save(update_fields=['action_used', 'attacks_remaining', 'feature_uses'])
+
+        desc = f"{participant.get_name()} takes the Dash action, doubling their movement speed for this turn (+{participant.speed} ft)!"
+        CombatAction.objects.create(
+            combat_session=session,
+            actor=participant,
+            target=participant,
+            action_type='dash',
+            round_number=session.current_round,
+            turn_number=session.current_turn_index,
+            description=desc
+        )
+
+        return Response({
+            "message": desc,
+            "participant": CombatParticipantSerializer(participant).data,
+            "session": CombatSessionSerializer(session).data
+        })
+
+    @action(detail=True, methods=['post'])
+    def disengage(self, request, pk=None):
+        """
+        Take the Disengage action.
+        POST /api/combat/sessions/{id}/disengage/
+        Payload: { "participant_id": 1 }
+        """
+        session = self.get_object()
+        if session.status != 'active':
+            return Response({"error": "Combat is not active."}, status=status.HTTP_400_BAD_REQUEST)
+        
+        participant_id = request.data.get('participant_id')
+        try:
+            participant = session.participants.get(id=participant_id)
+        except CombatParticipant.DoesNotExist:
+            return Response({"error": "Participant not found."}, status=status.HTTP_404_NOT_FOUND)
+        
+        if participant.action_used or participant.attacks_remaining <= 0:
+            return Response({"error": f"{participant.get_name()} has already used their action this turn."}, status=status.HTTP_400_BAD_REQUEST)
+        
+        participant.action_used = True
+        participant.attacks_remaining = 0
+        if not participant.feature_uses:
+            participant.feature_uses = {}
+        participant.feature_uses['disengaged'] = True
+        participant.save(update_fields=['action_used', 'attacks_remaining', 'feature_uses'])
+
+        desc = f"{participant.get_name()} takes the Disengage action! Their movement will not provoke opportunity attacks for the rest of this turn."
+        CombatAction.objects.create(
+            combat_session=session,
+            actor=participant,
+            target=participant,
+            action_type='disengage',
+            round_number=session.current_round,
+            turn_number=session.current_turn_index,
+            description=desc
+        )
+
+        return Response({
+            "message": desc,
+            "participant": CombatParticipantSerializer(participant).data,
+            "session": CombatSessionSerializer(session).data
+        })
+
+    @action(detail=True, methods=['post'])
+    def dodge(self, request, pk=None):
+        """
+        Take the Dodge action.
+        POST /api/combat/sessions/{id}/dodge/
+        Payload: { "participant_id": 1 }
+        """
+        session = self.get_object()
+        if session.status != 'active':
+            return Response({"error": "Combat is not active."}, status=status.HTTP_400_BAD_REQUEST)
+        
+        participant_id = request.data.get('participant_id')
+        try:
+            participant = session.participants.get(id=participant_id)
+        except CombatParticipant.DoesNotExist:
+            return Response({"error": "Participant not found."}, status=status.HTTP_404_NOT_FOUND)
+        
+        if participant.action_used or participant.attacks_remaining <= 0:
+            return Response({"error": f"{participant.get_name()} has already used their action this turn."}, status=status.HTTP_400_BAD_REQUEST)
+        
+        participant.action_used = True
+        participant.attacks_remaining = 0
+        if not participant.feature_uses:
+            participant.feature_uses = {}
+        participant.feature_uses['dodge_active'] = True
+        participant.save(update_fields=['action_used', 'attacks_remaining', 'feature_uses'])
+
+        desc = f"{participant.get_name()} takes the Dodge action! Attacks against them have disadvantage until the start of their next turn."
+        CombatAction.objects.create(
+            combat_session=session,
+            actor=participant,
+            target=participant,
+            action_type='dodge',
+            round_number=session.current_round,
+            turn_number=session.current_turn_index,
+            description=desc
+        )
+
+        return Response({
+            "message": desc,
+            "participant": CombatParticipantSerializer(participant).data,
+            "session": CombatSessionSerializer(session).data
+        })
+

@@ -128,6 +128,31 @@ class CombatSession(models.Model):
                         app.remove('duration_expired')
 
     
+    def initialize_grid_positions(self):
+        """
+        Deploy participants to tactical starting zones on a 10x8 grid (50ft x 40ft).
+        Party on Left (X=10 ft, Y spaced 5..30 ft).
+        Enemies on Right (X=35 ft, Y spaced 5..30 ft).
+        """
+        party = list(self.participants.filter(participant_type='character').order_by('id'))
+        enemies = list(self.participants.filter(participant_type='enemy').order_by('id'))
+        
+        start_y = 5
+        for i, hero in enumerate(party):
+            if hero.position_x == 0 and hero.position_y == 0:
+                hero.position_x = 10
+                hero.position_y = min(35, start_y + (i * 5))
+                hero.save(update_fields=['position_x', 'position_y'])
+
+        start_y = 5
+        for j, enemy in enumerate(enemies):
+            if enemy.position_x == 0 and enemy.position_y == 0:
+                col_x = 35 if j < 7 else 40
+                y_offset = (j % 7) * 5
+                enemy.position_x = col_x
+                enemy.position_y = min(35, start_y + y_offset)
+                enemy.save(update_fields=['position_x', 'position_y'])
+
     def get_or_create_log(self):
         """Get or create combat log for this session"""
         log, _created = CombatLog.objects.get_or_create(combat_session=self)
@@ -601,6 +626,56 @@ class CombatParticipant(models.Model):
     def get_condition_names(self):
         """Return a list of lowercase names of all active conditions."""
         return [c.name.lower() for c in self.conditions.all()]
+
+    @property
+    def speed(self):
+        """Effective movement speed in feet (standard 5e rules)."""
+        if not self.is_active or self.current_hp <= 0:
+            return 0
+        
+        # Conditions that reduce speed to 0
+        zero_speed_conditions = {'grappled', 'restrained', 'paralyzed', 'petrified', 'stunned', 'unconscious'}
+        if hasattr(self, '_prefetched_objects_cache') and 'conditions' in self._prefetched_objects_cache:
+            conds = {c.name.lower() for c in self.conditions.all()}
+        else:
+            conds = {c.lower() for c in self.conditions.values_list('name', flat=True)}
+        
+        if any(c in zero_speed_conditions for c in conds):
+            return 0
+
+        if self.character and hasattr(self.character, 'stats') and self.character.stats:
+            base = self.character.stats.speed or 30
+        elif self.encounter_enemy and self.encounter_enemy.enemy and hasattr(self.encounter_enemy.enemy, 'stats') and self.encounter_enemy.enemy.stats:
+            base = self.encounter_enemy.enemy.stats.speed or 30
+        else:
+            base = 30
+        return base
+
+    @property
+    def movement_remaining(self):
+        """Remaining movement budget in feet for current turn."""
+        base_speed = self.speed
+        dash_bonus = 0
+        if self.feature_uses and self.feature_uses.get('dash_active'):
+            dash_bonus = base_speed
+        total_speed = base_speed + dash_bonus
+        return max(0, total_speed - self.movement_used)
+
+    def get_distance_to(self, other):
+        """
+        Calculate 5e grid distance to another participant in feet.
+        Uses Chebyshev distance: max(|dx|, |dy|) feet.
+        """
+        if not other:
+            return 999
+        dx = abs(self.position_x - other.position_x)
+        dy = abs(self.position_y - other.position_y)
+        return max(dx, dy)
+
+    def is_adjacent_to(self, other):
+        """Check if target is within 5 feet (adjacent square in 5e grid)."""
+        return self.get_distance_to(other) <= 5
+
 
     def save(self, *args, **kwargs):
         is_new = self.pk is None

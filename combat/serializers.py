@@ -25,6 +25,8 @@ class CombatParticipantSerializer(serializers.ModelSerializer):
     def to_representation(self, instance):
         """Add computed fields"""
         data = super().to_representation(instance)
+        data['speed'] = instance.speed
+        data['movement_remaining'] = instance.movement_remaining
         # Add death save status
         if instance.current_hp <= 0:
             data['death_save_status'] = {

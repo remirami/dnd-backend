@@ -179,6 +179,9 @@ class CombatSessionViewSet(
         for participant in participants:
             participant.reset_turn()
         
+        # Deploy participants to tactical grid positions (heroes Left, enemies Right)
+        session.initialize_grid_positions()
+        
         logger.info(f"Combat {pk} started with {participants.count()} participants")
         
         serializer = self.get_serializer(session)
