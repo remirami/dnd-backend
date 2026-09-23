@@ -98,6 +98,16 @@ class CombatSessionViewSet(
             'actions__damage_type',
         ).order_by('-started_at')
     
+    def retrieve(self, request, *args, **kwargs):
+        session = self.get_object()
+        # Auto-initialize tactical grid positions for active combat sessions where participants lack coordinates
+        if session.status == 'active':
+            has_unplaced = session.participants.filter(position_x=0, position_y=0).exists()
+            if has_unplaced:
+                session.initialize_grid_positions()
+        serializer = self.get_serializer(session)
+        return Response(serializer.data)
+
     def perform_create(self, serializer):
         """Handle creation with optional encounter and per-user limits"""
         user = self.request.user if (self.request.user and self.request.user.is_authenticated) else None
