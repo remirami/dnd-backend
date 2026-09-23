@@ -20,6 +20,7 @@ from combat.environmental_effects import (
 from combat.models import (
     CombatAction,
     CombatParticipant,
+    CombatSession,
     ConditionApplication,
     EnvironmentalEffect,
     ParticipantPosition,
@@ -1651,11 +1652,18 @@ class CombatActionMixin:
             description=desc
         )
 
+        # Refetch fresh session from DB so serialized participants contain updated coordinates
+        fresh_session = CombatSession.objects.prefetch_related(
+            'participants',
+            'participants__conditions',
+            'actions',
+        ).get(id=session.id)
+
         return Response({
             "message": desc,
             "participant": CombatParticipantSerializer(participant).data,
             "opportunity_attacks": oa_results,
-            "session": CombatSessionSerializer(session).data
+            "session": CombatSessionSerializer(fresh_session).data
         })
 
     @action(detail=True, methods=['post'])
@@ -1696,10 +1704,11 @@ class CombatActionMixin:
             description=desc
         )
 
+        fresh_session = CombatSession.objects.prefetch_related('participants', 'participants__conditions', 'actions').get(id=session.id)
         return Response({
             "message": desc,
             "participant": CombatParticipantSerializer(participant).data,
-            "session": CombatSessionSerializer(session).data
+            "session": CombatSessionSerializer(fresh_session).data
         })
 
     @action(detail=True, methods=['post'])
@@ -1740,10 +1749,11 @@ class CombatActionMixin:
             description=desc
         )
 
+        fresh_session = CombatSession.objects.prefetch_related('participants', 'participants__conditions', 'actions').get(id=session.id)
         return Response({
             "message": desc,
             "participant": CombatParticipantSerializer(participant).data,
-            "session": CombatSessionSerializer(session).data
+            "session": CombatSessionSerializer(fresh_session).data
         })
 
     @action(detail=True, methods=['post'])
@@ -1784,9 +1794,10 @@ class CombatActionMixin:
             description=desc
         )
 
+        fresh_session = CombatSession.objects.prefetch_related('participants', 'participants__conditions', 'actions').get(id=session.id)
         return Response({
             "message": desc,
             "participant": CombatParticipantSerializer(participant).data,
-            "session": CombatSessionSerializer(session).data
+            "session": CombatSessionSerializer(fresh_session).data
         })
 
