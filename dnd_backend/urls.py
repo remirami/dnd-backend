@@ -87,9 +87,22 @@ router.register(r'merchants', MerchantViewSet, basename='merchant')
 router.register(r'gauntlet', GauntletViewSet, basename='gauntlet')
 
 
+from django.http import JsonResponse
+
+def root_health_view(request):
+    return JsonResponse({
+        'status': 'ok',
+        'message': '5e Tabletop Realm API is running',
+        'docs': '/api/',
+        'admin': '/admin/'
+    })
+
 urlpatterns = [
+    path('', root_health_view, name='root_health'),
     path('admin/', admin.site.urls),
     path('api/auth/', include('authentication.urls')),
+    path('auth/', include('authentication.urls')),  # Fallback alias for direct /auth requests
     path('api/enemies/import/', import_monsters_view, name='import_monsters'),
     path('api/', include(router.urls)),
 ]
+
