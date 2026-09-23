@@ -53,11 +53,13 @@ class CombatSession(models.Model):
         """Get the participant whose turn it is from the stable initiative order"""
         participants = list(self.get_initiative_order())
         if participants and 0 <= self.current_turn_index < len(participants):
-            return participants[self.current_turn_index]
+            p = participants[self.current_turn_index]
+            if p.is_active and p.current_hp > 0:
+                return p
         return None
 
     def next_turn(self):
-        """Advance to the next turn, skipping defeated enemies, and remove expired conditions"""
+        """Advance to the next turn, skipping defeated participants, and remove expired conditions"""
         participants = list(self.get_initiative_order())
         if not participants:
             return None
@@ -69,9 +71,10 @@ class CombatSession(models.Model):
                     participant.reset_legendary_actions()
                 participant.reset_reaction()
 
-        # Advance turn index, wrapping around to new rounds and skipping dead enemies
+        # Advance turn index, wrapping around to new rounds and skipping dead/defeated participants
         max_steps = len(participants) + 1
         steps = 0
+        found_active = False
         while steps < max_steps:
             steps += 1
             self.current_turn_index += 1
@@ -86,10 +89,15 @@ class CombatSession(models.Model):
                     participant.reset_reaction()
 
             candidate = participants[self.current_turn_index]
-            # Skip dead enemies (player characters at 0 hp still get turns for death saving throws)
-            if candidate.participant_type == 'enemy' and (candidate.current_hp <= 0 or not candidate.is_active):
+            # Skip dead/defeated participants (both enemies and player characters at 0 hp or inactive)
+            if candidate.current_hp <= 0 or not candidate.is_active:
                 continue
+            found_active = True
             break
+        
+        if not found_active:
+            self.save()
+            return None
         
         # Reset action economy for the new turn's participant
         current_participant = self.get_current_participant()

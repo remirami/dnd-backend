@@ -73,9 +73,9 @@ class MulticlassingTestCase(TestCase):
             race=self.human_race
         )
         
-        # No multiclass levels
+        # Single class character defaults to their base level (5)
         total = get_total_level(character)
-        self.assertEqual(total, 0)  # Returns 0 if no CharacterClassLevel records
+        self.assertEqual(total, 5)
     
     def test_get_total_level_multiclass(self):
         """Test total level for multiclass character"""

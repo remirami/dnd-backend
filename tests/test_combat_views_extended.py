@@ -187,6 +187,46 @@ class TurnManagementTests(TestCase):
         response = self.client.post(f'/api/combat/sessions/{self.session.id}/next_turn/')
         
         self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+
+    def test_next_turn_skips_dead_character(self):
+        """Test that if a party character dies (0 HP / is_active=False), next_turn skips them"""
+        # Add a 3rd participant with lowest initiative
+        char3 = Character.objects.create(
+            user=self.user,
+            name="Fighter 3",
+            level=5,
+            character_class=self.char1.character_class,
+            race=self.char1.race
+        )
+        participant3 = CombatParticipant.objects.create(
+            combat_session=self.session,
+            participant_type='character',
+            character=char3,
+            initiative=5,
+            current_hp=30,
+            max_hp=30,
+            armor_class=15
+        )
+
+        # Participant 1 (init 20), Participant 2 (init 15), Participant 3 (init 5)
+        # Participant 2 dies during combat
+        self.participant2.current_hp = 0
+        self.participant2.is_active = False
+        self.participant2.save()
+
+        # Turn starts on Participant 1 (index 0)
+        self.session.current_turn_index = 0
+        self.session.save()
+
+        # Advancing turn should skip dead Participant 2 and jump directly to Participant 3
+        response = self.client.post(f'/api/combat/sessions/{self.session.id}/next_turn/')
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        
+        self.session.refresh_from_db()
+        current_p = self.session.get_current_participant()
+        self.assertIsNotNone(current_p)
+        self.assertEqual(current_p.id, participant3.id)
+        self.assertEqual(current_p.character.name, "Fighter 3")
     
     def test_end_combat_success(self):
         """Test ending combat session"""
