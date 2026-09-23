@@ -365,6 +365,8 @@ class AttackRequestSerializer(serializers.Serializer):
     dm_override = serializers.BooleanField(default=False)
     inspiration = serializers.BooleanField(default=False)
     other_modifiers = serializers.IntegerField(default=0)
+    is_ranged = serializers.BooleanField(required=False, default=None, allow_null=True)
+    weapon_slot = serializers.CharField(required=False, default='main_hand', allow_blank=True)
 
 
 class SpellRequestSerializer(serializers.Serializer):

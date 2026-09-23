@@ -133,14 +133,41 @@ class CombatActionMixin:
         
         matched_action = None
         if attacker.character:
-            # Try to get equipped weapon
-            equipped_weapon = attacker.get_equipped_weapon(weapon_slot)
+            # 1. Match weapon by attack_name first if provided
+            if attack_name:
+                matched_ci = attacker.character.character_items.filter(
+                    item__name__iexact=attack_name,
+                    item__weapon__isnull=False
+                ).select_related('item__weapon').first()
+                if not matched_ci:
+                    matched_ci = attacker.character.character_items.filter(
+                        item__name__icontains=attack_name,
+                        item__weapon__isnull=False
+                    ).select_related('item__weapon').first()
+                if matched_ci:
+                    equipped_weapon = matched_ci.item.weapon
+                else:
+                    from items.models import Weapon
+                    equipped_weapon = Weapon.objects.filter(name__iexact=attack_name).first()
+                    if not equipped_weapon:
+                        equipped_weapon = Weapon.objects.filter(name__icontains=attack_name).first()
+
+            # 2. Fall back to equipped weapon in slot
+            if not equipped_weapon:
+                equipped_weapon = attacker.get_equipped_weapon(weapon_slot)
+            if not equipped_weapon and weapon_slot == 'main_hand':
+                equipped_weapon = attacker.get_equipped_weapon('two_handed') or attacker.get_equipped_weapon('off_hand')
+
             if equipped_weapon:
                 attack_name = attack_name or equipped_weapon.name
                 damage_string = equipped_weapon.damage_dice
                 
                 # Check weapon type: ranged weapons use DEX, finesse can use DEX or STR
-                if getattr(equipped_weapon, 'weapon_type', None) in ['simple_ranged', 'martial_ranged']:
+                is_weapon_ranged = (
+                    getattr(equipped_weapon, 'weapon_type', None) in ['simple_ranged', 'martial_ranged'] or
+                    (getattr(equipped_weapon, 'range_normal', 0) or 0) > 5
+                )
+                if is_weapon_ranged:
                     use_ability = 'DEX'
                 elif getattr(equipped_weapon, 'finesse', False):
                     str_mod = attacker.get_ability_modifier('STR')
@@ -294,21 +321,47 @@ class CombatActionMixin:
         
         # Determine melee vs ranged
         is_melee = True
-        if equipped_weapon and getattr(equipped_weapon, 'range_normal', 0) > 5:
+        is_ranged_param = data.get('is_ranged')
+        if is_ranged_param is True:
+            is_melee = False
+        elif is_ranged_param is False:
+            is_melee = True
+        elif equipped_weapon and (
+            getattr(equipped_weapon, 'weapon_type', None) in ['simple_ranged', 'martial_ranged'] or
+            (getattr(equipped_weapon, 'range_normal', 0) or 0) > 5
+        ):
             is_melee = False
         elif matched_action and getattr(matched_action, 'attack_type', '') == 'ranged_weapon':
             is_melee = False
+        elif attack_name:
+            lower_name = attack_name.lower()
+            if any(term in lower_name for term in ['bow', 'crossbow', 'dart', 'sling', 'blowgun', 'ranged', 'ray', 'blast']):
+                is_melee = False
 
-        # Check grid reach for melee attacks
+        # Check grid reach for melee vs ranged
         has_coords = (attacker.position_x != 0 or attacker.position_y != 0 or target.position_x != 0 or target.position_y != 0)
         if has_coords:
-            reach = attacker.get_reach() if hasattr(attacker, 'get_reach') else 5
             dist = attacker.get_distance_to(target)
-            if is_melee and dist > reach:
-                return Response(
-                    {"error": f"{target.get_name()} is out of melee reach ({dist} ft away, maximum reach is {reach} ft). Move closer first!"},
-                    status=status.HTTP_400_BAD_REQUEST
-                )
+            if is_melee:
+                reach = attacker.get_reach() if hasattr(attacker, 'get_reach') else 5
+                if dist > reach:
+                    return Response(
+                        {"error": f"{target.get_name()} is out of melee reach ({dist} ft away, maximum reach is {reach} ft). Move closer first!"},
+                        status=status.HTTP_400_BAD_REQUEST
+                    )
+            else:
+                # 5e Ranged attack distance validation
+                normal_range = (equipped_weapon and getattr(equipped_weapon, 'range_normal', 0)) or 60
+                long_range = (equipped_weapon and getattr(equipped_weapon, 'range_long', 0)) or (normal_range * 3) or 150
+                if dist > long_range:
+                    return Response(
+                        {"error": f"{target.get_name()} is beyond weapon range ({dist} ft away, maximum range is {long_range} ft)."},
+                        status=status.HTTP_400_BAD_REQUEST
+                    )
+                if dist > normal_range:
+                    disadvantage = True
+                    if f"Long Range ({dist} ft > {normal_range} ft)" not in disadv_reasons:
+                        disadv_reasons.append(f"Long Range ({dist} ft > {normal_range} ft)")
 
         # Check cover before rolling
         cover_bonus = 0
@@ -386,7 +439,7 @@ class CombatActionMixin:
                 if "Pack Tactics" not in adv_reasons:
                     adv_reasons.append("Pack Tactics")
 
-        # Flanking check for melee attacks (5e DMG optional tactical rule)
+        # Flanking check for melee attacks (5e optional tactical rule)
         if is_melee:
             allies = session.participants.filter(
                 participant_type=attacker.participant_type,
@@ -395,17 +448,20 @@ class CombatActionMixin:
             ).exclude(id=attacker.id)
             active_allies = [a for a in allies if not a.is_incapacitated()]
             if active_allies:
-                has_coords = (attacker.position_x != 0 or attacker.position_y != 0 or target.position_x != 0 or target.position_y != 0)
                 if has_coords:
-                    # Target reach within ~6ft
-                    flanking_ally = next((
-                        a for a in active_allies
-                        if ((a.position_x - target.position_x) ** 2 + (a.position_y - target.position_y) ** 2) <= 36
-                    ), None)
-                    if flanking_ally:
-                        advantage = True
-                        if "Flanking" not in adv_reasons:
-                            adv_reasons.append("Flanking")
+                    reach = attacker.get_reach() if hasattr(attacker, 'get_reach') else 5
+                    attacker_dist = attacker.get_distance_to(target)
+                    # Attacker must be in melee reach of target to flank
+                    if attacker_dist <= reach:
+                        # At least one ally must also be within 5 ft of target
+                        flanking_ally = next((
+                            a for a in active_allies
+                            if a.get_distance_to(target) <= 5
+                        ), None)
+                        if flanking_ally:
+                            advantage = True
+                            if "Flanking" not in adv_reasons:
+                                adv_reasons.append("Flanking")
                 else:
                     advantage = True
                     if "Flanking" not in adv_reasons:

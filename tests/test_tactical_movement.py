@@ -229,3 +229,77 @@ class TacticalMovementTests(TestCase):
         e1.refresh_from_db()
         self.assertEqual(h1.position_x, 10)
         self.assertEqual(e1.position_x, 35)
+
+    def test_ranged_weapon_attack_at_distance_succeeds(self):
+        """Attacking with a Longbow from 20 ft away must succeed and not be blocked by melee reach."""
+        distant_target = CombatParticipant.objects.create(
+            combat_session=self.session,
+            participant_type='enemy',
+            name='Gremlin Bilge',
+            current_hp=20,
+            max_hp=20,
+            armor_class=12,
+            position_x=30,
+            position_y=10  # Hero is at (10, 10) -> 20 ft away
+        )
+        response = self.client.post(f'/api/combat/sessions/{self.session.id}/attack/', {
+            'attacker_id': self.hero.id,
+            'target_id': distant_target.id,
+            'attack_name': 'Longbow',
+            'is_ranged': True
+        })
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertIn('hit', response.data)
+        # Ranged attacks must NOT receive Flanking advantage even if allies are engaged
+        self.assertNotIn('Flanking', response.data.get('advantage_reasons', []))
+
+    def test_tactical_flanking_only_applies_when_both_attacker_and_ally_adjacent(self):
+        """Tactical flanking requires both the attacker and an ally to be adjacent (<= 5 ft) to target."""
+        target = CombatParticipant.objects.create(
+            combat_session=self.session,
+            participant_type='enemy',
+            name='Target Goblin',
+            current_hp=30,
+            max_hp=30,
+            armor_class=10,
+            position_x=15,
+            position_y=10  # Hero at (10, 10) -> 5 ft away (melee reach)
+        )
+        # Ally 1 is far away at (30, 30) -> 15-20 ft away from target
+        ally = CombatParticipant.objects.create(
+            combat_session=self.session,
+            participant_type='character',
+            character=self.character,
+            current_hp=25,
+            max_hp=25,
+            armor_class=15,
+            position_x=30,
+            position_y=30
+        )
+        # Attack with ally far away -> NO Flanking
+        resp = self.client.post(f'/api/combat/sessions/{self.session.id}/attack/', {
+            'attacker_id': self.hero.id,
+            'target_id': target.id,
+            'attack_name': 'Longsword',
+        })
+        self.assertEqual(resp.status_code, status.HTTP_200_OK)
+        self.assertNotIn('Flanking', resp.data.get('advantage_reasons', []))
+
+        # Reset attacks
+        self.hero.attacks_remaining = 1
+        self.hero.save()
+
+        # Move ally into melee reach: (15, 15) -> adjacent to target (15, 10)
+        ally.position_x = 15
+        ally.position_y = 15
+        ally.save()
+
+        # Attack with ally adjacent -> FLANKING APPLIES!
+        resp2 = self.client.post(f'/api/combat/sessions/{self.session.id}/attack/', {
+            'attacker_id': self.hero.id,
+            'target_id': target.id,
+            'attack_name': 'Longsword',
+        })
+        self.assertEqual(resp2.status_code, status.HTTP_200_OK)
+        self.assertIn('Flanking', resp2.data.get('advantage_reasons', []))
+
