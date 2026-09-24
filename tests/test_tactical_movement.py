@@ -227,8 +227,12 @@ class TacticalMovementTests(TestCase):
 
         h1.refresh_from_db()
         e1.refresh_from_db()
-        self.assertEqual(h1.position_x, 10)
-        self.assertEqual(e1.position_x, 35)
+        # Party deploys to unaligned 20ft cluster on Left flank (X in 5..15 ft, Y in 5..30 ft)
+        self.assertIn(h1.position_x, [5, 10, 15])
+        self.assertTrue(5 <= h1.position_y <= 35)
+        # Enemies deploy to unaligned 20ft cluster on Right flank (X in 30..45 ft, Y in 5..30 ft)
+        self.assertIn(e1.position_x, [30, 35, 40, 45])
+        self.assertTrue(5 <= e1.position_y <= 35)
 
     def test_ranged_weapon_attack_at_distance_succeeds(self):
         """Attacking with a Longbow from 20 ft away must succeed and not be blocked by melee reach."""
@@ -302,4 +306,30 @@ class TacticalMovementTests(TestCase):
         })
         self.assertEqual(resp2.status_code, status.HTTP_200_OK)
         self.assertIn('Flanking', resp2.data.get('advantage_reasons', []))
+
+    def test_ai_moves_towards_target_on_turn(self):
+        """When an enemy is 20 ft away, resolve_enemy_turn moves the enemy within reach before attacking."""
+        from combat.combat_ai import resolve_enemy_turn
+        # Hero at (10, 10), Enemy at (30, 10) -> 20 ft away
+        enemy = CombatParticipant.objects.create(
+            combat_session=self.session,
+            participant_type='enemy',
+            name='Goblin Raider',
+            current_hp=10,
+            max_hp=10,
+            armor_class=12,
+            position_x=30,
+            position_y=10,
+        )
+        actions = resolve_enemy_turn(self.session, enemy)
+        enemy.refresh_from_db()
+
+        # Enemy should have moved from (30, 10) closer to hero at (10, 10)
+        self.assertLess(enemy.position_x, 30)
+        # Enemy should now be within melee reach (5 ft)
+        dist = max(abs(enemy.position_x - self.hero.position_x), abs(enemy.position_y - self.hero.position_y))
+        self.assertLessEqual(dist, 5)
+        # Actions should contain the move action
+        move_actions = [a for a in actions if a.get('type') == 'move']
+        self.assertTrue(len(move_actions) >= 1)
 

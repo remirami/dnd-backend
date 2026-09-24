@@ -67,6 +67,11 @@ def resolve_enemy_turn(session, participant):
     # 1. Check for charged special action (e.g. Breath Weapon)
     special_action = _get_ready_special_action(participant, enemy)
     if special_action:
+        # Move closer if targets are far
+        if targets:
+            move_res = _execute_ai_movement(session, participant, targets[0], {'name': special_action.name})
+            if move_res:
+                actions.append(move_res)
         result = _execute_special_action(session, participant, targets, special_action)
         actions.append(result)
         return actions
@@ -94,6 +99,15 @@ def resolve_enemy_turn(session, participant):
     # 4. Multiattack evaluation
     attack_count, attack_sequence = _check_multiattack(participant, enemy)
 
+    # Tactical movement phase before attacking: close into reach or position
+    initial_target = _select_target(targets, attacker=participant, enemy=enemy)
+    first_attack = _select_attack(enemy_attacks, attacker=participant, enemy=enemy)
+
+    if initial_target and first_attack:
+        move_action = _execute_ai_movement(session, participant, initial_target, first_attack)
+        if move_action:
+            actions.append(move_action)
+
     # If we have an explicit sequence (e.g. [{'action_name': 'Bite', 'count': 1}, {'action_name': 'Claw', 'count': 2}])
     if attack_sequence:
         for seq_item in attack_sequence:
@@ -108,6 +122,10 @@ def resolve_enemy_turn(session, participant):
                 target = _select_target(targets, attacker=participant, enemy=enemy)
                 if not target:
                     break
+                if target.id != initial_target.id:
+                    follow_move = _execute_ai_movement(session, participant, target, matched_atk)
+                    if follow_move:
+                        actions.append(follow_move)
                 res = _execute_attack(session, participant, target, matched_atk, advantage=has_pack_tactics)
                 actions.append(res)
                 targets = [t for t in targets if t.current_hp > 0 and t.is_active]
@@ -117,6 +135,10 @@ def resolve_enemy_turn(session, participant):
             target = _select_target(targets, attacker=participant, enemy=enemy)
             if not target:
                 break
+            if target.id != initial_target.id:
+                follow_move = _execute_ai_movement(session, participant, target, first_attack)
+                if follow_move:
+                    actions.append(follow_move)
             attack = _select_attack(enemy_attacks, attacker=participant, enemy=enemy)
             res = _execute_attack(session, participant, target, attack, advantage=has_pack_tactics)
             actions.append(res)
@@ -569,3 +591,133 @@ def _format_attack_description(result):
         f"{roll_prefix}{attacker} attacks {target} with {attack_name}{pt} but misses "
         f"(rolled {result['roll']}+{result['attack_bonus']}={result['attack_total']} vs AC {result['target_ac']})."
     )
+
+
+LAYOUT_OBSTACLES = {
+    0: [(20, 10), (20, 25), (25, 10), (25, 25)],  # Ancient Pillars
+    1: [(15, 25)],                                  # Watchtower Pylon
+    2: [(25, 15)],                                  # Great Stalagmite
+    3: [(20, 0), (20, 5), (25, 0), (20, 30), (20, 35), (25, 35)],  # Cliffs
+    4: [(20, 5), (25, 30)],                         # Ancient Oaks
+}
+
+
+def _execute_ai_movement(session, participant, target, attack=None):
+    """
+    Tactical movement phase for enemy AI.
+    Calculates whether the enemy needs to close distance (for melee)
+    or reposition (for ranged) and updates participant coordinates on the 10x8 grid.
+    """
+    speed = participant.speed or 30
+    movement_used = participant.movement_used or 0
+    movement_remaining = max(0, speed - movement_used)
+
+    if movement_remaining < 5 or participant.is_incapacitated():
+        return None
+
+    cur_x = participant.position_x or 0
+    cur_y = participant.position_y or 0
+    tgt_x = target.position_x or 0
+    tgt_y = target.position_y or 0
+
+    # Current Chebyshev distance (in feet)
+    cur_dist = max(abs(cur_x - tgt_x), abs(cur_y - tgt_y))
+
+    # Determine melee vs ranged
+    is_melee = True
+    action_obj = attack.get('action_obj') if attack else None
+    if action_obj and getattr(action_obj, 'attack_type', '') in ['ranged_weapon', 'ranged_spell']:
+        is_melee = False
+    elif attack and any(term in attack.get('name', '').lower() for term in ['bow', 'crossbow', 'dart', 'sling', 'blowgun', 'ranged', 'ray', 'blast']):
+        is_melee = False
+
+    reach = participant.get_reach() if hasattr(participant, 'get_reach') else 5
+
+    # If already in melee reach, no need to move
+    if is_melee and cur_dist <= reach:
+        return None
+
+    # If ranged and already in comfortable distance (15..50 ft), no need to move
+    if not is_melee and 15 <= cur_dist <= 50:
+        return None
+
+    # Get occupied positions of other living combatants and blocking obstacles
+    occupied = set(
+        session.participants.filter(is_active=True, current_hp__gt=0)
+        .exclude(id=participant.id)
+        .values_list('position_x', 'position_y')
+    )
+    layout_idx = (session.id or 0) % 5
+    occupied.update(LAYOUT_OBSTACLES.get(layout_idx, []))
+
+    best_tile = None
+    best_dist_to_target = cur_dist
+    best_step_cost = 999
+
+    max_steps = min(8, movement_remaining // 5)
+    for dx in range(-max_steps, max_steps + 1):
+        for dy in range(-max_steps, max_steps + 1):
+            cand_x = cur_x + dx * 5
+            cand_y = cur_y + dy * 5
+
+            # Must be within 10x8 grid (X: 0..45, Y: 0..35)
+            if cand_x < 0 or cand_x > 45 or cand_y < 0 or cand_y > 35:
+                continue
+
+            dist_from_cur = max(abs(cand_x - cur_x), abs(cand_y - cur_y))
+            if dist_from_cur <= 0 or dist_from_cur > movement_remaining:
+                continue
+
+            if (cand_x, cand_y) in occupied:
+                continue
+
+            dist_to_target = max(abs(cand_x - tgt_x), abs(cand_y - tgt_y))
+
+            if is_melee:
+                # Primary goal: get as close to target as possible (ideally <= reach)
+                if dist_to_target < best_dist_to_target or (dist_to_target == best_dist_to_target and dist_from_cur < best_step_cost):
+                    best_dist_to_target = dist_to_target
+                    best_step_cost = dist_from_cur
+                    best_tile = (cand_x, cand_y)
+            else:
+                # Ranged: Seek ~25-35 ft distance, avoid adjacent (<=5 ft)
+                diff_from_ideal = abs(dist_to_target - 30) + (100 if dist_to_target <= 5 else 0)
+                curr_diff = abs(best_dist_to_target - 30) + (100 if best_dist_to_target <= 5 else 0)
+                if diff_from_ideal < curr_diff or (diff_from_ideal == curr_diff and dist_from_cur < best_step_cost):
+                    best_dist_to_target = dist_to_target
+                    best_step_cost = dist_from_cur
+                    best_tile = (cand_x, cand_y)
+
+    if best_tile and best_tile != (cur_x, cur_y) and best_step_cost > 0:
+        old_x, old_y = cur_x, cur_y
+        participant.position_x = best_tile[0]
+        participant.position_y = best_tile[1]
+        participant.movement_used = (participant.movement_used or 0) + best_step_cost
+        participant.save(update_fields=['position_x', 'position_y', 'movement_used'])
+
+        from combat.models import CombatAction
+        try:
+            CombatAction.objects.create(
+                combat_session=session,
+                actor=participant,
+                action_type='move',
+                round_number=session.current_round,
+                turn_number=session.current_turn_index,
+                description=f"{participant.get_name()} moved {best_step_cost} ft towards {target.get_name()}.",
+            )
+        except Exception:
+            pass
+
+        return {
+            'type': 'move',
+            'attacker': participant.get_name(),
+            'target': target.get_name(),
+            'distance': best_step_cost,
+            'from_x': old_x,
+            'from_y': old_y,
+            'to_x': best_tile[0],
+            'to_y': best_tile[1],
+            'message': f"🐾 {participant.get_name()} moved {best_step_cost} ft towards {target.get_name()}.",
+        }
+
+    return None

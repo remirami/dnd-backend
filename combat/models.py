@@ -1,3 +1,4 @@
+import random
 from django.contrib.auth.models import User
 from django.core.validators import MaxValueValidator, MinValueValidator
 from django.db import models
@@ -131,26 +132,60 @@ class CombatSession(models.Model):
     def initialize_grid_positions(self):
         """
         Deploy participants to tactical starting zones on a 10x8 grid (50ft x 40ft).
-        Party on Left (X=10 ft, Y spaced 5..30 ft).
-        Enemies on Right (X=35 ft, Y spaced 5..30 ft).
+        Party on Left flank within an organic, unaligned 20ft area (X: 5-15ft, Y: 10-25ft).
+        Enemies on Right flank within an organic, unaligned 20ft area (X: 30-40ft, Y: 10-25ft).
+        No two participants share a tile.
         """
         party = list(self.participants.filter(participant_type='character').order_by('id'))
         enemies = list(self.participants.filter(participant_type='enemy').order_by('id'))
         
-        start_y = 5
-        for i, hero in enumerate(party):
+        occupied = set(
+            self.participants.filter(position_x__gt=0, position_y__gt=0)
+            .values_list('position_x', 'position_y')
+        )
+
+        # 1. Party candidate starting tiles (20ft x 20ft zone on Left flank)
+        # Cols 1..3 (5..15 ft), Rows 2..5 (10..25 ft), with overflow to 5/30 ft
+        party_candidates = [
+            (x, y)
+            for y in [15, 20, 10, 25, 5, 30]
+            for x in [10, 15, 5]
+            if (x, y) not in occupied
+        ]
+        rng_party = random.Random(self.id or None)
+        rng_party.shuffle(party_candidates)
+
+        for hero in party:
             if hero.position_x == 0 and hero.position_y == 0:
-                hero.position_x = 10
-                hero.position_y = min(35, start_y + (i * 5))
+                if party_candidates:
+                    pos = party_candidates.pop(0)
+                    hero.position_x, hero.position_y = pos
+                    occupied.add(pos)
+                else:
+                    hero.position_x = 10
+                    hero.position_y = min(35, 5 + len(occupied) * 5)
                 hero.save(update_fields=['position_x', 'position_y'])
 
-        start_y = 5
-        for j, enemy in enumerate(enemies):
+        # 2. Enemy candidate starting tiles (20ft x 20ft zone on Right flank)
+        # Cols 6..8 (30..40 ft), Rows 2..5 (10..25 ft), with overflow to 45 ft and 5/30 ft
+        enemy_candidates = [
+            (x, y)
+            for y in [15, 20, 10, 25, 5, 30]
+            for x in [35, 30, 40, 45]
+            if (x, y) not in occupied
+        ]
+        rng_enemy = random.Random((self.id or 0) + 77)
+        rng_enemy.shuffle(enemy_candidates)
+
+        for enemy in enemies:
             if enemy.position_x == 0 and enemy.position_y == 0:
-                col_x = 35 if j < 7 else 40
-                y_offset = (j % 7) * 5
-                enemy.position_x = col_x
-                enemy.position_y = min(35, start_y + y_offset)
+                if enemy_candidates:
+                    pos = enemy_candidates.pop(0)
+                    enemy.position_x, enemy.position_y = pos
+                    occupied.add(pos)
+                else:
+                    enemy.position_x = 35
+                    enemy.position_y = min(35, 5 + len(occupied) * 5)
                 enemy.save(update_fields=['position_x', 'position_y'])
 
     def get_or_create_log(self):
