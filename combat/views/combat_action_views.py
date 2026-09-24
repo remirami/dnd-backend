@@ -945,6 +945,28 @@ class CombatActionMixin:
                 t_damage = base_damage
                 _new_hp, concentration_broken = t.take_damage(t_damage)
 
+            # 5E Thunderwave Forced Movement: Push 10 feet away from caster on failed save
+            pushed_str = ""
+            if clean_spell_name == 'thunderwave' and t_save_success is False and t.is_active and t.current_hp > 0:
+                import math
+                dx = (t.position_x or 0) - (caster.position_x or 0)
+                dy = (t.position_y or 0) - (caster.position_y or 0)
+                dist = math.hypot(dx, dy)
+                if dist == 0:
+                    dx, dy, dist = 1, 0, 1
+                # 10 feet push (2 grid cells)
+                step_x = round((dx / dist) * 10 / 5) * 5
+                step_y = round((dy / dist) * 10 / 5) * 5
+                # Clamp strictly to battlefield grid boundaries [0, 45] feet (10x10 grid: 0 to 45 ft)
+                # Never wrap around or push off the edge!
+                new_x = max(0, min(45, (t.position_x or 0) + step_x))
+                new_y = max(0, min(45, (t.position_y or 0) + step_y))
+                if new_x != t.position_x or new_y != t.position_y:
+                    t.position_x = new_x
+                    t.position_y = new_y
+                    t.save(update_fields=['position_x', 'position_y'])
+                    pushed_str = f" and was blasted 10 ft away to ({new_x} ft, {new_y} ft)"
+
             # Auto-apply conditions from spell (if not healing, and save failed or no save)
             if not is_healing and (t_save_success is False or not save_type):
                 t_cond = auto_apply_condition_from_spell(t, spell_name)
@@ -979,10 +1001,10 @@ class CombatActionMixin:
                 t_desc = f"{caster.get_name()} casts {spell_name} on {t.get_name()}, restoring {t_healing} HP"
             elif t_damage > 0:
                 save_str = f" (rolled {t_save_total} vs DC {save_dc} - {'SAVED' if t_save_success else 'FAILED'})" if save_type else ""
-                t_desc = f"{caster.get_name()} casts {spell_name} on {t.get_name()} for {t_damage} damage{save_str}"
+                t_desc = f"{caster.get_name()} casts {spell_name} on {t.get_name()} for {t_damage} damage{save_str}{pushed_str}"
             else:
                 save_str = f" (rolled {t_save_total} vs DC {save_dc} - SAVED, 0 damage)" if save_type else ""
-                t_desc = f"{caster.get_name()} casts {spell_name} on {t.get_name()}{save_str}"
+                t_desc = f"{caster.get_name()} casts {spell_name} on {t.get_name()}{save_str}{pushed_str}"
 
             act = CombatAction.objects.create(
                 combat_session=session,
