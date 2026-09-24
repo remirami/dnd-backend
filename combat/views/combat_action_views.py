@@ -162,17 +162,18 @@ class CombatActionMixin:
                 attack_name = attack_name or equipped_weapon.name
                 damage_string = equipped_weapon.damage_dice
                 
-                # Check weapon type: ranged weapons use DEX, finesse can use DEX or STR
+                # Check weapon type: ranged weapons use DEX, finesse can use DEX or STR, thrown melee weapons use STR
                 is_weapon_ranged = (
                     getattr(equipped_weapon, 'weapon_type', None) in ['simple_ranged', 'martial_ranged'] or
-                    (getattr(equipped_weapon, 'range_normal', 0) or 0) > 5
+                    'ranged' in str(getattr(equipped_weapon, 'weapon_type', '')).lower() or
+                    ((getattr(equipped_weapon, 'range_normal', 0) or 0) > 5 and not getattr(equipped_weapon, 'thrown', False))
                 )
-                if is_weapon_ranged:
-                    use_ability = 'DEX'
-                elif getattr(equipped_weapon, 'finesse', False):
+                if getattr(equipped_weapon, 'finesse', False):
                     str_mod = attacker.get_ability_modifier('STR')
                     dex_mod = attacker.get_ability_modifier('DEX')
                     use_ability = 'DEX' if dex_mod > str_mod else 'STR'
+                elif is_weapon_ranged:
+                    use_ability = 'DEX'
                 else:
                     use_ability = 'STR'
             else:
@@ -322,14 +323,25 @@ class CombatActionMixin:
         # Determine melee vs ranged
         is_melee = True
         is_ranged_param = data.get('is_ranged')
+        is_weapon_ranged = equipped_weapon and (
+            getattr(equipped_weapon, 'weapon_type', None) in ['simple_ranged', 'martial_ranged'] or
+            'ranged' in str(getattr(equipped_weapon, 'weapon_type', '')).lower() or
+            ((getattr(equipped_weapon, 'range_normal', 0) or 0) > 5 and not getattr(equipped_weapon, 'thrown', False))
+        )
+        is_weapon_thrown = equipped_weapon and getattr(equipped_weapon, 'thrown', False)
+
+        has_coords = (attacker.position_x != 0 or attacker.position_y != 0 or target.position_x != 0 or target.position_y != 0)
+        dist = attacker.get_distance_to(target) if has_coords else 5
+        reach = attacker.get_reach() if hasattr(attacker, 'get_reach') else 5
+
         if is_ranged_param is True:
             is_melee = False
         elif is_ranged_param is False:
             is_melee = True
-        elif equipped_weapon and (
-            getattr(equipped_weapon, 'weapon_type', None) in ['simple_ranged', 'martial_ranged'] or
-            (getattr(equipped_weapon, 'range_normal', 0) or 0) > 5
-        ):
+        elif is_weapon_ranged:
+            is_melee = False
+        elif is_weapon_thrown and has_coords and dist > reach:
+            # Target is beyond melee reach, but weapon is thrown -> make a ranged thrown attack!
             is_melee = False
         elif matched_action and getattr(matched_action, 'attack_type', '') == 'ranged_weapon':
             is_melee = False
@@ -339,11 +351,8 @@ class CombatActionMixin:
                 is_melee = False
 
         # Check grid reach for melee vs ranged
-        has_coords = (attacker.position_x != 0 or attacker.position_y != 0 or target.position_x != 0 or target.position_y != 0)
         if has_coords:
-            dist = attacker.get_distance_to(target)
             if is_melee:
-                reach = attacker.get_reach() if hasattr(attacker, 'get_reach') else 5
                 if dist > reach:
                     return Response(
                         {"error": f"{target.get_name()} is out of melee reach ({dist} ft away, maximum reach is {reach} ft). Move closer first!"},
@@ -351,8 +360,32 @@ class CombatActionMixin:
                     )
             else:
                 # 5e Ranged attack distance validation
-                normal_range = (equipped_weapon and getattr(equipped_weapon, 'range_normal', 0)) or 60
-                long_range = (equipped_weapon and getattr(equipped_weapon, 'range_long', 0)) or (normal_range * 3) or 150
+                normal_range = (equipped_weapon and getattr(equipped_weapon, 'range_normal', 0)) or 0
+                long_range = (equipped_weapon and getattr(equipped_weapon, 'range_long', 0)) or 0
+
+                # 5e Fallback defaults for standard weapons if not populated in DB
+                if normal_range <= 5:
+                    lower_name = (attack_name or '').lower()
+                    if 'javelin' in lower_name:
+                        normal_range, long_range = 30, 120
+                    elif 'shortbow' in lower_name:
+                        normal_range, long_range = 80, 320
+                    elif 'longbow' in lower_name:
+                        normal_range, long_range = 150, 600
+                    elif any(t in lower_name for t in ['dart', 'dagger', 'spear', 'handaxe', 'trident', 'hammer']):
+                        normal_range, long_range = 20, 60
+                    elif 'crossbow' in lower_name and 'heavy' in lower_name:
+                        normal_range, long_range = 100, 400
+                    elif 'crossbow' in lower_name:
+                        normal_range, long_range = 80, 320
+                    elif 'sling' in lower_name:
+                        normal_range, long_range = 30, 120
+                    elif not is_melee:
+                        normal_range, long_range = 60, 180
+
+                if long_range <= 0:
+                    long_range = max(normal_range, normal_range * 3)
+
                 if dist > long_range:
                     return Response(
                         {"error": f"{target.get_name()} is beyond weapon range ({dist} ft away, maximum range is {long_range} ft)."},

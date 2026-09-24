@@ -628,7 +628,7 @@ def _execute_ai_movement(session, participant, target, attack=None):
     action_obj = attack.get('action_obj') if attack else None
     if action_obj and getattr(action_obj, 'attack_type', '') in ['ranged_weapon', 'ranged_spell']:
         is_melee = False
-    elif attack and any(term in attack.get('name', '').lower() for term in ['bow', 'crossbow', 'dart', 'sling', 'blowgun', 'ranged', 'ray', 'blast']):
+    elif attack and any(term in attack.get('name', '').lower() for term in ['bow', 'crossbow', 'dart', 'sling', 'blowgun', 'ranged', 'ray', 'blast', 'javelin']):
         is_melee = False
 
     reach = participant.get_reach() if hasattr(participant, 'get_reach') else 5
