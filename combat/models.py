@@ -1267,7 +1267,12 @@ class CombatParticipant(models.Model):
         self.reaction_used = False
         self.movement_used = 0
         self.attacks_remaining = self._calculate_attacks_per_action()
-        if self.feature_uses and self.feature_uses.get('reckless_attack_active'):
+        if self.feature_uses:
+            self.feature_uses['dash_active'] = False
+            self.feature_uses['disengaged'] = False
+            self.feature_uses['dodging'] = False
+            self.feature_uses['dodge_active'] = False
+            self.feature_uses['hidden'] = False
             self.feature_uses['reckless_attack_active'] = False
         if self.participant_type == 'enemy':
             self.check_recharges()

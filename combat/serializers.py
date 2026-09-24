@@ -27,6 +27,9 @@ class CombatParticipantSerializer(serializers.ModelSerializer):
         data = super().to_representation(instance)
         data['speed'] = instance.speed
         data['movement_remaining'] = instance.movement_remaining
+        data['dashed_this_turn'] = bool(instance.feature_uses and instance.feature_uses.get('dash_active'))
+        data['is_disengaged'] = bool(instance.feature_uses and instance.feature_uses.get('disengaged'))
+        data['is_dodging'] = bool(instance.feature_uses and (instance.feature_uses.get('dodging') or instance.feature_uses.get('dodge_active')))
         # Add death save status
         if instance.current_hp <= 0:
             data['death_save_status'] = {
