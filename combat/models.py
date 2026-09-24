@@ -684,6 +684,17 @@ class CombatParticipant(models.Model):
             base = self.encounter_enemy.enemy.stats.speed or 30
         else:
             base = 30
+
+        try:
+            if isinstance(base, str):
+                import re
+                nums = re.findall(r'\d+', base)
+                base = int(nums[0]) if nums else 30
+            else:
+                base = int(base)
+        except (ValueError, TypeError):
+            base = 30
+
         return base
 
     @property

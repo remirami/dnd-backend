@@ -173,8 +173,14 @@ class CombatExtraAttackRound1Tests(TestCase):
         self.assertEqual(start_resp.status_code, status.HTTP_200_OK)
 
         p_hero.refresh_from_db()
+        p_enemy.refresh_from_db()
         self.assertEqual(p_hero.attacks_remaining, 2, "Hero should have 2 attacks at the start of Round 1")
         self.assertFalse(p_hero.action_used, "Hero action should not be used yet")
+
+        # Position hero adjacent to enemy for melee reach on the tactical grid
+        p_hero.position_x = p_enemy.position_x
+        p_hero.position_y = p_enemy.position_y + 5
+        p_hero.save()
 
         # Attack 1
         atk1_resp = self.client.post(f'/api/combat/sessions/{session.id}/attack/', {
