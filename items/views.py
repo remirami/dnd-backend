@@ -52,6 +52,7 @@ class WeaponViewSet(viewsets.ModelViewSet):
     """API endpoint for weapons"""
     queryset = Weapon.objects.all()
     serializer_class = WeaponSerializer
+    pagination_class = None
     
     def get_queryset(self):
         queryset = Weapon.objects.all()

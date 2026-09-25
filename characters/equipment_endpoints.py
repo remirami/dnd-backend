@@ -51,10 +51,12 @@ def add_equipment_endpoints_to_viewset(cls):
         
         character = self.get_object()
         selections = request.data.get('selections', {})
+        selected_weapons = request.data.get('selected_weapons', [])
+        include_shield = request.data.get('include_shield', False)
         
-        if not selections:
+        if not selections and not selected_weapons:
             return Response(
-                {"error": "selections are required"},
+                {"error": "selections or selected_weapons are required"},
                 status=status.HTTP_400_BAD_REQUEST
             )
         
@@ -70,12 +72,36 @@ def add_equipment_endpoints_to_viewset(cls):
         
         items_to_add = []
         
+        # Add custom selected starting weapons
+        if selected_weapons:
+            for w in selected_weapons:
+                w_name = w if isinstance(w, str) else w.get('name')
+                w_qty = 1 if isinstance(w, str) else w.get('quantity', 1)
+                if w_name:
+                    items_to_add.append({'name': w_name, 'quantity': w_qty})
+                    w_lower = w_name.lower()
+                    if 'crossbow' in w_lower:
+                        items_to_add.append({'name': 'Crossbow Bolt', 'quantity': 20})
+                    elif 'bow' in w_lower and 'crossbow' not in w_lower:
+                        items_to_add.append({'name': 'Arrow', 'quantity': 20})
+                    elif 'sling' in w_lower:
+                        items_to_add.append({'name': 'Sling Bullet', 'quantity': 20})
+                    elif 'blowgun' in w_lower:
+                        items_to_add.append({'name': 'Blowgun Needle', 'quantity': 50})
+        
+        if include_shield:
+            items_to_add.append({'name': 'Shield', 'quantity': 1})
+        
         # Process each choice
         for choice in equipment_data['choices']:
             choice_num = choice['choice_number']
             selected_option = selections.get(str(choice_num))
+            is_weapon_choice = 'weapon' in choice.get('description', '').lower()
             
             if not selected_option:
+                # If custom weapons were selected and this is a weapon choice, skip validation
+                if selected_weapons and is_weapon_choice:
+                    continue
                 return Response(
                     {"error": f"Missing selection for choice {choice_num}"},
                     status=status.HTTP_400_BAD_REQUEST
@@ -183,8 +209,23 @@ def add_equipment_endpoints_to_viewset(cls):
                 # Try to find the item
                 item = Item.objects.filter(name__iexact=item_name).first()
                 if not item:
-                    failed_items.append(item_name)
-                    continue
+                    # If this is ammunition, auto-create under Adventuring Gear
+                    if any(ammo_kw in item_name.lower() for ammo_kw in ['arrow', 'bolt', 'bullet', 'needle']):
+                        from items.models import ItemCategory
+                        gear_cat, _ = ItemCategory.objects.get_or_create(name="Adventuring Gear")
+                        item, _ = Item.objects.get_or_create(
+                            name=item_name,
+                            defaults={
+                                'description': f"Ammunition ({item_name})",
+                                'category': gear_cat,
+                                'weight': 0.05,
+                                'value': 1,
+                                'rarity': 'common',
+                            }
+                        )
+                    else:
+                        failed_items.append(item_name)
+                        continue
                 
                 # Add to character inventory
                 CharacterItem.objects.create(
