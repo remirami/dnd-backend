@@ -123,6 +123,14 @@ class GauntletViewSet(viewsets.ModelViewSet):
                 run.score += (dead_enemies * 150)
                 run.save()
 
+                for hero in run.snapshot_heroes.all():
+                    if hero.character and hasattr(hero.character, 'stats') and hero.character.stats:
+                        stats = hero.character.stats
+                        if stats.expended_spell_slots or stats.ki_points_used:
+                            stats.expended_spell_slots = {}
+                            stats.ki_points_used = 0
+                            stats.save(update_fields=['expended_spell_slots', 'ki_points_used'])
+
                 return Response({
                     "run_status": "failed",
                     "message": "All heroes have fallen in the Gauntlet!",
@@ -222,6 +230,14 @@ class GauntletViewSet(viewsets.ModelViewSet):
         run.score += 5000
         run.save()
 
+        for hero in run.snapshot_heroes.all():
+            if hero.character and hasattr(hero.character, 'stats') and hero.character.stats:
+                stats = hero.character.stats
+                if stats.expended_spell_slots or stats.ki_points_used:
+                    stats.expended_spell_slots = {}
+                    stats.ki_points_used = 0
+                    stats.save(update_fields=['expended_spell_slots', 'ki_points_used'])
+
         return Response({
             "message": "Victory claimed! High score recorded.",
             "run": GauntletRunSerializer(run).data
@@ -257,6 +273,14 @@ class GauntletViewSet(viewsets.ModelViewSet):
             if run.current_combat_session and run.current_combat_session.status != 'ended':
                 run.current_combat_session.status = 'ended'
                 run.current_combat_session.save(update_fields=['status'])
+
+            for hero in run.snapshot_heroes.all():
+                if hero.character and hasattr(hero.character, 'stats') and hero.character.stats:
+                    stats = hero.character.stats
+                    if stats.expended_spell_slots or stats.ki_points_used:
+                        stats.expended_spell_slots = {}
+                        stats.ki_points_used = 0
+                        stats.save(update_fields=['expended_spell_slots', 'ki_points_used'])
         return Response({"message": "Run abandoned.", "run": GauntletRunSerializer(run).data})
 
     @action(detail=False, methods=['get'])

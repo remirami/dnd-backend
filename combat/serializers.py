@@ -90,15 +90,26 @@ class CombatParticipantSerializer(serializers.ModelSerializer):
             is_fighter = class_name == 'fighter' or any('second wind' in f.name.lower() for f in char_features)
             data['is_fighter'] = is_fighter
             if is_fighter:
+                fighter_level = instance.character.level or 1
+                has_action_surge = fighter_level >= 2 or any('action surge' in f.name.lower() for f in char_features)
+                data['has_action_surge'] = has_action_surge
                 data['second_wind_used'] = bool(feature_uses.get('second_wind_used', False))
-                data['action_surge_used'] = bool(feature_uses.get('action_surge_used', False))
-                data['action_surge_available'] = (instance.character.level or 1) >= 2 and not feature_uses.get('action_surge_used', False)
+                if has_action_surge:
+                    data['action_surge_used'] = bool(feature_uses.get('action_surge_used', False))
+                    data['action_surge_available'] = not feature_uses.get('action_surge_used', False)
+                else:
+                    data['action_surge_used'] = False
+                    data['action_surge_available'] = None
 
             # Rogue features (Cunning Action, Sneak Attack)
             is_rogue = class_name == 'rogue' or any('sneak attack' in f.name.lower() for f in char_features)
             data['is_rogue'] = is_rogue
             if is_rogue:
-                data['cunning_action_available'] = (instance.character.level or 1) >= 2
+                rogue_level = instance.character.level or 1
+                has_cunning_action = rogue_level >= 2 or any('cunning action' in f.name.lower() for f in char_features)
+                data['has_cunning_action'] = has_cunning_action
+                data['cunning_action_available'] = has_cunning_action
+
         
         # Add enemy stat block for enemy participants
         enemy = None

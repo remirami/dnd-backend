@@ -132,6 +132,17 @@ class CombatSessionViewSet(
             except Encounter.DoesNotExist:
                 from rest_framework.exceptions import ValidationError
                 raise ValidationError({"encounter_id": "Encounter not found"})
+
+    def perform_destroy(self, instance):
+        # Reset spell slots / points for participants if deleted while active
+        for participant in instance.participants.all():
+            if participant.character and hasattr(participant.character, 'stats') and participant.character.stats:
+                stats = participant.character.stats
+                if stats.expended_spell_slots or stats.ki_points_used:
+                    stats.expended_spell_slots = {}
+                    stats.ki_points_used = 0
+                    stats.save(update_fields=['expended_spell_slots', 'ki_points_used'])
+        super().perform_destroy(instance)
     
     @action(detail=True, methods=['post'])
     def start(self, request, pk=None):
@@ -500,10 +511,30 @@ class CombatSessionViewSet(
         session.status = 'ended'
         session.ended_at = timezone.now()
         session.save()
+
+        # Reset spell slots / points and combat feature resources for participating characters
+        for participant in session.participants.all():
+            if participant.character and hasattr(participant.character, 'stats') and participant.character.stats:
+                stats = participant.character.stats
+                stats.expended_spell_slots = {}
+                stats.ki_points_used = 0
+                stats.save(update_fields=['expended_spell_slots', 'ki_points_used'])
+
+            # Reset enemy spell slots if applicable
+            if participant.encounter_enemy:
+                participant.reset_enemy_spell_slots()
+
+            # Reset participant combat states and feature uses
+            if participant.feature_uses:
+                participant.feature_uses = {}
+                participant.save(update_fields=['feature_uses'])
         
         # Generate combat log
         log = session.generate_log()
         
+        if hasattr(session, '_prefetched_objects_cache'):
+            session._prefetched_objects_cache.clear()
+
         serializer = self.get_serializer(session)
         return Response({
             "message": "Combat ended",

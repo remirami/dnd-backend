@@ -64,10 +64,14 @@ class CharacterRaceViewSet(viewsets.ReadOnlyModelViewSet):
 
     def get_queryset(self):
         queryset = CharacterRace.objects.all()
+        if self.action == 'retrieve':
+            return queryset
         ruleset = self.request.query_params.get('ruleset', '2014')
         
         if ruleset == '2024':
             return queryset.filter(source_ruleset__in=['2024', 'all'])
+        elif ruleset == 'all':
+            return queryset
         else:
             return queryset.filter(source_ruleset__in=['2014', 'all'])
 
@@ -79,12 +83,17 @@ class CharacterBackgroundViewSet(viewsets.ReadOnlyModelViewSet):
 
     def get_queryset(self):
         queryset = CharacterBackground.objects.all()
+        if self.action == 'retrieve':
+            return queryset
         ruleset = self.request.query_params.get('ruleset', '2014')
         
         if ruleset == '2024':
             return queryset.filter(source_ruleset__in=['2024', 'all'])
+        elif ruleset == 'all':
+            return queryset
         else:
             return queryset.filter(source_ruleset__in=['2014', 'all'])
+
 
 
 class CharacterStatsViewSet(viewsets.ModelViewSet):

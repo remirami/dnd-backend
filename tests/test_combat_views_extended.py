@@ -258,6 +258,26 @@ class TurnManagementTests(TestCase):
         self.assertIn('log_id', response.data)
         self.assertIsNotNone(response.data['log_id'])
 
+    def test_end_combat_resets_spell_points_and_slots(self):
+        """Test ending combat resets expended spell slots and ki points"""
+        stats = self.participant1.character.stats
+        stats.expended_spell_slots = {"1": 2, "2": 1}
+        stats.ki_points_used = 3
+        stats.save()
+
+        self.participant1.feature_uses = {"action_surge_used": True}
+        self.participant1.save()
+
+        response = self.client.post(f'/api/combat/sessions/{self.session.id}/end/')
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+
+        stats.refresh_from_db()
+        self.assertEqual(stats.expended_spell_slots, {})
+        self.assertEqual(stats.ki_points_used, 0)
+
+        self.participant1.refresh_from_db()
+        self.assertEqual(self.participant1.feature_uses, {})
+
 
 class AttackTests(TestCase):
     """Test attack endpoint"""
