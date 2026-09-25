@@ -31,7 +31,7 @@ class GauntletViewSet(viewsets.ModelViewSet):
         qs = GauntletRun.objects.prefetch_related(
             'snapshot_heroes',
             'snapshot_heroes__character'
-        ).select_related('current_combat_session')
+        ).select_related('current_combat_session').order_by('-started_at')
 
         if user and user.is_authenticated and not user.is_staff:
             return qs.filter(user=user)
@@ -245,6 +245,19 @@ class GauntletViewSet(viewsets.ModelViewSet):
             "message": "Entered Endless Overtime! Push for the ultimate high score.",
             "run": GauntletRunSerializer(run).data
         })
+
+    @action(detail=True, methods=['post'])
+    def abandon(self, request, pk=None):
+        """Abandon an active Gauntlet run."""
+        run = self.get_object()
+        if run.status in ['preparing', 'active', 'respite', 'ready_for_wave']:
+            run.status = 'failed'
+            run.completed_at = timezone.now()
+            run.save(update_fields=['status', 'completed_at'])
+            if run.current_combat_session and run.current_combat_session.status != 'ended':
+                run.current_combat_session.status = 'ended'
+                run.current_combat_session.save(update_fields=['status'])
+        return Response({"message": "Run abandoned.", "run": GauntletRunSerializer(run).data})
 
     @action(detail=False, methods=['get'])
     def leaderboard(self, request):

@@ -315,17 +315,33 @@ class CombatSessionListSerializer(serializers.ModelSerializer):
     is_active = serializers.SerializerMethodField()
     encounter = EncounterSerializer(read_only=True, allow_null=True)
     participants = CombatParticipantSummarySerializer(many=True, read_only=True)
+    gauntlet_run = serializers.SerializerMethodField()
 
     class Meta:
         model = CombatSession
         fields = [
             'id', 'status', 'status_display', 'is_active', 'current_round',
             'current_turn_index', 'started_at', 'ended_at', 'is_practice',
-            'encounter', 'participants'
+            'encounter', 'participants', 'gauntlet_run'
         ]
 
     def get_is_active(self, obj):
         return obj.status == 'active'
+
+    def get_gauntlet_run(self, obj):
+        gr = obj.gauntlet_runs.first() if hasattr(obj, 'gauntlet_runs') else None
+        if gr:
+            return {
+                'id': gr.id,
+                'name': gr.name,
+                'theme': gr.theme,
+                'current_wave': gr.current_wave,
+                'max_waves': gr.max_waves,
+                'status': gr.status,
+                'score': gr.score,
+                'is_endless': gr.is_endless,
+            }
+        return None
 
 
 class CombatSessionSerializer(serializers.ModelSerializer):
@@ -338,6 +354,7 @@ class CombatSessionSerializer(serializers.ModelSerializer):
     current_participant = serializers.SerializerMethodField()
     initiative_order = serializers.SerializerMethodField()
     actions = CombatActionSerializer(many=True, read_only=True)
+    gauntlet_run = serializers.SerializerMethodField()
     
     class Meta:
         model = CombatSession
@@ -356,6 +373,21 @@ class CombatSessionSerializer(serializers.ModelSerializer):
     def get_initiative_order(self, obj):
         order = obj.get_initiative_order()
         return CombatParticipantSerializer(order, many=True).data
+
+    def get_gauntlet_run(self, obj):
+        gr = obj.gauntlet_runs.first() if hasattr(obj, 'gauntlet_runs') else None
+        if gr:
+            return {
+                'id': gr.id,
+                'name': gr.name,
+                'theme': gr.theme,
+                'current_wave': gr.current_wave,
+                'max_waves': gr.max_waves,
+                'status': gr.status,
+                'score': gr.score,
+                'is_endless': gr.is_endless,
+            }
+        return None
 
 
 class AttackRequestSerializer(serializers.Serializer):
