@@ -695,7 +695,8 @@ class CombatParticipant(models.Model):
         except (ValueError, TypeError):
             base = 30
 
-        return base
+        speed_penalty = (self.feature_uses or {}).get('speed_penalty', 0)
+        return max(0, base - speed_penalty)
 
     @property
     def movement_remaining(self):
@@ -1007,22 +1008,80 @@ class CombatParticipant(models.Model):
         return base_ac
     
     def take_damage(self, amount, damage_type=None, check_concentration=True):
-        """Apply damage to this participant, factoring in resistances (e.g. Rage)"""
+        """
+        Apply damage to this participant, factoring in:
+        1. Barbarian Rage resistance (bludgeoning/piercing/slashing)
+        2. EnemyResistance model (resistance/immunity/vulnerability by damage type)
+        3. CharacterResistance model (racial/class/item resistances)
+        
+        Returns (current_hp, concentration_broken).
+        Sets self.last_resistance_info to a dict with details, or None.
+        """
+        from combat.utils import apply_resistance
+        
         actual_damage = amount
         was_resisted = False
+        self.last_resistance_info = None
         
-        # Barbarian Rage Resistance: resistance to bludgeoning, piercing, slashing damage
+        # Normalize damage type name for comparisons
+        dtype_name = ''
+        if isinstance(damage_type, str):
+            dtype_name = damage_type.lower()
+        elif damage_type and hasattr(damage_type, 'name'):
+            dtype_name = damage_type.name.lower()
+        
+        # 1. Barbarian Rage Resistance: resistance to bludgeoning, piercing, slashing damage
         if self.is_raging():
-            dtype = ''
-            if isinstance(damage_type, str):
-                dtype = damage_type.lower()
-            elif damage_type and hasattr(damage_type, 'name'):
-                dtype = damage_type.name.lower()
-            
             # Physical damage types or untyped weapon attacks
-            if not dtype or dtype in ['bludgeoning', 'piercing', 'slashing', 'untyped', 'physical']:
+            if not dtype_name or dtype_name in ['bludgeoning', 'piercing', 'slashing', 'untyped', 'physical']:
                 actual_damage = max(1, amount // 2)
                 was_resisted = True
+                self.last_resistance_info = {
+                    'type': 'resistance',
+                    'source': 'Barbarian Rage',
+                    'damage_type': dtype_name or 'physical',
+                    'original_damage': amount,
+                    'actual_damage': actual_damage,
+                }
+        
+        # 2. Check EnemyResistance (for enemy targets taking damage)
+        if not was_resisted and dtype_name and self.encounter_enemy:
+            try:
+                enemy = self.encounter_enemy.enemy
+                resistance = enemy.resistances.filter(
+                    damage_type__name__iexact=dtype_name
+                ).first()
+                if resistance:
+                    actual_damage = apply_resistance(actual_damage, resistance.resistance_type)
+                    was_resisted = True
+                    self.last_resistance_info = {
+                        'type': resistance.resistance_type,
+                        'source': f'{enemy.name}',
+                        'damage_type': dtype_name,
+                        'original_damage': amount,
+                        'actual_damage': actual_damage,
+                    }
+            except Exception:
+                pass  # Graceful fallback — don't block damage on lookup errors
+        
+        # 3. Check CharacterResistance (for PC targets taking damage)
+        if not was_resisted and dtype_name and self.character:
+            try:
+                resistance = self.character.resistances.filter(
+                    damage_type__name__iexact=dtype_name
+                ).first()
+                if resistance:
+                    actual_damage = apply_resistance(actual_damage, resistance.resistance_type)
+                    was_resisted = True
+                    self.last_resistance_info = {
+                        'type': resistance.resistance_type,
+                        'source': resistance.source or 'Character',
+                        'damage_type': dtype_name,
+                        'original_damage': amount,
+                        'actual_damage': actual_damage,
+                    }
+            except Exception:
+                pass  # Graceful fallback
 
         self.current_hp = max(0, self.current_hp - actual_damage)
         if self.current_hp <= 0:
@@ -1285,6 +1344,7 @@ class CombatParticipant(models.Model):
             self.feature_uses['dodge_active'] = False
             self.feature_uses['hidden'] = False
             self.feature_uses['reckless_attack_active'] = False
+            self.feature_uses['shield_spell_active'] = False
         if self.participant_type == 'enemy':
             self.check_recharges()
         self.save()

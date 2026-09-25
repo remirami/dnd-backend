@@ -375,6 +375,11 @@ class CombatReactionMixin:
         if reaction_type == 'spell':
             spell_name = request.data.get('spell_name', 'Unknown Spell')
             description = request.data.get('description', f"{participant.get_name()} casts {spell_name} as a reaction")
+            if str(spell_name).strip().lower() == 'shield':
+                if not participant.feature_uses:
+                    participant.feature_uses = {}
+                participant.feature_uses['shield_spell_active'] = True
+                participant.save(update_fields=['feature_uses'])
         else:
             ability_name = request.data.get('ability_name', 'Unknown Ability')
             description = request.data.get('description', f"{participant.get_name()} uses {ability_name} as a reaction")

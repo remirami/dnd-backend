@@ -101,7 +101,7 @@ def resolve_enemy_turn(session, participant):
 
     # Tactical movement phase before attacking: close into reach or position
     initial_target = _select_target(targets, attacker=participant, enemy=enemy)
-    first_attack = _select_attack(enemy_attacks, attacker=participant, enemy=enemy)
+    first_attack = _select_attack(enemy_attacks, attacker=participant, enemy=enemy, target=initial_target)
 
     if initial_target and first_attack:
         move_action = _execute_ai_movement(session, participant, initial_target, first_attack)
@@ -116,7 +116,7 @@ def resolve_enemy_turn(session, participant):
             # Find matching attack
             matched_atk = next((a for a in enemy_attacks if a['name'].lower() == atk_name.lower()), None)
             if not matched_atk:
-                matched_atk = _select_attack(enemy_attacks)
+                matched_atk = _select_attack(enemy_attacks, attacker=participant, enemy=enemy, target=initial_target)
 
             for _ in range(count):
                 target = _select_target(targets, attacker=participant, enemy=enemy)
@@ -139,7 +139,7 @@ def resolve_enemy_turn(session, participant):
                 follow_move = _execute_ai_movement(session, participant, target, first_attack)
                 if follow_move:
                     actions.append(follow_move)
-            attack = _select_attack(enemy_attacks, attacker=participant, enemy=enemy)
+            attack = _select_attack(enemy_attacks, attacker=participant, enemy=enemy, target=target)
             res = _execute_attack(session, participant, target, attack, advantage=has_pack_tactics)
             actions.append(res)
             targets = [t for t in targets if t.current_hp > 0 and t.is_active]
@@ -317,10 +317,73 @@ def _select_target(targets, attacker=None, enemy=None):
     return best_target or random.choice(targets)
 
 
-def _select_attack(attacks, attacker=None, enemy=None):
-    """Select the best attack considering archetype and bonus."""
+def _parse_action_range(action_obj, default_reach=5):
+    """
+    Parse (normal_range, max_range, is_melee) from EnemyAction.reach_or_range.
+    Examples:
+      - '5 ft.' -> (5, 5, True)
+      - '10 ft.' -> (10, 10, True)
+      - '60/120 ft.' -> (60, 120, False)
+      - '30 ft.' -> (30, 30, False/True depending on attack_type)
+    """
+    if not action_obj:
+        return default_reach, default_reach, True
+    
+    reach_str = getattr(action_obj, 'reach_or_range', '') or ''
+    attack_type = getattr(action_obj, 'attack_type', '') or ''
+    is_melee = 'melee' in attack_type or ('ranged' not in attack_type and 'spell' not in attack_type)
+    
+    numbers = [int(n) for n in re.findall(r'\d+', reach_str)]
+    if len(numbers) >= 2:
+        return numbers[0], numbers[1], False
+    elif len(numbers) == 1:
+        val = numbers[0]
+        return val, val, is_melee
+    
+    return default_reach, default_reach, is_melee
+
+
+def _check_action_range(attacker, target, action_obj, default_reach=5):
+    """
+    Check if target is within reach/range of the action.
+    Returns (in_range, is_long_range, dist, max_range).
+    """
+    if not attacker or not target:
+        return True, False, 5, 5
+    has_coords = (attacker.position_x != 0 or attacker.position_y != 0 or target.position_x != 0 or target.position_y != 0)
+    if not has_coords:
+        return True, False, 5, 5
+    
+    dist = attacker.get_distance_to(target)
+    normal_r, max_r, is_melee = _parse_action_range(action_obj, default_reach=default_reach)
+    
+    if dist > max_r:
+        return False, False, dist, max_r
+    if not is_melee and dist > normal_r:
+        return True, True, dist, max_r
+    return True, False, dist, max_r
+
+
+def _select_attack(attacks, attacker=None, enemy=None, target=None):
+    """Select the best attack considering archetype, bonus, and target range."""
     if not attacks:
         return None
+
+    # If target is provided and coordinates exist, prioritize attacks in range
+    if attacker and target:
+        has_coords = (attacker.position_x != 0 or attacker.position_y != 0 or target.position_x != 0 or target.position_y != 0)
+        if has_coords:
+            in_range_attacks = []
+            for a in attacks:
+                act = a.get('action_obj')
+                in_range, _, _, _ = _check_action_range(
+                    attacker, target, act,
+                    default_reach=attacker.get_reach() if hasattr(attacker, 'get_reach') else 5
+                )
+                if in_range:
+                    in_range_attacks.append(a)
+            if in_range_attacks:
+                attacks = in_range_attacks
 
     archetype = _determine_archetype(attacker, enemy) if attacker else 'skirmisher'
 
@@ -338,6 +401,7 @@ def _select_attack(attacks, attacker=None, enemy=None):
             return max(spells, key=lambda a: a['bonus'])
 
     return max(attacks, key=lambda a: a['bonus'])
+
 
 
 
@@ -359,6 +423,18 @@ def _execute_special_action(session, attacker, targets, action_obj):
             total_damage += max(0, roll_sum)
     else:
         total_damage = random.randint(10, 25)
+
+    # Filter targets within reach_or_range if coordinates exist
+    if action_obj and getattr(action_obj, 'reach_or_range', None):
+        range_match = re.search(r'(\d+)', action_obj.reach_or_range)
+        if range_match:
+            max_r = int(range_match.group(1))
+            valid_targets = []
+            for t in targets:
+                has_coords = (attacker.position_x != 0 or attacker.position_y != 0 or t.position_x != 0 or t.position_y != 0)
+                if not has_coords or attacker.get_distance_to(t) <= max_r:
+                    valid_targets.append(t)
+            targets = valid_targets
 
     affected_summaries = []
 
@@ -382,8 +458,10 @@ def _execute_special_action(session, attacker, targets, action_obj):
 
         # Apply conditions on failed save
         if not saved and action_obj.conditions_inflicted.exists():
+            from combat.condition_effects import is_condition_immune
             for c in action_obj.conditions_inflicted.all():
-                target.conditions.add(c)
+                if not is_condition_immune(target, c.name):
+                    target.conditions.add(c)
         status_txt = f"{target.get_name()}: {'Saved' if saved else 'Failed'} (took {damage_taken} dmg)"
         affected_summaries.append(status_txt)
 
@@ -427,8 +505,63 @@ def _execute_attack(session, attacker, target, attack, advantage=False):
     damage_str = attack['damage']
     action_obj = attack.get('action_obj')
 
+    in_range, is_long_range, dist, max_r = _check_action_range(
+        attacker, target, action_obj,
+        default_reach=attacker.get_reach() if hasattr(attacker, 'get_reach') else 5
+    )
+    if not in_range:
+        result = {
+            'type': 'attack',
+            'attacker': attacker.get_name(),
+            'attacker_id': attacker.id,
+            'target': target.get_name(),
+            'target_id': target.id,
+            'attack_name': attack_name,
+            'roll': 0,
+            'attack_bonus': attack_bonus,
+            'attack_total': 0,
+            'target_ac': target.armor_class,
+            'hit': False,
+            'critical': False,
+            'fumble': False,
+            'out_of_range': True,
+            'damage': 0,
+            'damage_type': '',
+            'target_hp_before': target.current_hp,
+            'target_hp_after': target.current_hp,
+            'target_killed': False,
+            'condition_applied': None,
+            'pack_tactics': False,
+            'is_advantage': False,
+            'is_disadvantage': False,
+            'roll_breakdown': f"Out of range ({dist} ft > {max_r} ft)",
+        }
+        try:
+            CombatAction.objects.create(
+                combat_session=session,
+                actor=attacker,
+                target=target,
+                action_type='attack',
+                attack_name=attack_name,
+                attack_roll=None,
+                round_number=session.current_round,
+                turn_number=session.current_turn_index,
+                hit=False,
+                damage_amount=0,
+                description=f"{attacker.get_name()} cannot reach {target.get_name()} with {attack_name} ({dist} ft away, max range {max_r} ft)."
+            )
+        except Exception:
+            pass
+        return result
+
+    # Determine if melee or ranged
+    _, _, is_melee = _parse_action_range(action_obj, default_reach=attacker.get_reach() if hasattr(attacker, 'get_reach') else 5)
+
     # Condition-based advantage and disadvantage
-    cond_adv, cond_disadv, _ = evaluate_attack_roll_conditions(attacker, target, is_melee=True)
+    cond_adv, cond_disadv, _ = evaluate_attack_roll_conditions(attacker, target, is_melee=is_melee)
+    if is_long_range:
+        cond_disadv = True
+
     eff_adv = (advantage or cond_adv) and not cond_disadv
     eff_disadv = cond_disadv and not (advantage or cond_adv)
 
@@ -439,7 +572,7 @@ def _execute_attack(session, attacker, target, attack, advantage=False):
     is_fumble = (roll == 1)
     target_ac = target.armor_class
     hit = is_critical or (not is_fumble and attack_total >= target_ac)
-    if hit and is_auto_critical(attacker, target, is_melee=True):
+    if hit and is_auto_critical(attacker, target, is_melee=is_melee):
         is_critical = True
 
     result = {
@@ -478,9 +611,11 @@ def _execute_attack(session, attacker, target, attack, advantage=False):
             save_mod = target.get_ability_modifier(action_obj.saving_throw_ability or 'STR')
             s_roll, _ = roll_d20()
             if (s_roll + save_mod) < action_obj.saving_throw_dc:
+                from combat.condition_effects import is_condition_immune
                 for c in action_obj.conditions_inflicted.all():
-                    target.conditions.add(c)
-                    result['condition_applied'] = c.name
+                    if not is_condition_immune(target, c.name):
+                        target.conditions.add(c)
+                        result['condition_applied'] = c.name
 
         result['damage'] = damage_amount
         result['damage_type'] = damage_type
@@ -565,6 +700,9 @@ def _format_attack_description(result):
     roll_bd = result.get('roll_breakdown', '')
     roll_prefix = f"{roll_bd} | " if roll_bd else ""
 
+    if result.get('out_of_range'):
+        return f"{roll_prefix}{attacker} tries to attack {target} with {attack_name}, but target is out of range!"
+
     if result['fumble']:
         return f"{roll_prefix}{attacker} attacks {target} with {attack_name}{pt} but fumbles! (rolled 1)"
 
@@ -623,22 +761,24 @@ def _execute_ai_movement(session, participant, target, attack=None):
     # Current Chebyshev distance (in feet)
     cur_dist = max(abs(cur_x - tgt_x), abs(cur_y - tgt_y))
 
-    # Determine melee vs ranged
-    is_melee = True
+    # Determine melee vs ranged and reach
     action_obj = attack.get('action_obj') if attack else None
-    if action_obj and getattr(action_obj, 'attack_type', '') in ['ranged_weapon', 'ranged_spell']:
+    normal_r, max_r, is_melee = _parse_action_range(
+        action_obj,
+        default_reach=participant.get_reach() if hasattr(participant, 'get_reach') else 5
+    )
+    if not action_obj and attack and any(term in attack.get('name', '').lower() for term in ['bow', 'crossbow', 'dart', 'sling', 'blowgun', 'ranged', 'ray', 'blast', 'javelin']):
         is_melee = False
-    elif attack and any(term in attack.get('name', '').lower() for term in ['bow', 'crossbow', 'dart', 'sling', 'blowgun', 'ranged', 'ray', 'blast', 'javelin']):
-        is_melee = False
+        normal_r, max_r = 60, 120
 
-    reach = participant.get_reach() if hasattr(participant, 'get_reach') else 5
+    reach = normal_r if is_melee else 5
 
     # If already in melee reach, no need to move
     if is_melee and cur_dist <= reach:
         return None
 
-    # If ranged and already in comfortable distance (15..50 ft), no need to move
-    if not is_melee and 15 <= cur_dist <= 50:
+    # If ranged and already in comfortable distance (15..normal_r ft), no need to move
+    if not is_melee and 15 <= cur_dist <= min(max(15, normal_r), 50):
         return None
 
     # Get occupied positions of other living combatants and blocking obstacles

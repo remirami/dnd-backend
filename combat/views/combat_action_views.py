@@ -5,12 +5,13 @@ Contains the CombatActionMixin with attack, cast_spell, and saving_throw actions
 """
 import logging
 import random
+import re
 
 from rest_framework import status
 from rest_framework.decorators import action
 from rest_framework.response import Response
 
-from combat.condition_effects import auto_apply_condition_from_spell
+from combat.condition_effects import auto_apply_condition_from_spell, is_condition_immune
 from combat.environmental_effects import (
     calculate_cover_ac_bonus,
     get_lighting_attack_modifier,
@@ -319,6 +320,9 @@ class CombatActionMixin:
                     proficiency = True
                     damage_ability_mod = ability_mod
                     damage_string = "1d6"
+
+        adv_reasons = []
+        disadv_reasons = []
         
         # Determine melee vs ranged
         is_melee = True
@@ -417,9 +421,6 @@ class CombatActionMixin:
                 {"error": f"{target.get_name()} has full cover and cannot be targeted"},
                 status=status.HTTP_400_BAD_REQUEST
             )
-
-        adv_reasons = []
-        disadv_reasons = []
 
         # 5e Close Quarters: Ranged attack while a hostile is within 5 ft incurs disadvantage
         if has_coords and not is_melee:
@@ -638,6 +639,7 @@ class CombatActionMixin:
                     damage_breakdown += f" (+{rage_bonus} Rage)"
 
             _new_hp, concentration_broken = target.take_damage(damage_amount, damage_type=attack_damage_type)
+            attack_resistance_info = getattr(target, 'last_resistance_info', None)
 
             # Check condition riders on hit (e.g. Wolf bite knock prone)
             if matched_action and matched_action.saving_throw_dc and matched_action.conditions_inflicted.exists():
@@ -648,6 +650,9 @@ class CombatActionMixin:
                 if (r_roll + t_mod) < rider_dc:
                     cond_names = []
                     for c in matched_action.conditions_inflicted.all():
+                        if is_condition_immune(target, c.name):
+                            damage_breakdown += f" | Target is IMMUNE to {c.name}!"
+                            continue
                         target.conditions.add(c)
                         cond_names.append(c.name)
                     if cond_names:
@@ -714,6 +719,7 @@ class CombatActionMixin:
             "advantage_reasons": adv_reasons,
             "disadvantage_reasons": disadv_reasons,
             "damage": damage_amount if hit else 0,
+            "resistance_info": attack_resistance_info if hit else None,
             "target_hp": target.current_hp,
             "attacks_remaining": attacker.attacks_remaining,
             "environmental_effects": {
@@ -886,11 +892,254 @@ class CombatActionMixin:
         
         primary_target = targets[0] if targets else None
 
+        # Resolve spell metadata from central spell library
+        spell_damage_type = None
+        spell_obj = None
+        try:
+            from spells.models import Spell
+            spell_obj = Spell.objects.filter(name__iexact=spell_name).first()
+            if spell_obj:
+                spell_dmg = spell_obj.damage_progression.first()
+                if spell_dmg and spell_dmg.damage_type:
+                    spell_damage_type = spell_dmg.damage_type
+        except Exception:
+            pass  # Graceful fallback if spell library unavailable
+
+        # Magic Missile 5e target normalization: 3 darts at level 1 (+1 per upcast level)
+        total_missile_darts = 3 + max(0, (int(spell_level) if spell_level is not None else 1) - 1)
+        if clean_spell_name == 'magic missile':
+            if not targets:
+                return Response(
+                    {"error": "Magic Missile requires at least one target."},
+                    status=status.HTTP_400_BAD_REQUEST
+                )
+            if len(targets) == 1:
+                targets = [targets[0]] * total_missile_darts
+            elif len(targets) < total_missile_darts:
+                while len(targets) < total_missile_darts:
+                    targets.append(primary_target)
+            elif len(targets) > total_missile_darts:
+                targets = targets[:total_missile_darts]
+
+        # Validate spell range (Self, Touch, X feet)
+        SPELL_RANGE_FALLBACKS = {
+            'cure wounds': 'Touch',
+            'inflict wounds': 'Touch',
+            'shocking grasp': 'Touch',
+            'spare the dying': 'Touch',
+            'guidance': 'Touch',
+            'resistance': 'Touch',
+            'identify': 'Touch',
+            'mage armor': 'Touch',
+            'protection from evil and good': 'Touch',
+            'shield': 'Self',
+            'shield of faith': '60 feet',
+            'misty step': 'Self',
+            'thunderwave': 'Self (15-foot cube)',
+            'burning hands': 'Self (15-foot cone)',
+            'blur': 'Self',
+            'mirror image': 'Self',
+            'expeditious retreat': 'Self',
+            'false life': 'Self',
+            'fire bolt': '120 feet',
+            'eldritch blast': '120 feet',
+            'sacred flame': '60 feet',
+            'guiding bolt': '120 feet',
+            'magic missile': '120 feet',
+            'healing word': '60 feet',
+            'fireball': '150 feet',
+            'hold person': '60 feet',
+            'witch bolt': '30 feet',
+            'ray of frost': '60 feet',
+            'toll the dead': '60 feet',
+            'vicious mockery': '60 feet',
+            'scorching ray': '120 feet',
+            'grease': '60 feet',
+            'fog cloud': '120 feet',
+        }
+
+        raw_range = None
+        if spell_obj and spell_obj.range:
+            raw_range = spell_obj.range.strip()
+        elif clean_spell_name in SPELL_RANGE_FALLBACKS:
+            raw_range = SPELL_RANGE_FALLBACKS[clean_spell_name]
+
+        if raw_range:
+            lower_range = raw_range.lower()
+            if lower_range == 'self' or (lower_range.startswith('self') and '(' not in lower_range):
+                for t in targets:
+                    if t != caster:
+                        return Response(
+                            {"error": f"{spell_name} has a range of Self and can only target yourself."},
+                            status=status.HTTP_400_BAD_REQUEST
+                        )
+            else:
+                reach = caster.get_reach() if hasattr(caster, 'get_reach') else 5
+                for t in targets:
+                    if t == caster:
+                        continue
+                    has_coords = (caster.position_x != 0 or caster.position_y != 0 or t.position_x != 0 or t.position_y != 0)
+                    if not has_coords:
+                        continue
+                    dist = caster.get_distance_to(t)
+                    if lower_range == 'touch':
+                        if dist > reach:
+                            return Response(
+                                {"error": f"{spell_name} is a Touch spell: {t.get_name()} is {dist} ft away (maximum reach is {reach} ft). Move closer first!"},
+                                status=status.HTTP_400_BAD_REQUEST
+                            )
+                    else:
+                        range_match = re.search(r'(\d+)', lower_range)
+                        if range_match:
+                            max_range = int(range_match.group(1))
+                            if dist > max_range:
+                                return Response(
+                                    {"error": f"{spell_name} has a range of {max_range} ft, but {t.get_name()} is {dist} ft away."},
+                                    status=status.HTTP_400_BAD_REQUEST
+                                )
+
         # Handle concentration
         if requires_concentration:
             caster.is_concentrating = True
             caster.concentration_spell = spell_name
             caster.save(update_fields=['is_concentrating', 'concentration_spell'])
+
+        # Dedicated resolution for Magic Missile (5e: 3+ auto-hitting force darts, Shield spell negation)
+        if clean_spell_name == 'magic missile':
+            from combat.spell_rules import has_active_shield
+            spell_damage_type = 'force'
+
+            # Group darts by unique target maintaining order
+            target_darts = {}
+            for t in targets:
+                if t.id not in target_darts:
+                    target_darts[t.id] = {"target": t, "dart_rolls": []}
+                # 5e: Each dart deals 1d4 + 1 force damage
+                roll_dmg, _ = calculate_damage("1d4+1", 0, False)
+                target_darts[t.id]["dart_rolls"].append(roll_dmg)
+
+            target_results = []
+            combat_actions = []
+
+            for tid, tdata in target_darts.items():
+                t = tdata["target"]
+                dart_rolls = tdata["dart_rolls"]
+                darts_count = len(dart_rolls)
+                is_shielded = has_active_shield(t)
+
+                if is_shielded:
+                    t_damage = 0
+                    concentration_broken = False
+                    dart_word = "dart" if darts_count == 1 else "darts"
+                    t_desc = f"{caster.get_name()} casts Magic Missile at {t.get_name()}, but a Shield spell absorbs all {darts_count} {dart_word}! (0 damage)"
+                else:
+                    t_damage = sum(dart_rolls)
+                    _new_hp, concentration_broken = t.take_damage(t_damage, damage_type='force')
+                    rolls_breakdown = " + ".join(str(r) for r in dart_rolls)
+                    dart_word = "dart" if darts_count == 1 else "darts"
+                    t_desc = f"{caster.get_name()} casts Magic Missile, striking {t.get_name()} with {darts_count} {dart_word} for {t_damage} force damage! ({rolls_breakdown})"
+
+                t_resistance_info = getattr(t, 'last_resistance_info', None)
+                if t_resistance_info:
+                    rtype = t_resistance_info.get('type', '')
+                    if rtype == 'immunity':
+                        t_desc += f" [IMMUNE to {t_resistance_info.get('damage_type', '')}!]"
+                    elif rtype == 'resistance':
+                        t_desc += f" [RESISTED {t_resistance_info.get('damage_type', '')} — half damage]"
+                    elif rtype == 'vulnerability':
+                        t_desc += f" [VULNERABLE to {t_resistance_info.get('damage_type', '')} — double damage!]"
+
+                target_results.append({
+                    "target_id": t.id,
+                    "target_name": t.get_name(),
+                    "target_hp": t.current_hp,
+                    "darts_count": darts_count,
+                    "dart_rolls": dart_rolls,
+                    "save_roll": None,
+                    "save_total": None,
+                    "save_success": None,
+                    "damage": t_damage,
+                    "healing": 0,
+                    "shield_negated": is_shielded,
+                    "concentration_broken": concentration_broken,
+                    "condition_applied": None,
+                    "condition_immune": None,
+                    "post_effects": [],
+                    "resistance_info": t_resistance_info,
+                })
+
+                act = CombatAction.objects.create(
+                    combat_session=session,
+                    actor=caster,
+                    target=t,
+                    action_type='spell',
+                    attack_name='Magic Missile',
+                    damage_amount=t_damage if t_damage > 0 else None,
+                    round_number=session.current_round,
+                    turn_number=session.current_turn_index,
+                    description=t_desc
+                )
+                combat_actions.append(act)
+
+            # Mark action economy resource as consumed
+            if is_bonus_action:
+                caster.bonus_action_used = True
+                caster.save(update_fields=['bonus_action_used'])
+            else:
+                caster.action_used = True
+                caster.attacks_remaining = 0
+                caster.save(update_fields=['action_used', 'attacks_remaining'])
+
+            # Description summary
+            if len(target_darts) == 1:
+                desc = combat_actions[0].description
+            else:
+                total_all_dmg = sum(tr["damage"] for tr in target_results)
+                desc = f"{caster.get_name()} casts Magic Missile, firing {total_missile_darts} darts across {len(target_darts)} targets for {total_all_dmg} force damage total"
+
+            # Decrement player character spell slots
+            if caster.character and hasattr(caster.character, 'stats') and caster.character.stats:
+                if spell_level and spell_level > 0 and not is_ritual:
+                    stats = caster.character.stats
+                    if not stats.expended_spell_slots or not isinstance(stats.expended_spell_slots, dict):
+                        stats.expended_spell_slots = {}
+                    level_str = str(spell_level)
+                    current_used = stats.expended_spell_slots.get(level_str, 0)
+                    stats.expended_spell_slots[level_str] = current_used + 1
+                    stats.save(update_fields=['expended_spell_slots'])
+
+            # Decrement enemy spell slots
+            if caster.encounter_enemy:
+                caster.use_enemy_spell(spell_name)
+
+            if hasattr(session, '_prefetched_objects_cache'):
+                session._prefetched_objects_cache.clear()
+            fresh_session = self.get_queryset().get(pk=session.pk)
+            session_data = self.get_serializer(fresh_session).data if hasattr(self, 'get_serializer') else CombatSessionSerializer(fresh_session).data
+
+            first_tr = target_results[0] if target_results else {}
+            return Response({
+                "message": desc,
+                "spell_name": spell_name,
+                "spell_level": spell_level,
+                "is_bonus_action": is_bonus_action,
+                "target": primary_target.get_name() if primary_target else None,
+                "target_id": primary_target.id if primary_target else None,
+                "target_hp": primary_target.current_hp if primary_target else None,
+                "target_results": target_results,
+                "is_healing": False,
+                "healing_amount": 0,
+                "save_type": None,
+                "save_dc": None,
+                "save_roll": None,
+                "save_total": None,
+                "save_success": None,
+                "damage": first_tr.get("damage", 0),
+                "condition_applied": None,
+                "concentration_started": False,
+                "action": CombatActionSerializer(combat_actions[0]).data if combat_actions else None,
+                "session": session_data
+            })
         
         healing_spell_names = {'cure wounds', 'healing word', 'prayer of healing', 'mass cure wounds', 'heal', 'mass heal'}
         if is_healing or clean_spell_name in healing_spell_names:
@@ -898,9 +1147,8 @@ class CombatActionMixin:
 
         # Roll base damage/healing once (5e rules: AoE rolls damage once and applies to all affected)
         base_damage = 0
-        damage_roll_breakdown = ""
         if damage_string:
-            base_damage, damage_roll_breakdown = calculate_damage(damage_string, 0, False)
+            base_damage, _ = calculate_damage(damage_string, 0, False)
 
         target_results = []
         combat_actions = []
@@ -915,9 +1163,16 @@ class CombatActionMixin:
             t_cond = None
             concentration_broken = False
 
+            rider_str = ""
             if is_healing:
-                t_healing = max(1, base_damage)
-                t.heal(t_healing)
+                from combat.spell_rules import can_heal_target
+                if not can_heal_target(t, spell_name):
+                    t_healing = 0
+                    c_type = getattr(getattr(t.encounter_enemy, 'enemy', None), 'creature_type', 'undead') if t.encounter_enemy else 'undead'
+                    rider_str += f" [No effect on {c_type}]"
+                else:
+                    t_healing = max(1, base_damage)
+                    t.heal(t_healing)
             elif save_type and save_dc:
                 if is_auto_fail_save(t, save_type):
                     t_save_roll = 1
@@ -940,10 +1195,10 @@ class CombatActionMixin:
                     else:
                         t_damage = base_damage
                     if t_damage > 0:
-                        _new_hp, concentration_broken = t.take_damage(t_damage)
+                        _new_hp, concentration_broken = t.take_damage(t_damage, damage_type=spell_damage_type)
             elif base_damage > 0:
                 t_damage = base_damage
-                _new_hp, concentration_broken = t.take_damage(t_damage)
+                _new_hp, concentration_broken = t.take_damage(t_damage, damage_type=spell_damage_type)
 
             # 5E Thunderwave Forced Movement: Push 10 feet away from caster on failed save
             pushed_str = ""
@@ -967,7 +1222,14 @@ class CombatActionMixin:
                     t.save(update_fields=['position_x', 'position_y'])
                     pushed_str = f" and was blasted 10 ft away to ({new_x} ft, {new_y} ft)"
 
+            # Apply spell post-effects (e.g. Shocking Grasp reaction prevention, Ray of Frost speed reduction)
+            from combat.spell_rules import apply_spell_post_effects
+            post_effects = apply_spell_post_effects(caster, t, spell_name, hit_or_save_failed=(t_save_success is False or not save_type))
+            if post_effects:
+                rider_str += f" [{' '.join(post_effects)}]"
+
             # Auto-apply conditions from spell (if not healing, and save failed or no save)
+            t_cond = None
             if not is_healing and (t_save_success is False or not save_type):
                 t_cond = auto_apply_condition_from_spell(t, spell_name)
                 if t_cond:
@@ -983,6 +1245,9 @@ class CombatActionMixin:
                         source_name=spell_name
                     )
 
+            t_resistance_info = getattr(t, 'last_resistance_info', None)
+            t_cond_immune = getattr(t, 'last_condition_immune', None)
+
             target_results.append({
                 "target_id": t.id,
                 "target_name": t.get_name(),
@@ -994,17 +1259,37 @@ class CombatActionMixin:
                 "healing": t_healing,
                 "concentration_broken": concentration_broken,
                 "condition_applied": t_cond.name if t_cond else None,
+                "condition_immune": t_cond_immune,
+                "post_effects": post_effects,
+                "resistance_info": t_resistance_info,
             })
 
             # Create individual action log
+            # Build resistance annotation for combat log
+            resist_str = ""
+            if t_resistance_info:
+                rtype = t_resistance_info.get('type', '')
+                if rtype == 'immunity':
+                    resist_str = f" [IMMUNE to {t_resistance_info.get('damage_type', '')}!]"
+                elif rtype == 'resistance':
+                    resist_str = f" [RESISTED {t_resistance_info.get('damage_type', '')} — half damage]"
+                elif rtype == 'vulnerability':
+                    resist_str = f" [VULNERABLE to {t_resistance_info.get('damage_type', '')} — double damage!]"
+
+            cond_str = ""
+            if t_cond:
+                cond_str = f" [{t_cond.name.capitalize()} applied]"
+            elif t_cond_immune:
+                cond_str = f" [IMMUNE to {t_cond_immune}!]"
+
             if is_healing:
-                t_desc = f"{caster.get_name()} casts {spell_name} on {t.get_name()}, restoring {t_healing} HP"
+                t_desc = f"{caster.get_name()} casts {spell_name} on {t.get_name()}, restoring {t_healing} HP{cond_str}{rider_str}"
             elif t_damage > 0:
                 save_str = f" (rolled {t_save_total} vs DC {save_dc} - {'SAVED' if t_save_success else 'FAILED'})" if save_type else ""
-                t_desc = f"{caster.get_name()} casts {spell_name} on {t.get_name()} for {t_damage} damage{save_str}{pushed_str}"
+                t_desc = f"{caster.get_name()} casts {spell_name} on {t.get_name()} for {t_damage} damage{save_str}{pushed_str}{resist_str}{cond_str}{rider_str}"
             else:
                 save_str = f" (rolled {t_save_total} vs DC {save_dc} - SAVED, 0 damage)" if save_type else ""
-                t_desc = f"{caster.get_name()} casts {spell_name} on {t.get_name()}{save_str}{pushed_str}"
+                t_desc = f"{caster.get_name()} casts {spell_name} on {t.get_name()}{save_str}{pushed_str}{cond_str}{rider_str}"
 
             act = CombatAction.objects.create(
                 combat_session=session,
@@ -1035,6 +1320,32 @@ class CombatActionMixin:
                 description=f"{caster.get_name()} casts {spell_name}"
             )
             combat_actions.append(act)
+
+        # 5E Persistent Ground & Environmental Spell Effects
+        if clean_spell_name == 'grease':
+            gx = primary_target.position_x if primary_target else 20
+            gy = primary_target.position_y if primary_target else 15
+            EnvironmentalEffect.objects.create(
+                combat_session=session,
+                effect_type='terrain',
+                terrain_type='mud',
+                cover_area_x=gx,
+                cover_area_y=gy,
+                cover_area_radius=5,
+                description=f"Slick Grease covers the ground in a 10-ft square around ({gx} ft, {gy} ft) (Difficult Terrain)."
+            )
+        elif clean_spell_name == 'fog cloud':
+            fx = primary_target.position_x if primary_target else 20
+            fy = primary_target.position_y if primary_target else 15
+            EnvironmentalEffect.objects.create(
+                combat_session=session,
+                effect_type='weather',
+                weather_type='heavy_fog',
+                lighting_area_x=fx,
+                lighting_area_y=fy,
+                lighting_area_radius=20,
+                description=f"Fog Cloud creates a 20-ft radius sphere of dense fog centered at ({fx} ft, {fy} ft) (Heavily Obscured)."
+            )
 
         # Mark action economy resource as consumed
         if is_bonus_action:
@@ -1655,9 +1966,18 @@ class CombatActionMixin:
         if occupied:
             return Response({"error": "Destination square is already occupied."}, status=status.HTTP_400_BAD_REQUEST)
 
-        # Calculate distance moved using 5e Chebyshev metric
-        dist_moved = max(abs(target_x - participant.position_x), abs(target_y - participant.position_y))
-        if dist_moved == 0:
+        # Calculate tile-by-tile path cost on the 5e grid (accounting for difficult terrain & obstacles)
+        from combat.battlefield import calculate_tile_path
+        path_cost, move_path = calculate_tile_path(
+            session, participant, participant.position_x, participant.position_y, target_x, target_y
+        )
+
+        if path_cost == float('inf'):
+            return Response({
+                "error": "Destination is blocked by an obstacle or impassable terrain."
+            }, status=status.HTTP_400_BAD_REQUEST)
+
+        if path_cost == 0:
             return Response({
                 "message": f"{participant.get_name()} is already at ({target_x}, {target_y})",
                 "participant": CombatParticipantSerializer(participant).data,
@@ -1665,13 +1985,14 @@ class CombatActionMixin:
             })
 
         rem_movement = participant.movement_remaining
-        if dist_moved > rem_movement:
+        if path_cost > rem_movement:
             return Response({
-                "error": f"Not enough movement. Requires {dist_moved} ft, but {participant.get_name()} only has {rem_movement} ft remaining."
+                "error": f"Not enough movement. Path requires {path_cost} ft (due to difficult terrain or obstacles), but {participant.get_name()} only has {rem_movement} ft remaining."
             }, status=status.HTTP_400_BAD_REQUEST)
 
-        # Check Opportunity Attacks
-        # Active conscious enemies that were within 5 ft reach before the move, but are NOT within 5 ft after the move
+        dist_moved = path_cost
+
+        # Check Opportunity Attacks along the actual path traveled
         is_disengaged = bool(participant.feature_uses and participant.feature_uses.get('disengaged'))
         oa_results = []
         mover_fell_unconscious = False
@@ -1685,14 +2006,22 @@ class CombatActionMixin:
             for enemy in enemies:
                 if not enemy.can_use_reaction() or enemy.is_incapacitated():
                     continue
-                old_dist = max(abs(participant.position_x - enemy.position_x), abs(participant.position_y - enemy.position_y))
-                new_dist = max(abs(target_x - enemy.position_x), abs(target_y - enemy.position_y))
-                
-                # If moving out of enemy's 5ft reach
-                if old_dist <= 5 and new_dist > 5:
+                enemy_x = enemy.position_x
+                enemy_y = enemy.position_y
+                provoked = False
+                for step_idx in range(len(move_path) - 1):
+                    step_from = move_path[step_idx]
+                    step_to = move_path[step_idx + 1]
+                    d_from = max(abs(step_from[0] - enemy_x), abs(step_from[1] - enemy_y))
+                    d_to = max(abs(step_to[0] - enemy_x), abs(step_to[1] - enemy_y))
+                    if d_from <= 5 and d_to > 5:
+                        provoked = True
+                        break
+
+                if provoked:
                     enemy.use_reaction()
                     # Execute Opportunity Attack
-                    raw_d20, d20_breakdown = roll_d20()
+                    raw_d20, _ = roll_d20()
                     atk_bonus = 2
                     dmg_str = "1d6+2"
                     resolved_enemy = enemy.resolve_enemy()

@@ -355,6 +355,20 @@ class CombatSessionListSerializer(serializers.ModelSerializer):
         return None
 
 
+class EnvironmentalEffectSerializer(serializers.ModelSerializer):
+    """Serializer for environmental effects"""
+    effect_type_display = serializers.CharField(source='get_effect_type_display', read_only=True)
+    terrain_type_display = serializers.CharField(source='get_terrain_type_display', read_only=True, allow_null=True)
+    cover_type_display = serializers.CharField(source='get_cover_type_display', read_only=True, allow_null=True)
+    lighting_type_display = serializers.CharField(source='get_lighting_type_display', read_only=True, allow_null=True)
+    weather_type_display = serializers.CharField(source='get_weather_type_display', read_only=True, allow_null=True)
+    hazard_type_display = serializers.CharField(source='get_hazard_type_display', read_only=True, allow_null=True)
+    
+    class Meta:
+        model = EnvironmentalEffect
+        fields = '__all__'
+
+
 class CombatSessionSerializer(serializers.ModelSerializer):
     """Serializer for combat sessions"""
     status_display = serializers.CharField(source='get_status_display', read_only=True)
@@ -366,6 +380,7 @@ class CombatSessionSerializer(serializers.ModelSerializer):
     initiative_order = serializers.SerializerMethodField()
     actions = CombatActionSerializer(many=True, read_only=True)
     gauntlet_run = serializers.SerializerMethodField()
+    environmental_effects = EnvironmentalEffectSerializer(many=True, read_only=True)
     
     class Meta:
         model = CombatSession
@@ -442,19 +457,6 @@ class CombatLogSerializer(serializers.ModelSerializer):
         model = CombatLog
         fields = '__all__'
 
-
-class EnvironmentalEffectSerializer(serializers.ModelSerializer):
-    """Serializer for environmental effects"""
-    effect_type_display = serializers.CharField(source='get_effect_type_display', read_only=True)
-    terrain_type_display = serializers.CharField(source='get_terrain_type_display', read_only=True, allow_null=True)
-    cover_type_display = serializers.CharField(source='get_cover_type_display', read_only=True, allow_null=True)
-    lighting_type_display = serializers.CharField(source='get_lighting_type_display', read_only=True, allow_null=True)
-    weather_type_display = serializers.CharField(source='get_weather_type_display', read_only=True, allow_null=True)
-    hazard_type_display = serializers.CharField(source='get_hazard_type_display', read_only=True, allow_null=True)
-    
-    class Meta:
-        model = EnvironmentalEffect
-        fields = '__all__'
 
 
 class ParticipantPositionSerializer(serializers.ModelSerializer):

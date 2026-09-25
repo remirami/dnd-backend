@@ -27,6 +27,7 @@ SPELL_CONDITION_MAP = {
     'Grapple': 'grappled',
     'Restrain': 'restrained',
     'Prone': 'prone',
+    'Grease': 'prone',
     'Invisibility': 'invisible',
     'Petrify': 'petrified',
     'Flesh to Stone': 'petrified',
@@ -189,14 +190,41 @@ def apply_condition_effects(participant, condition_name):
     
     return modifications
 
+def is_condition_immune(participant, condition_name):
+    """
+    Check if a combat participant is immune to a given condition.
+    
+    Queries EnemyConditionImmunity for enemy participants.
+    Returns True if the participant is immune, False otherwise.
+    """
+    if not participant or not condition_name:
+        return False
+    if participant.encounter_enemy:
+        try:
+            return participant.encounter_enemy.enemy.condition_immunities.filter(
+                condition__name__iexact=str(condition_name).strip()
+            ).exists()
+        except Exception:
+            return False
+    return False
+
 
 def auto_apply_condition_from_spell(participant, spell_name):
     """
     Automatically apply condition from a spell.
-    Returns the condition if applied, None otherwise.
+    Checks condition immunity before applying.
+    Returns the Condition model instance if applied, None otherwise.
+    Sets participant.last_condition_immune to condition_name if immune.
     """
+    if hasattr(participant, 'last_condition_immune'):
+        participant.last_condition_immune = None
     condition_name = get_condition_for_spell(spell_name)
     if not condition_name:
+        return None
+    
+    # Check condition immunity before applying
+    if is_condition_immune(participant, condition_name):
+        participant.last_condition_immune = condition_name
         return None
     
     try:
