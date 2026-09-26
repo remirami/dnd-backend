@@ -1322,29 +1322,88 @@ class CombatActionMixin:
             combat_actions.append(act)
 
         # 5E Persistent Ground & Environmental Spell Effects
+        effect_origin_x = primary_target.position_x if (primary_target and primary_target.position_x is not None) else (caster.position_x if caster.position_x is not None else 20)
+        effect_origin_y = primary_target.position_y if (primary_target and primary_target.position_y is not None) else (caster.position_y if caster.position_y is not None else 15)
+
         if clean_spell_name == 'grease':
-            gx = primary_target.position_x if primary_target else 20
-            gy = primary_target.position_y if primary_target else 15
             EnvironmentalEffect.objects.create(
                 combat_session=session,
                 effect_type='terrain',
                 terrain_type='mud',
-                cover_area_x=gx,
-                cover_area_y=gy,
+                cover_area_x=effect_origin_x,
+                cover_area_y=effect_origin_y,
                 cover_area_radius=5,
-                description=f"Slick Grease covers the ground in a 10-ft square around ({gx} ft, {gy} ft) (Difficult Terrain)."
+                description=f"Slick Grease covers the ground in a 10-ft square around ({effect_origin_x} ft, {effect_origin_y} ft) (Difficult Terrain)."
             )
         elif clean_spell_name == 'fog cloud':
-            fx = primary_target.position_x if primary_target else 20
-            fy = primary_target.position_y if primary_target else 15
             EnvironmentalEffect.objects.create(
                 combat_session=session,
                 effect_type='weather',
                 weather_type='heavy_fog',
-                lighting_area_x=fx,
-                lighting_area_y=fy,
+                lighting_area_x=effect_origin_x,
+                lighting_area_y=effect_origin_y,
                 lighting_area_radius=20,
-                description=f"Fog Cloud creates a 20-ft radius sphere of dense fog centered at ({fx} ft, {fy} ft) (Heavily Obscured)."
+                description=f"Fog Cloud creates a 20-ft radius sphere of dense fog centered at ({effect_origin_x} ft, {effect_origin_y} ft) (Heavily Obscured)."
+            )
+        elif clean_spell_name == 'darkness':
+            EnvironmentalEffect.objects.create(
+                combat_session=session,
+                effect_type='lighting',
+                lighting_type='magical_darkness',
+                lighting_area_x=effect_origin_x,
+                lighting_area_y=effect_origin_y,
+                lighting_area_radius=15,
+                description=f"Magical Darkness shrouds a 15-ft radius sphere around ({effect_origin_x} ft, {effect_origin_y} ft)."
+            )
+        elif clean_spell_name == 'web':
+            EnvironmentalEffect.objects.create(
+                combat_session=session,
+                effect_type='terrain',
+                terrain_type='thick_vegetation',
+                cover_area_x=effect_origin_x,
+                cover_area_y=effect_origin_y,
+                cover_area_radius=10,
+                description=f"Sticky Webbing fills a 20-ft cube centered at ({effect_origin_x} ft, {effect_origin_y} ft) (Difficult Terrain)."
+            )
+        elif clean_spell_name == 'spike growth':
+            EnvironmentalEffect.objects.create(
+                combat_session=session,
+                effect_type='terrain',
+                terrain_type='rubble',
+                cover_area_x=effect_origin_x,
+                cover_area_y=effect_origin_y,
+                cover_area_radius=20,
+                description=f"Hard Spikes and thorns sprout in a 20-ft radius around ({effect_origin_x} ft, {effect_origin_y} ft) (Difficult Terrain)."
+            )
+        elif clean_spell_name == 'entangle':
+            EnvironmentalEffect.objects.create(
+                combat_session=session,
+                effect_type='terrain',
+                terrain_type='thick_vegetation',
+                cover_area_x=effect_origin_x,
+                cover_area_y=effect_origin_y,
+                cover_area_radius=10,
+                description=f"Grasping weeds and vines sprout in a 20-ft square around ({effect_origin_x} ft, {effect_origin_y} ft) (Difficult Terrain)."
+            )
+        elif clean_spell_name == 'sleet storm':
+            EnvironmentalEffect.objects.create(
+                combat_session=session,
+                effect_type='terrain',
+                terrain_type='ice',
+                cover_area_x=effect_origin_x,
+                cover_area_y=effect_origin_y,
+                cover_area_radius=40,
+                description=f"Freezing sleet covers a 40-ft radius around ({effect_origin_x} ft, {effect_origin_y} ft) (Difficult Terrain & Heavily Obscured)."
+            )
+        elif clean_spell_name in ['cloudkill', 'stinking cloud']:
+            EnvironmentalEffect.objects.create(
+                combat_session=session,
+                effect_type='hazard',
+                hazard_type='poison_gas',
+                hazard_area_x=effect_origin_x,
+                hazard_area_y=effect_origin_y,
+                hazard_area_radius=20,
+                description=f"A 20-ft radius sphere of noxious toxic gas lingers centered at ({effect_origin_x} ft, {effect_origin_y} ft) (Hazard & Heavily Obscured)."
             )
 
         # Mark action economy resource as consumed

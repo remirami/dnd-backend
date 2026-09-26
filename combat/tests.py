@@ -781,3 +781,115 @@ class CombatItemAndFeatureTests(TestCase):
         self.assertTrue(self.paladin_part.action_used)
         self.assertEqual(self.paladin_part.attacks_remaining, 0)
 
+
+class AoESpellCombatTests(TestCase):
+    """Test 5e AoE spell multi-target targeting and environmental effects"""
+
+    def setUp(self):
+        self.client = APIClient()
+        self.session = CombatSession.objects.create(status='active', current_round=1, current_turn_index=0)
+        self.wizard_class = CharacterClass.objects.create(name='wizard', hit_dice='d6', primary_ability='INT')
+        self.race = CharacterRace.objects.create(name='elf', speed=30)
+        self.character = Character.objects.create(name='Mage', level=5, character_class=self.wizard_class, race=self.race)
+        self.stats = CharacterStats.objects.create(
+            character=self.character,
+            intelligence=16,
+            spell_save_dc=14,
+            spell_attack_bonus=6,
+            hit_points=25,
+            max_hit_points=25,
+            armor_class=12,
+            spell_slots={'1': 4, '2': 3, '3': 2},
+            expended_spell_slots={}
+        )
+        self.caster = CombatParticipant.objects.create(
+            combat_session=self.session,
+            participant_type='character',
+            character=self.character,
+            name='Mage',
+            initiative=20,
+            current_hp=25,
+            max_hp=25,
+            armor_class=12,
+            position_x=10,
+            position_y=15,
+            attacks_remaining=1,
+            action_used=False
+        )
+        self.goblin1 = CombatParticipant.objects.create(
+            combat_session=self.session,
+            participant_type='enemy',
+            name='Goblin 1',
+            initiative=15,
+            current_hp=15,
+            max_hp=15,
+            armor_class=13,
+            position_x=20,
+            position_y=15
+        )
+        self.goblin2 = CombatParticipant.objects.create(
+            combat_session=self.session,
+            participant_type='enemy',
+            name='Goblin 2',
+            initiative=14,
+            current_hp=15,
+            max_hp=15,
+            armor_class=13,
+            position_x=25,
+            position_y=15
+        )
+
+    def test_aoe_fireball_multi_target_and_save_resolution(self):
+        """Fireball affects multiple targets with save and damage halving/full damage"""
+        from characters.models import CharacterSpell
+        CharacterSpell.objects.create(character=self.character, name='Fireball', level=3, is_prepared=True)
+
+        response = self.client.post(
+            f'/api/combat/sessions/{self.session.id}/cast_spell/',
+            {
+                'caster_id': self.caster.id,
+                'target_ids': [self.goblin1.id, self.goblin2.id],
+                'spell_name': 'Fireball',
+                'spell_level': 3,
+                'save_type': 'DEX',
+                'save_dc': 14,
+                'damage_string': '8d6',
+                'half_on_save': True
+            },
+            format='json'
+        )
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        data = response.data
+        self.assertEqual(len(data['target_results']), 2)
+        # Both goblins should have taken damage
+        self.goblin1.refresh_from_db()
+        self.goblin2.refresh_from_db()
+        self.assertLess(self.goblin1.current_hp, 15)
+        self.assertLess(self.goblin2.current_hp, 15)
+
+    def test_aoe_persistent_environmental_effect_web(self):
+        """Web creates a persistent terrain environmental effect on grid"""
+        from characters.models import CharacterSpell
+        from combat.models import EnvironmentalEffect
+        CharacterSpell.objects.create(character=self.character, name='Web', level=2, is_prepared=True)
+
+        response = self.client.post(
+            f'/api/combat/sessions/{self.session.id}/cast_spell/',
+            {
+                'caster_id': self.caster.id,
+                'target_ids': [self.goblin1.id],
+                'spell_name': 'Web',
+                'spell_level': 2,
+                'save_type': 'DEX',
+                'save_dc': 14,
+                'requires_concentration': True
+            },
+            format='json'
+        )
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        eff = EnvironmentalEffect.objects.filter(combat_session=self.session, effect_type='terrain').first()
+        self.assertIsNotNone(eff)
+        self.assertEqual(eff.terrain_type, 'thick_vegetation')
+        self.assertEqual(eff.cover_area_radius, 10)
+
+
