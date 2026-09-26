@@ -1083,13 +1083,56 @@ class CombatParticipant(models.Model):
             except Exception:
                 pass  # Graceful fallback
 
-        self.current_hp = max(0, self.current_hp - actual_damage)
-        if self.current_hp <= 0:
-            self.is_active = False
-            # Falling unconscious drops Rage
-            if self.is_raging():
-                self.feature_uses['is_raging'] = False
-                self.feature_uses['rage_rounds_left'] = 0
+        # 4. Inherent Racial Resistances fallback (Dwarven Resilience for poison, Hellish Resistance for fire)
+        if not was_resisted and dtype_name and self.character:
+            if dtype_name in ['poison'] and self.has_dwarven_resilience():
+                actual_damage = max(1, amount // 2)
+                was_resisted = True
+                self.last_resistance_info = {
+                    'type': 'resistance',
+                    'source': 'Dwarven Resilience',
+                    'damage_type': dtype_name,
+                    'original_damage': amount,
+                    'actual_damage': actual_damage,
+                }
+            elif dtype_name in ['fire'] and self.has_hellish_resistance():
+                actual_damage = max(1, amount // 2)
+                was_resisted = True
+                self.last_resistance_info = {
+                    'type': 'resistance',
+                    'source': 'Hellish Resistance',
+                    'damage_type': dtype_name,
+                    'original_damage': amount,
+                    'actual_damage': actual_damage,
+                }
+
+        self.last_relentless_endurance_triggered = False
+        potential_hp = self.current_hp - actual_damage
+        if potential_hp <= 0 and self.current_hp > 0 and self.has_relentless_endurance():
+            uses = self.feature_uses or {}
+            if not uses.get('relentless_endurance_used', False):
+                excess_damage = actual_damage - self.current_hp
+                if excess_damage < self.max_hp:
+                    self.current_hp = 1
+                    self.is_active = True
+                    if not isinstance(self.feature_uses, dict):
+                        self.feature_uses = {}
+                    self.feature_uses['relentless_endurance_used'] = True
+                    self.last_relentless_endurance_triggered = True
+                else:
+                    self.current_hp = 0
+                    self.is_active = False
+            else:
+                self.current_hp = 0
+                self.is_active = False
+        else:
+            self.current_hp = max(0, potential_hp)
+            if self.current_hp <= 0:
+                self.is_active = False
+                # Falling unconscious drops Rage
+                if self.is_raging():
+                    self.feature_uses['is_raging'] = False
+                    self.feature_uses['rage_rounds_left'] = 0
         
         # Check concentration if taking damage while concentrating
         concentration_broken = False
@@ -1232,6 +1275,85 @@ class CombatParticipant(models.Model):
         return self.current_hp
     
 
+    def has_lucky_trait(self) -> bool:
+        """Check if participant has Halfling Lucky trait (reroll 1s on d20)."""
+        if not self.character:
+            return False
+        if self.character.race and 'halfling' in self.character.race.name.lower():
+            return True
+        return self.character.features.filter(name__icontains='Lucky').exists()
+
+    def has_halfling_nimbleness(self) -> bool:
+        """Check if participant has Halfling Nimbleness trait (move through larger creatures' space)."""
+        if not self.character:
+            return False
+        if self.character.race and 'halfling' in self.character.race.name.lower():
+            return True
+        return self.character.features.filter(name__icontains='Nimbleness').exists()
+
+    def has_relentless_endurance(self) -> bool:
+        """Check if participant has Half-Orc Relentless Endurance."""
+        if not self.character:
+            return False
+        if self.character.race and any(r in self.character.race.name.lower() for r in ['orc', 'half-orc']):
+            return True
+        return self.character.features.filter(name__icontains='Relentless Endurance').exists()
+
+    def has_fey_ancestry(self) -> bool:
+        """Check if participant has Elf/Half-Elf Fey Ancestry (advantage vs charm, immune to magical sleep)."""
+        if not self.character:
+            return False
+        if self.character.race and any(r in self.character.race.name.lower() for r in ['elf', 'half-elf', 'eladrin', 'drow']):
+            return True
+        return self.character.features.filter(name__icontains='Fey Ancestry').exists()
+
+    def has_brave_trait(self) -> bool:
+        """Check if participant has Halfling Brave trait (advantage vs frightened)."""
+        if not self.character:
+            return False
+        if self.character.race and 'halfling' in self.character.race.name.lower():
+            return True
+        return self.character.features.filter(name__icontains='Brave').exists()
+
+    def has_gnome_cunning(self) -> bool:
+        """Check if participant has Gnome Cunning (advantage on INT, WIS, CHA saves vs magic)."""
+        if not self.character:
+            return False
+        if self.character.race and 'gnome' in self.character.race.name.lower():
+            return True
+        return self.character.features.filter(name__icontains='Gnome Cunning').exists()
+
+    def has_dwarven_resilience(self) -> bool:
+        """Check if participant has Dwarven Resilience (poison resistance and save advantage)."""
+        if not self.character:
+            return False
+        if self.character.race and 'dwarf' in self.character.race.name.lower():
+            return True
+        return self.character.features.filter(name__icontains='Dwarven Resilience').exists()
+
+    def has_hellish_resistance(self) -> bool:
+        """Check if participant has Tiefling Hellish Resistance (fire resistance)."""
+        if not self.character:
+            return False
+        if self.character.race and 'tiefling' in self.character.race.name.lower():
+            return True
+        return self.character.features.filter(name__icontains='Hellish Resistance').exists()
+
+    def get_size(self) -> str:
+        """Get 5E creature size letter ('T', 'S', 'M', 'L', 'H', 'G')."""
+        if self.character:
+            if self.character.race:
+                race_name = self.character.race.name.lower()
+                if any(k in race_name for k in ['halfling', 'gnome', 'goblin', 'kobold']):
+                    return 'S'
+                size_str = getattr(self.character.race, 'size', 'M') or 'M'
+                return size_str.upper()[:1]
+            return 'M'
+        enemy = self.resolve_enemy()
+        if enemy and hasattr(enemy, 'size') and enemy.size:
+            size_raw = str(enemy.size).strip().upper()
+            return size_raw[:1]
+        return 'M'
     
     def make_death_save(self, roll=None):
         """
@@ -1244,7 +1366,7 @@ class CombatParticipant(models.Model):
             return False, False, False, "Character is not unconscious"
         
         if roll is None:
-            roll, _ = roll_d20()
+            roll, _ = roll_d20(lucky=self.has_lucky_trait())
         
         # Natural 20 = instant success (2 successes) and regain 1 HP
         if roll == 20:
@@ -1296,7 +1418,7 @@ class CombatParticipant(models.Model):
         save_dc = max(10, damage_amount // 2)
         
         # Roll CON saving throw
-        roll, _ = roll_d20()
+        roll, _ = roll_d20(lucky=self.has_lucky_trait())
         con_mod = self.get_ability_modifier('CON')
         proficiency_bonus = self.character.proficiency_bonus if self.character else 2
         proficiency = False  # Simplified - should check actual CON save proficiency

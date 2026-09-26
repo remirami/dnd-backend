@@ -37,28 +37,37 @@ def roll_dice(dice_string: str) -> tuple[int, str]:
     return total, breakdown
 
 
-def roll_d20(advantage: bool = False, disadvantage: bool = False) -> tuple[int, str]:
+def roll_d20(advantage: bool = False, disadvantage: bool = False, lucky: bool = False) -> tuple[int, str]:
     """
-    Roll a d20, optionally with advantage or disadvantage
+    Roll a d20, optionally with advantage or disadvantage.
+    If lucky is True (e.g. Halfling Lucky), any natural 1 rolled is rerolled once.
     Returns: (result, breakdown_string)
     """
+    def _roll_single() -> tuple[int, str]:
+        r = random.randint(1, 20)
+        if r == 1 and lucky:
+            reroll = random.randint(1, 20)
+            return reroll, f"1➔{reroll} (Lucky)"
+        return r, str(r)
+
     if advantage and disadvantage:
         # Cancel out, roll normally
-        roll = random.randint(1, 20)
-        return roll, f"d20: {roll}"
-    
-    roll1 = random.randint(1, 20)
+        roll, text = _roll_single()
+        return roll, f"d20: {text}"
     
     if advantage:
-        roll2 = random.randint(1, 20)
+        roll1, text1 = _roll_single()
+        roll2, text2 = _roll_single()
         result = max(roll1, roll2)
-        return result, f"d20 (advantage): {roll1}, {roll2} → {result}"
+        return result, f"d20 (advantage): [{text1}, {text2}] → {result}"
     elif disadvantage:
-        roll2 = random.randint(1, 20)
+        roll1, text1 = _roll_single()
+        roll2, text2 = _roll_single()
         result = min(roll1, roll2)
-        return result, f"d20 (disadvantage): {roll1}, {roll2} → {result}"
+        return result, f"d20 (disadvantage): [{text1}, {text2}] → {result}"
     else:
-        return roll1, f"d20: {roll1}"
+        roll, text = _roll_single()
+        return roll, f"d20: {text}"
 
 
 def calculate_attack_roll(

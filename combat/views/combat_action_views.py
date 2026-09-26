@@ -557,8 +557,9 @@ class CombatActionMixin:
         final_advantage = bool(advantage and not disadvantage)
         final_disadvantage = bool(disadvantage and not advantage)
 
-        # Roll attack with resolved advantage/disadvantage
-        roll, roll_breakdown = roll_d20(advantage=final_advantage, disadvantage=final_disadvantage)
+        # Roll attack with resolved advantage/disadvantage (with Halfling Lucky if applicable)
+        attacker_lucky = getattr(attacker, 'has_lucky_trait', lambda: False)()
+        roll, roll_breakdown = roll_d20(advantage=final_advantage, disadvantage=final_disadvantage, lucky=attacker_lucky)
 
         roll_annotation = roll_breakdown
         if final_advantage and adv_reasons:
@@ -567,6 +568,8 @@ class CombatActionMixin:
             roll_annotation = f"{roll_breakdown} [{', '.join(disadv_reasons)}]"
         elif advantage and disadvantage:
             roll_annotation = f"{roll_breakdown} [Adv & Dis Canceled]"
+        if attacker_lucky and "Lucky" in roll_breakdown:
+            roll_annotation += " 🍀 [Halfling Lucky]"
         
         # Get magic item bonuses
         magic_bonuses = attacker.get_magic_item_bonuses()
@@ -640,13 +643,24 @@ class CombatActionMixin:
 
             _new_hp, concentration_broken = target.take_damage(damage_amount, damage_type=attack_damage_type)
             attack_resistance_info = getattr(target, 'last_resistance_info', None)
+            if getattr(target, 'last_relentless_endurance_triggered', False):
+                damage_breakdown += " | 🛡️ Relentless Endurance: Kept at 1 HP!"
 
             # Check condition riders on hit (e.g. Wolf bite knock prone)
             if matched_action and matched_action.saving_throw_dc and matched_action.conditions_inflicted.exists():
                 rider_ability = matched_action.saving_throw_ability or 'STR'
                 rider_dc = matched_action.saving_throw_dc
                 t_mod = target.get_ability_modifier(rider_ability)
-                r_roll, r_breakdown = roll_d20()
+                rider_adv = False
+                for c in matched_action.conditions_inflicted.all():
+                    c_low = c.name.lower()
+                    if c_low == 'frightened' and getattr(target, 'has_brave_trait', lambda: False)():
+                        rider_adv = True
+                    elif c_low == 'charmed' and getattr(target, 'has_fey_ancestry', lambda: False)():
+                        rider_adv = True
+                    elif c_low == 'poisoned' and getattr(target, 'has_dwarven_resilience', lambda: False)():
+                        rider_adv = True
+                r_roll, r_breakdown = roll_d20(advantage=rider_adv, lucky=getattr(target, 'has_lucky_trait', lambda: False)())
                 if (r_roll + t_mod) < rider_dc:
                     cond_names = []
                     for c in matched_action.conditions_inflicted.all():
@@ -1180,7 +1194,17 @@ class CombatActionMixin:
                     t_save_total = t_save_roll + save_mod
                     t_save_success = False
                 else:
-                    t_save_roll, _ = roll_d20()
+                    target_save_adv = False
+                    if save_type.upper() in ['INT', 'WIS', 'CHA'] and getattr(t, 'has_gnome_cunning', lambda: False)():
+                        target_save_adv = True
+                    if ('charm' in clean_spell_name or 'hypnotic' in clean_spell_name) and getattr(t, 'has_fey_ancestry', lambda: False)():
+                        target_save_adv = True
+                    if ('fear' in clean_spell_name or 'fright' in clean_spell_name) and getattr(t, 'has_brave_trait', lambda: False)():
+                        target_save_adv = True
+                    if (spell_damage_type == 'poison' or 'poison' in clean_spell_name) and getattr(t, 'has_dwarven_resilience', lambda: False)():
+                        target_save_adv = True
+
+                    t_save_roll, _ = roll_d20(advantage=target_save_adv, lucky=getattr(t, 'has_lucky_trait', lambda: False)())
                     save_mod = t.get_ability_modifier(save_type)
                     prof_bonus = t.character.proficiency_bonus if t.character else 2
                     prof = False
@@ -1196,9 +1220,13 @@ class CombatActionMixin:
                         t_damage = base_damage
                     if t_damage > 0:
                         _new_hp, concentration_broken = t.take_damage(t_damage, damage_type=spell_damage_type)
+                        if getattr(t, 'last_relentless_endurance_triggered', False):
+                            rider_str += " [Relentless Endurance: Kept at 1 HP]"
             elif base_damage > 0:
                 t_damage = base_damage
                 _new_hp, concentration_broken = t.take_damage(t_damage, damage_type=spell_damage_type)
+                if getattr(t, 'last_relentless_endurance_triggered', False):
+                    rider_str += " [Relentless Endurance: Kept at 1 HP]"
 
             # 5E Thunderwave Forced Movement: Push 10 feet away from caster on failed save
             pushed_str = ""
@@ -1506,7 +1534,12 @@ class CombatActionMixin:
                 status=status.HTTP_404_NOT_FOUND
             )
         
-        roll, roll_breakdown = roll_d20(advantage=advantage, disadvantage=disadvantage)
+        # Gnome Cunning: Advantage on mental saves vs magic
+        save_adv = advantage
+        if save_type.upper() in ['INT', 'WIS', 'CHA'] and getattr(participant, 'has_gnome_cunning', lambda: False)():
+            save_adv = True
+        
+        roll, roll_breakdown = roll_d20(advantage=save_adv, disadvantage=disadvantage, lucky=getattr(participant, 'has_lucky_trait', lambda: False)())
         ability_mod = participant.get_ability_modifier(save_type)
         proficiency_bonus = participant.character.proficiency_bonus if participant.character else 2
         proficiency = False  # Simplified

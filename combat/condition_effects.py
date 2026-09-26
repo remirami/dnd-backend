@@ -190,15 +190,25 @@ def apply_condition_effects(participant, condition_name):
     
     return modifications
 
-def is_condition_immune(participant, condition_name):
+def is_condition_immune(participant, condition_name, is_magical: bool = True):
     """
     Check if a combat participant is immune to a given condition.
     
-    Queries EnemyConditionImmunity for enemy participants.
+    - Enemies: Queries EnemyConditionImmunity.
+    - Characters: Checks racial traits (e.g. Elf/Half-Elf Fey Ancestry immunity to sleep)
+      and character features/immunities.
     Returns True if the participant is immune, False otherwise.
     """
     if not participant or not condition_name:
         return False
+    
+    clean_cond = str(condition_name).strip().lower()
+
+    # Elf / Half-Elf Fey Ancestry: magic can't put you to sleep
+    if clean_cond in ['unconscious', 'sleep'] and is_magical:
+        if getattr(participant, 'has_fey_ancestry', lambda: False)():
+            return True
+
     if participant.encounter_enemy:
         try:
             return participant.encounter_enemy.enemy.condition_immunities.filter(

@@ -39,6 +39,20 @@ class CombatParticipantSerializer(serializers.ModelSerializer):
                 'is_dead': instance.death_save_failures >= 3
             }
         
+        # Creature size & racial trait flags
+        data['size'] = instance.get_size()
+        if instance.character:
+            data['race_name'] = instance.character.race.name.lower() if instance.character.race else ''
+            data['has_lucky_trait'] = instance.has_lucky_trait()
+            data['has_halfling_nimbleness'] = instance.has_halfling_nimbleness()
+            data['has_relentless_endurance'] = instance.has_relentless_endurance()
+            data['relentless_endurance_used'] = bool(instance.feature_uses and instance.feature_uses.get('relentless_endurance_used', False))
+            data['has_fey_ancestry'] = instance.has_fey_ancestry()
+            data['has_brave_trait'] = instance.has_brave_trait()
+            data['has_gnome_cunning'] = instance.has_gnome_cunning()
+            data['has_dwarven_resilience'] = instance.has_dwarven_resilience()
+            data['has_hellish_resistance'] = instance.has_hellish_resistance()
+
         # Add equipped items info for characters
         if instance.character:
             equipped_weapon = instance.get_equipped_weapon()

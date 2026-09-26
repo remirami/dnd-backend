@@ -450,7 +450,7 @@ class CombatSessionViewSet(
                 continue
             
             # Auto-roll for this participant
-            roll, _ = roll_d20()
+            roll, _ = roll_d20(lucky=participant.has_lucky_trait())
             modifier = participant.get_ability_modifier('DEX')
             initiative = roll + modifier
             # Ensure we don't land on exactly 0 (would look unset)

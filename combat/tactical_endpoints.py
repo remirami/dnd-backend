@@ -146,8 +146,11 @@ def cast_aoe_spell_endpoint(self, request, pk=None):
     targets_affected = []
     
     for participant, distance in targets:
-        # Roll save
-        save_roll, _ = roll_d20()
+        # Roll save (accounting for Gnome Cunning and Halfling Lucky)
+        save_adv = False
+        if save_type.upper() in ['INT', 'WIS', 'CHA'] and getattr(participant, 'has_gnome_cunning', lambda: False)():
+            save_adv = True
+        save_roll, _ = roll_d20(advantage=save_adv, lucky=getattr(participant, 'has_lucky_trait', lambda: False)())
         save_modifier = participant.get_ability_modifier(save_type.upper())
         
         # Apply cover bonus to DEX saves
@@ -255,11 +258,11 @@ def grapple_endpoint(self, request, pk=None):
         )
     
     # Contested check: Grappler's Athletics vs Target's Athletics or Acrobatics
-    grappler_roll, _ = roll_d20()
+    grappler_roll, _ = roll_d20(lucky=getattr(grappler, 'has_lucky_trait', lambda: False)())
     grappler_athletics = grappler.get_ability_modifier('STR')  # Simplified
     grappler_total = grappler_roll + grappler_athletics
     
-    target_roll, _ = roll_d20()
+    target_roll, _ = roll_d20(lucky=getattr(target, 'has_lucky_trait', lambda: False)())
     # Target can use either Athletics (STR) or Acrobatics (DEX)
     target_athletics = target.get_ability_modifier('STR')
     target_acrobatics = target.get_ability_modifier('DEX')
@@ -340,13 +343,13 @@ def escape_grapple_endpoint(self, request, pk=None):
     grappler = participant.grappled_by
     
     # Contested check: Grappled's Athletics or Acrobatics vs Grappler's Athletics
-    participant_roll, _ = roll_d20()
+    participant_roll, _ = roll_d20(lucky=getattr(participant, 'has_lucky_trait', lambda: False)())
     participant_athletics = participant.get_ability_modifier('STR')
     participant_acrobatics = participant.get_ability_modifier('DEX')
     participant_modifier = max(participant_athletics, participant_acrobatics)
     participant_total = participant_roll + participant_modifier
     
-    grappler_roll, _ = roll_d20()
+    grappler_roll, _ = roll_d20(lucky=getattr(grappler, 'has_lucky_trait', lambda: False)())
     grappler_athletics = grappler.get_ability_modifier('STR')
     grappler_total = grappler_roll + grappler_athletics
     

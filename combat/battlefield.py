@@ -158,17 +158,29 @@ def calculate_tile_path(
 
     # Map hostile enemy positions that block pathing
     hostile_cells = set()
+    creature_cells = set()
+    has_nimbleness = getattr(participant, 'has_halfling_nimbleness', lambda: False)()
+    SIZE_RANKS = {'T': 1, 'S': 2, 'M': 3, 'L': 4, 'H': 5, 'G': 6}
+    mover_rank = SIZE_RANKS.get(getattr(participant, 'get_size', lambda: 'M')(), 2 if has_nimbleness else 3)
+
     if hasattr(session, 'participants'):
         opp_type = 'enemy' if participant.participant_type == 'character' else 'character'
-        enemies = session.participants.filter(
-            participant_type=opp_type,
+        all_living = session.participants.filter(
             is_active=True,
             current_hp__gt=0
-        )
-        for e in enemies:
-            ec = round(e.position_x / 5.0)
-            er = round(e.position_y / 5.0)
-            hostile_cells.add((ec, er))
+        ).exclude(id=participant.id)
+        
+        for c in all_living:
+            cc = round(c.position_x / 5.0)
+            cr = round(c.position_y / 5.0)
+            creature_cells.add((cc, cr))
+            if c.participant_type == opp_type:
+                # Halfling Nimbleness: Can move through space of creature larger than yours
+                if has_nimbleness:
+                    e_rank = SIZE_RANKS.get(getattr(c, 'get_size', lambda: 'M')(), 3)
+                    if e_rank > mover_rank:
+                        continue  # Nimble halfling can traverse through!
+                hostile_cells.add((cc, cr))
 
     # Priority queue for Dijkstra: (cost, col, row, path)
     pq = [(0, start_col, start_row, [(start_col * 5, start_row * 5)])]
@@ -211,8 +223,8 @@ def calculate_tile_path(
                 continue
 
             # Calculate step cost
-            # 5e: Difficult terrain costs 1 extra foot per foot moved (10 ft per 5ft square)
-            if is_tile_difficult(session, ncol, nrow):
+            # 5e: Difficult terrain (or moving through another creature's space) costs 10 ft per 5ft square
+            if is_tile_difficult(session, ncol, nrow) or (ncol, nrow) in creature_cells:
                 step_cost = 10
             else:
                 step_cost = 5
