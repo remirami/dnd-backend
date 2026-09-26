@@ -209,6 +209,16 @@ def is_condition_immune(participant, condition_name, is_magical: bool = True):
         if getattr(participant, 'has_fey_ancestry', lambda: False)():
             return True
 
+    # Protection from Evil and Good: immune to charmed and frightened
+    if clean_cond in ['charmed', 'frightened']:
+        if hasattr(participant, 'has_buff') and (participant.has_buff('protection from evil and good') or participant.has_buff('protection from undead')):
+            return True
+
+    # Heroism: immune to frightened
+    if clean_cond in ['frightened']:
+        if hasattr(participant, 'has_buff') and participant.has_buff('heroism'):
+            return True
+
     if participant.encounter_enemy:
         try:
             return participant.encounter_enemy.enemy.condition_immunities.filter(
@@ -265,7 +275,7 @@ def should_remove_condition(participant, condition_name, reason=''):
 
 
 def calculate_effective_speed(participant, base_speed):
-    """Calculate effective speed considering conditions"""
+    """Calculate effective speed considering conditions and buffs"""
     speed = base_speed
     
     # Check for speed-affecting conditions
@@ -280,6 +290,10 @@ def calculate_effective_speed(participant, base_speed):
     # Exhaustion level 5: speed 0
     if exhaustion_level >= 5:
         speed = 0
+
+    # Haste buff: walking speed is doubled
+    if hasattr(participant, 'has_buff') and participant.has_buff('haste'):
+        speed = speed * 2
     
     return speed
 
@@ -304,7 +318,7 @@ def has_attack_advantage_against(participant):
 
 def evaluate_attack_roll_conditions(attacker, target, is_melee=True):
     """
-    Evaluates both attacker and target conditions for attack rolls according to D&D 5e rules.
+    Evaluates both attacker and target conditions and active buffs for attack rolls according to D&D 5e rules.
     Returns: (advantage, disadvantage, reasons)
     """
     advantage = False
@@ -352,6 +366,23 @@ def evaluate_attack_roll_conditions(attacker, target, is_melee=True):
     if 'invisible' in tgt_conds:
         disadvantage = True
         reasons.append("Target is invisible")
+
+    # Target active buff: Protection from Evil and Good
+    # (Attacks against target by aberrations, celestials, elementals, fey, fiends, and undead have disadvantage)
+    if hasattr(target, 'has_buff') and (target.has_buff('protection from evil and good') or target.has_buff('protection from undead')):
+        attacker_type = ''
+        if attacker.encounter_enemy and attacker.encounter_enemy.enemy:
+            attacker_type = (attacker.encounter_enemy.enemy.creature_type or '').lower()
+        elif attacker.participant_type == 'enemy' and attacker.name:
+            from bestiary.models import Enemy
+            enemy_obj = Enemy.objects.filter(name=attacker.name).first()
+            if enemy_obj and enemy_obj.creature_type:
+                attacker_type = enemy_obj.creature_type.lower()
+        
+        protected_types = {'aberration', 'celestial', 'elemental', 'fey', 'fiend', 'undead'}
+        if attacker_type in protected_types:
+            disadvantage = True
+            reasons.append(f"Target has Protection from Evil and Good (vs {attacker_type})")
 
     return advantage, disadvantage, reasons
 

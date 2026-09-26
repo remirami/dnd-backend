@@ -427,6 +427,11 @@ class CombatParticipantViewSet(viewsets.ModelViewSet):
         participant.is_concentrating = False
         participant.concentration_spell = ""
         participant.save()
+        try:
+            from combat.spell_rules import remove_caster_concentration_buffs
+            remove_caster_concentration_buffs(participant)
+        except Exception:
+            pass
         
         serializer = self.get_serializer(participant)
         return Response({

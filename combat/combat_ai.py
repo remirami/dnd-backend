@@ -300,7 +300,7 @@ def _select_target(targets, attacker=None, enemy=None):
 
         # 4. Low AC priority for Brutes
         if archetype == 'brute':
-            target_ac = target.armor_class or 10
+            target_ac = target.calculate_effective_ac() if hasattr(target, 'calculate_effective_ac') else (target.armor_class or 10)
             score += max(0, 18 - target_ac) * 1.5
 
         # 5. Pack Hunter ally focus
@@ -567,10 +567,13 @@ def _execute_attack(session, attacker, target, attack, advantage=False):
 
     roll, _roll_breakdown = roll_d20(advantage=eff_adv, disadvantage=eff_disadv)
     attack_total = roll + attack_bonus
+    if hasattr(attacker, 'has_buff') and attacker.has_buff('bless'):
+        import random
+        attack_total += random.randint(1, 4)
 
     is_critical = (roll == 20)
     is_fumble = (roll == 1)
-    target_ac = target.armor_class
+    target_ac = target.calculate_effective_ac() if hasattr(target, 'calculate_effective_ac') else (target.armor_class or 10)
     hit = is_critical or (not is_fumble and attack_total >= target_ac)
     if hit and is_auto_critical(attacker, target, is_melee=is_melee):
         is_critical = True

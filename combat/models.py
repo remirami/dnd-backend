@@ -971,8 +971,96 @@ class CombatParticipant(models.Model):
         
         return bonuses
     
+    def get_active_buffs(self):
+        """Get list of active buffs stored on this participant."""
+        if not isinstance(self.feature_uses, dict):
+            return []
+        return self.feature_uses.get('active_buffs', [])
+
+    def has_buff(self, buff_name):
+        """Check if participant has a specific active buff (case-insensitive)."""
+        if not buff_name:
+            return False
+        clean = str(buff_name).strip().lower()
+        alias_map = {
+            'protection from undead': 'protection from evil and good',
+            'protect from undead': 'protection from evil and good',
+            'protect from evil and good': 'protection from evil and good',
+            'protection from evil & good': 'protection from evil and good',
+            'protect from evil & good': 'protection from evil and good',
+        }
+        clean = alias_map.get(clean, clean)
+        for b in self.get_active_buffs():
+            b_clean = b.get('name', '').strip().lower()
+            b_clean = alias_map.get(b_clean, b_clean)
+            if b_clean == clean:
+                return True
+        return False
+
+    def get_buff(self, buff_name):
+        """Get buff dict if active, else None."""
+        if not buff_name:
+            return None
+        clean = str(buff_name).strip().lower()
+        alias_map = {
+            'protection from undead': 'protection from evil and good',
+            'protect from undead': 'protection from evil and good',
+            'protect from evil and good': 'protection from evil and good',
+            'protection from evil & good': 'protection from evil and good',
+            'protect from evil & good': 'protection from evil and good',
+        }
+        clean = alias_map.get(clean, clean)
+        for b in self.get_active_buffs():
+            b_clean = b.get('name', '').strip().lower()
+            b_clean = alias_map.get(b_clean, b_clean)
+            if b_clean == clean:
+                return b
+        return None
+
+    def add_buff(self, name, caster_id=None, source_spell=None, ac_bonus=0, bonus_dice=None, concentration=True, description=""):
+        """Add or update an active buff."""
+        if not isinstance(self.feature_uses, dict):
+            self.feature_uses = {}
+        buffs = list(self.feature_uses.get('active_buffs', []))
+        buffs = [b for b in buffs if b.get('name', '').lower() != name.lower()]
+        new_buff = {
+            'name': name,
+            'caster_id': caster_id,
+            'source_spell': source_spell or name,
+            'ac_bonus': ac_bonus,
+            'bonus_dice': bonus_dice,
+            'concentration': concentration,
+            'description': description,
+            'is_buff': True,
+        }
+        buffs.append(new_buff)
+        self.feature_uses['active_buffs'] = buffs
+        self.save(update_fields=['feature_uses'])
+        return new_buff
+
+    def remove_buff(self, buff_name):
+        """Remove an active buff by name."""
+        if not isinstance(self.feature_uses, dict):
+            return
+        buffs = list(self.feature_uses.get('active_buffs', []))
+        clean = str(buff_name).strip().lower()
+        new_buffs = [b for b in buffs if b.get('name', '').lower() != clean]
+        if len(new_buffs) != len(buffs):
+            self.feature_uses['active_buffs'] = new_buffs
+            self.save(update_fields=['feature_uses'])
+
+    def remove_buffs_by_caster(self, caster_id):
+        """Remove all concentration buffs cast by a specific caster."""
+        if not isinstance(self.feature_uses, dict) or caster_id is None:
+            return
+        buffs = list(self.feature_uses.get('active_buffs', []))
+        new_buffs = [b for b in buffs if not (b.get('caster_id') == caster_id and b.get('concentration'))]
+        if len(new_buffs) != len(buffs):
+            self.feature_uses['active_buffs'] = new_buffs
+            self.save(update_fields=['feature_uses'])
+
     def calculate_effective_ac(self, cover_bonus=0):
-        """Calculate effective AC including armor, magic items, and cover"""
+        """Calculate effective AC including armor, magic items, cover, and active buffs"""
         base_ac = self.armor_class
         
         # Get armor bonuses
@@ -993,8 +1081,12 @@ class CombatParticipant(models.Model):
             if armor.armor_type in ['light', 'medium']:
                 base_ac += dex_mod
             elif armor.armor_type == 'heavy':
-                # Heavy armor doesn't add DEX
                 pass
+        else:
+            # Check for Mage Armor buff if not wearing armor: base AC is 13 + Dex mod
+            if self.has_buff('mage armor'):
+                dex_mod = self.get_ability_modifier('DEX')
+                base_ac = max(base_ac, 13 + dex_mod)
         
         # Add shield bonus
         if shield:
@@ -1003,6 +1095,14 @@ class CombatParticipant(models.Model):
         # Add magic item bonuses
         magic_bonuses = self.get_magic_item_bonuses()
         base_ac += magic_bonuses['to_ac']
+        
+        # Add active buffs AC bonuses (e.g. Shield of Faith +2, Haste +2)
+        for buff in self.get_active_buffs():
+            base_ac += buff.get('ac_bonus', 0)
+            
+        # Barkskin: Target's AC cannot be less than 16
+        if self.has_buff('barkskin'):
+            base_ac = max(base_ac, 16)
         
         # Add cover bonus
         base_ac += cover_bonus
@@ -1109,6 +1209,7 @@ class CombatParticipant(models.Model):
                 }
 
         self.last_relentless_endurance_triggered = False
+        concentration_broken = False
         potential_hp = self.current_hp - actual_damage
         if potential_hp <= 0 and self.current_hp > 0 and self.has_relentless_endurance():
             uses = self.feature_uses or {}
@@ -1135,11 +1236,23 @@ class CombatParticipant(models.Model):
                 if self.is_raging():
                     self.feature_uses['is_raging'] = False
                     self.feature_uses['rage_rounds_left'] = 0
+                # Falling unconscious breaks concentration immediately
+                if self.is_concentrating:
+                    self.is_concentrating = False
+                    self.concentration_spell = ""
+                    concentration_broken = True
+                    try:
+                        from combat.spell_rules import remove_caster_concentration_buffs
+                        remove_caster_concentration_buffs(self)
+                    except Exception:
+                        pass
         
         # Check concentration if taking damage while concentrating
-        concentration_broken = False
+        concentration_broken_check = False
         if check_concentration and self.is_concentrating and actual_damage > 0:
-            concentration_broken, _, _, _ = self.check_concentration(actual_damage)
+            concentration_broken_check, _, _, _ = self.check_concentration(actual_damage)
+            if concentration_broken_check:
+                concentration_broken = True
         
         self.save()
         return self.current_hp, concentration_broken
@@ -1433,6 +1546,11 @@ class CombatParticipant(models.Model):
             spell_name = self.concentration_spell
             self.concentration_spell = ""
             self.save()
+            try:
+                from combat.spell_rules import remove_caster_concentration_buffs
+                remove_caster_concentration_buffs(self)
+            except Exception:
+                pass
             return True, save_total, save_dc, f"Concentration broken! Lost concentration on {spell_name}"
         
         return False, save_total, save_dc, f"Concentration maintained (DC {save_dc}, rolled {save_total})"

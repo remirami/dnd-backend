@@ -39,6 +39,29 @@ class CombatParticipantSerializer(serializers.ModelSerializer):
                 'is_dead': instance.death_save_failures >= 3
             }
         
+        # Effective AC including buffs, armor, and magic items
+        data['effective_ac'] = instance.calculate_effective_ac()
+
+        # Active buffs representation
+        active_buffs = instance.get_active_buffs() if hasattr(instance, 'get_active_buffs') else (instance.feature_uses or {}).get('active_buffs', [])
+        data['active_buffs'] = active_buffs
+
+        # Inject active buffs into data['conditions'] so all condition badges and clash cards display them!
+        conds = list(data.get('conditions') or [])
+        existing_cond_names = {c.get('name', '').lower() if isinstance(c, dict) else str(c).lower() for c in conds}
+        for buff in active_buffs:
+            b_name = buff.get('name', '')
+            if b_name.lower() not in existing_cond_names:
+                conds.append({
+                    'name': b_name,
+                    'description': buff.get('description', ''),
+                    'is_buff': True,
+                    'source': buff.get('source_spell', ''),
+                    'caster_id': buff.get('caster_id'),
+                })
+                existing_cond_names.add(b_name.lower())
+        data['conditions'] = conds
+
         # Creature size & racial trait flags
         data['size'] = instance.get_size()
         if instance.character:

@@ -582,3 +582,162 @@ def has_active_shield(participant):
     except Exception:
         pass
     return False
+
+
+BUFF_SPELL_RULES = {
+    'protection from evil and good': {
+        'name': 'Protection from Evil and Good',
+        'requires_concentration': True,
+        'disadvantage_creature_types': ['aberration', 'celestial', 'elemental', 'fey', 'fiend', 'undead'],
+        'immune_conditions': ['charmed', 'frightened'],
+        'description': 'Protected against aberrations, celestials, elementals, fey, fiends, and undead. Their attacks have Disadvantage against the target, and target cannot be charmed, frightened, or possessed by them.',
+    },
+    'shield of faith': {
+        'name': 'Shield of Faith',
+        'requires_concentration': True,
+        'ac_bonus': 2,
+        'description': 'A shimmering divine field surrounds the target, granting a +2 bonus to AC.',
+    },
+    'bless': {
+        'name': 'Bless',
+        'requires_concentration': True,
+        'bonus_dice': '1d4',
+        'description': 'Divine favor grants +1d4 added to all attack rolls and saving throws.',
+    },
+    'mage armor': {
+        'name': 'Mage Armor',
+        'requires_concentration': False,
+        'base_ac_override': 13,
+        'description': 'Target’s base AC becomes 13 + Dex modifier while not wearing armor.',
+    },
+    'haste': {
+        'name': 'Haste',
+        'requires_concentration': True,
+        'ac_bonus': 2,
+        'speed_multiplier': 2.0,
+        'advantage_dex_saves': True,
+        'extra_action': True,
+        'description': '+2 AC, double speed, advantage on Dex saves, and an extra action.',
+    },
+    'heroism': {
+        'name': 'Heroism',
+        'requires_concentration': True,
+        'immune_conditions': ['frightened'],
+        'description': 'Target is immune to being frightened and gains temporary HP at the start of each turn.',
+    },
+    'barkskin': {
+        'name': 'Barkskin',
+        'requires_concentration': True,
+        'min_ac': 16,
+        'description': 'Target’s AC cannot be less than 16, regardless of armor.',
+    },
+    'guidance': {
+        'name': 'Guidance',
+        'requires_concentration': True,
+        'bonus_dice': '1d4',
+        'description': '+1d4 bonus to one ability check.',
+    },
+    'resistance': {
+        'name': 'Resistance',
+        'requires_concentration': True,
+        'bonus_dice': '1d4',
+        'description': '+1d4 bonus to one saving throw.',
+    },
+    'invisibility': {
+        'name': 'Invisibility',
+        'requires_concentration': True,
+        'condition': 'invisible',
+        'description': 'Target is invisible. Attacks have advantage, attacks against have disadvantage.',
+    },
+}
+
+BUFF_SPELL_ALIASES = {
+    'protection from undead': 'protection from evil and good',
+    'protect from undead': 'protection from evil and good',
+    'protect from evil and good': 'protection from evil and good',
+    'protection from evil & good': 'protection from evil and good',
+    'protect from evil & good': 'protection from evil and good',
+}
+
+
+def normalize_buff_spell_name(spell_name):
+    """Normalize a spell name to a canonical buff key."""
+    if not spell_name:
+        return ''
+    clean = str(spell_name).strip().lower()
+    return BUFF_SPELL_ALIASES.get(clean, clean)
+
+
+def is_buff_spell(spell_name):
+    """Check if a spell provides a positive combat buff."""
+    canon = normalize_buff_spell_name(spell_name)
+    return canon in BUFF_SPELL_RULES
+
+
+def get_buff_rule(spell_name):
+    """Retrieve the buff rule dict for a given spell name."""
+    canon = normalize_buff_spell_name(spell_name)
+    return BUFF_SPELL_RULES.get(canon)
+
+
+def apply_buff_to_target(caster, target, spell_name):
+    """
+    Apply a buff effect to a combat participant.
+    Records caster ID (for concentration expiration), AC bonuses, dice bonuses, etc.
+    """
+    rule = get_buff_rule(spell_name)
+    if not rule or not target:
+        return None
+
+    buff_name = rule['name']
+    ac_bonus = rule.get('ac_bonus', 0)
+    bonus_dice = rule.get('bonus_dice')
+    concentration = rule.get('requires_concentration', False)
+    description = rule.get('description', '')
+
+    applied = target.add_buff(
+        name=buff_name,
+        caster_id=caster.id if caster else None,
+        source_spell=spell_name,
+        ac_bonus=ac_bonus,
+        bonus_dice=bonus_dice,
+        concentration=concentration,
+        description=description,
+    )
+
+    # If the buff also applies a condition (e.g. Invisibility -> invisible)
+    cond_name = rule.get('condition')
+    if cond_name:
+        try:
+            from bestiary.models import Condition
+            cond_obj = Condition.objects.filter(name=cond_name).first()
+            if cond_obj:
+                target.conditions.add(cond_obj)
+        except Exception:
+            pass
+
+    return applied
+
+
+def remove_caster_concentration_buffs(caster):
+    """
+    When a caster's concentration ends or is broken, remove all concentration
+    buffs originating from this caster across the entire combat session.
+    """
+    if not caster or not caster.combat_session:
+        return []
+    
+    removed_from = []
+    try:
+        participants = caster.combat_session.participants.all()
+        for p in participants:
+            if hasattr(p, 'remove_buffs_by_caster'):
+                had_buffs = bool((p.feature_uses or {}).get('active_buffs'))
+                p.remove_buffs_by_caster(caster.id)
+                has_buffs_now = bool((p.feature_uses or {}).get('active_buffs'))
+                if had_buffs and not has_buffs_now:
+                    removed_from.append(p)
+    except Exception:
+        pass
+    return removed_from
+

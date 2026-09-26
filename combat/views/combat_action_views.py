@@ -574,6 +574,12 @@ class CombatActionMixin:
         # Get magic item bonuses
         magic_bonuses = attacker.get_magic_item_bonuses()
         other_modifiers += magic_bonuses['to_hit']
+
+        # 5e Bless buff: add +1d4 to attack rolls
+        if hasattr(attacker, 'has_buff') and attacker.has_buff('bless'):
+            bless_val = random.randint(1, 4)
+            other_modifiers += bless_val
+            adv_reasons.append(f"Bless (+{bless_val})")
         
         attack_total, attack_breakdown = calculate_attack_roll(
             roll, ability_mod, proficiency_bonus, proficiency, other_modifiers
@@ -1014,6 +1020,12 @@ class CombatActionMixin:
 
         # Handle concentration
         if requires_concentration:
+            if caster.is_concentrating and caster.concentration_spell != spell_name:
+                try:
+                    from combat.spell_rules import remove_caster_concentration_buffs
+                    remove_caster_concentration_buffs(caster)
+                except Exception:
+                    pass
             caster.is_concentrating = True
             caster.concentration_spell = spell_name
             caster.save(update_fields=['is_concentrating', 'concentration_spell'])
@@ -1273,6 +1285,12 @@ class CombatActionMixin:
                         source_name=spell_name
                     )
 
+            # Auto-apply buffs from buff spells (Protection from Evil and Good, Shield of Faith, Bless, Mage Armor, Haste, etc.)
+            from combat.spell_rules import is_buff_spell, apply_buff_to_target
+            buff_applied = None
+            if is_buff_spell(spell_name):
+                buff_applied = apply_buff_to_target(caster, t, spell_name)
+
             t_resistance_info = getattr(t, 'last_resistance_info', None)
             t_cond_immune = getattr(t, 'last_condition_immune', None)
 
@@ -1287,6 +1305,7 @@ class CombatActionMixin:
                 "healing": t_healing,
                 "concentration_broken": concentration_broken,
                 "condition_applied": t_cond.name if t_cond else None,
+                "buff_applied": buff_applied['name'] if buff_applied else None,
                 "condition_immune": t_cond_immune,
                 "post_effects": post_effects,
                 "resistance_info": t_resistance_info,
@@ -1310,7 +1329,13 @@ class CombatActionMixin:
             elif t_cond_immune:
                 cond_str = f" [IMMUNE to {t_cond_immune}!]"
 
-            if is_healing:
+            buff_str = ""
+            if buff_applied:
+                buff_str = f" [Buff: {buff_applied['name']}]"
+
+            if buff_applied:
+                t_desc = f"{caster.get_name()} casts {spell_name} on {t.get_name()}, granting {buff_applied['name']}!{buff_str}{rider_str}"
+            elif is_healing:
                 t_desc = f"{caster.get_name()} casts {spell_name} on {t.get_name()}, restoring {t_healing} HP{cond_str}{rider_str}"
             elif t_damage > 0:
                 save_str = f" (rolled {t_save_total} vs DC {save_dc} - {'SAVED' if t_save_success else 'FAILED'})" if save_type else ""
@@ -1495,6 +1520,7 @@ class CombatActionMixin:
             "save_success": first_tr.get("save_success"),
             "damage": first_tr.get("damage", 0),
             "condition_applied": first_tr.get("condition_applied"),
+            "buff_applied": first_tr.get("buff_applied"),
             "concentration_started": requires_concentration,
             "action": CombatActionSerializer(combat_actions[0]).data if combat_actions else None,
             "session": session_data
@@ -1539,11 +1565,28 @@ class CombatActionMixin:
         if save_type.upper() in ['INT', 'WIS', 'CHA'] and getattr(participant, 'has_gnome_cunning', lambda: False)():
             save_adv = True
         
+        # Haste: Advantage on DEX saves
+        if save_type.upper() == 'DEX' and hasattr(participant, 'has_buff') and participant.has_buff('haste'):
+            save_adv = True
+        
         roll, roll_breakdown = roll_d20(advantage=save_adv, disadvantage=disadvantage, lucky=getattr(participant, 'has_lucky_trait', lambda: False)())
         ability_mod = participant.get_ability_modifier(save_type)
         proficiency_bonus = participant.character.proficiency_bonus if participant.character else 2
         proficiency = False  # Simplified
         save_total, save_breakdown = calculate_saving_throw(roll, ability_mod, proficiency_bonus, proficiency)
+
+        # Bless buff: add +1d4 to saving throws
+        bless_save_bonus = 0
+        if hasattr(participant, 'has_buff') and participant.has_buff('bless'):
+            bless_save_bonus = random.randint(1, 4)
+            save_total += bless_save_bonus
+
+        # Resistance buff: add +1d4 to saving throws
+        resistance_save_bonus = 0
+        if hasattr(participant, 'has_buff') and participant.has_buff('resistance'):
+            resistance_save_bonus = random.randint(1, 4)
+            save_total += resistance_save_bonus
+
         save_success = save_total >= save_dc
         
         # Create combat action
