@@ -3,7 +3,7 @@ from django.contrib.auth.models import User
 from unittest.mock import patch
 
 from bestiary.models import Enemy, EnemyStats
-from characters.models import Character, CharacterClass, CharacterRace, CharacterStats
+from characters.models import Character, CharacterClass, CharacterRace
 from combat.models import CombatParticipant, CombatSession
 from combat.utils import roll_d20
 from combat.battlefield import calculate_tile_path

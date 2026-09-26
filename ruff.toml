@@ -21,4 +21,5 @@ ignore = [
     "S110",    # `try`-`except`-`pass` detected
     "SIM102",  # Use a single `if` statement instead of nested `if` statements
     "SIM103",  # Return the condition directly
+    "E501",    # Line too long
 ]
