@@ -4,8 +4,7 @@ from rest_framework.test import APIClient
 
 from bestiary.models import Enemy
 from characters.models import Character, CharacterClass, CharacterRace, CharacterStats
-from combat.models import CombatParticipant, CombatSession
-from gauntlet.models import GauntletRun, GauntletSnapshotHero
+from gauntlet.models import GauntletRun
 from gauntlet.services.wave_generator import WaveGenerator
 
 

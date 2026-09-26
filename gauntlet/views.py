@@ -1,4 +1,5 @@
 import logging
+
 from django.db import transaction
 from django.utils import timezone
 from rest_framework import permissions, status, viewsets
@@ -6,8 +7,7 @@ from rest_framework.decorators import action
 from rest_framework.response import Response
 
 from characters.models import Character
-from combat.models import CombatSession
-from gauntlet.models import GauntletRun, GauntletSnapshotHero
+from gauntlet.models import GauntletRun
 from gauntlet.serializers import (
     GauntletRunCreateSerializer,
     GauntletRunSerializer,
@@ -73,7 +73,7 @@ class GauntletViewSet(viewsets.ModelViewSet):
                 run.add_hero(char)
 
             # Auto-start Wave 1
-            combat_session = run.start_run()
+            run.start_run()
 
         output_serializer = GauntletRunSerializer(run)
         return Response(output_serializer.data, status=status.HTTP_201_CREATED)

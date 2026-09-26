@@ -1,6 +1,6 @@
 import random
+
 from django.db import transaction
-from django.utils import timezone
 
 from bestiary.models import Enemy
 from combat.models import CombatParticipant, CombatSession
@@ -166,7 +166,6 @@ class WaveGenerator:
 
         # Check for active tactical boons on run
         has_ac_boon = any(b.get('type') == 'ac_boost' for b in run.active_boons)
-        has_speed_boon = any(b.get('type') == 'speed_boost' for b in run.active_boons)
 
         # 1. Add Alive Snapshot Heroes
         for hero in run.snapshot_heroes.filter(is_alive=True):

@@ -1,11 +1,11 @@
 import random
+
 from django.contrib.auth.models import User
-from django.core.validators import MinValueValidator
 from django.db import models
 from django.utils import timezone
 
 from characters.models import Character
-from combat.models import CombatParticipant, CombatSession
+from combat.models import CombatSession
 
 
 class GauntletRun(models.Model):

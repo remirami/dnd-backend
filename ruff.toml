@@ -11,6 +11,10 @@ exclude = [
 ]
 
 [lint]
+select = [
+    "E",
+    "F",
+]
 ignore = [
     "E402",    # Module level import not at top of file
     "E722",    # Do not use bare `except`
@@ -22,4 +26,6 @@ ignore = [
     "SIM102",  # Use a single `if` statement instead of nested `if` statements
     "SIM103",  # Return the condition directly
     "E501",    # Line too long
+    "EXE001",  # Shebang is present but file is not executable (Windows checkout)
+    "I001",    # Import block is un-sorted or un-formatted
 ]
