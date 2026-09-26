@@ -610,6 +610,52 @@ BUFF_SPELL_RULES = {
         'base_ac_override': 13,
         'description': 'Target’s base AC becomes 13 + Dex modifier while not wearing armor.',
     },
+    'shield': {
+        'name': 'Shield',
+        'requires_concentration': False,
+        'ac_bonus': 5,
+        'duration_type': 'until_next_turn',
+        'negates_magic_missile': True,
+        'description': 'An invisible barrier of magical force grants a +5 bonus to AC and complete immunity to Magic Missile until the start of your next turn.',
+    },
+    'blur': {
+        'name': 'Blur',
+        'requires_concentration': True,
+        'attacks_have_disadvantage': True,
+        'description': 'Your body becomes blurred and shifting. Attack rolls against you have Disadvantage.',
+    },
+    'mirror image': {
+        'name': 'Mirror Image',
+        'requires_concentration': False,
+        'duplicates': 3,
+        'description': 'Three illusory duplicates appear, redirecting incoming attacks away from you.',
+    },
+    'false life': {
+        'name': 'False Life',
+        'requires_concentration': False,
+        'temp_hp': 8,
+        'description': 'Bolstering necromantic energy grants temporary hit points.',
+    },
+    'armor of agathys': {
+        'name': 'Armor of Agathys',
+        'requires_concentration': False,
+        'temp_hp': 5,
+        'retaliation_damage': 5,
+        'retaliation_type': 'cold',
+        'description': 'Spectral frost grants 5 temp HP. Melee attackers take 5 cold damage when hitting you.',
+    },
+    'expeditious retreat': {
+        'name': 'Expeditious Retreat',
+        'requires_concentration': True,
+        'bonus_dash': True,
+        'description': 'Allows taking the Dash action as a bonus action each turn.',
+    },
+    'fire shield': {
+        'name': 'Fire Shield',
+        'requires_concentration': False,
+        'retaliation_damage': '2d8',
+        'description': 'Thin flames wreathe your body. Melee attackers within 5 ft take 2d8 damage, and you gain damage resistance.',
+    },
     'haste': {
         'name': 'Haste',
         'requires_concentration': True,
@@ -704,6 +750,27 @@ def apply_buff_to_target(caster, target, spell_name):
         concentration=concentration,
         description=description,
     )
+
+    # If the spell grants temporary HP (e.g. False Life, Armor of Agathys)
+    temp_hp = rule.get('temp_hp', 0)
+    if temp_hp > 0:
+        if getattr(target, 'temp_hp', 0) < temp_hp:
+            target.temp_hp = temp_hp
+            target.save(update_fields=['temp_hp'] if hasattr(target, 'temp_hp') else [])
+
+    # Special handling for Shield spell reaction / flag
+    if buff_name.lower() == 'shield':
+        if not isinstance(target.feature_uses, dict):
+            target.feature_uses = {}
+        target.feature_uses['shield_spell_active'] = True
+        target.save(update_fields=['feature_uses'])
+
+    # Special handling for Mirror Image duplicate tracking
+    if buff_name.lower() == 'mirror image':
+        if not isinstance(target.feature_uses, dict):
+            target.feature_uses = {}
+        target.feature_uses['mirror_image_count'] = rule.get('duplicates', 3)
+        target.save(update_fields=['feature_uses'])
 
     # If the buff also applies a condition (e.g. Invisibility -> invisible)
     cond_name = rule.get('condition')

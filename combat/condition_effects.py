@@ -384,6 +384,11 @@ def evaluate_attack_roll_conditions(attacker, target, is_melee=True):
             disadvantage = True
             reasons.append(f"Target has Protection from Evil and Good (vs {attacker_type})")
 
+    # Target active buff: Blur (attacks against target have disadvantage)
+    if hasattr(target, 'has_buff') and target.has_buff('blur'):
+        disadvantage = True
+        reasons.append("Target has Blur (disadvantage on attacks)")
+
     return advantage, disadvantage, reasons
 
 

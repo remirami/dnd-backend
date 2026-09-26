@@ -910,6 +910,12 @@ class CombatActionMixin:
                         status=status.HTTP_404_NOT_FOUND
                     )
         
+        # Auto-target self for Self-range spells or self-buffs if no target is specified
+        if not targets:
+            self_buffs = {'shield', 'blur', 'mirror image', 'false life', 'expeditious retreat', 'fire shield', 'armor of agathys', 'blink', 'mage armor'}
+            if clean_spell_name in self_buffs:
+                targets = [caster]
+
         primary_target = targets[0] if targets else None
 
         # Resolve spell metadata from central spell library

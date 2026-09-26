@@ -187,3 +187,50 @@ class BuffMechanicsCombatTests(TestCase):
         self.fighter_p.refresh_from_db()
         self.assertTrue(self.fighter_p.has_buff('Shield of Faith'))
         self.assertEqual(self.fighter_p.calculate_effective_ac(), 18)
+
+    def test_shield_spell_ac_bonus(self):
+        """Shield spell should grant +5 AC until the start of next turn."""
+        base_ac = self.cleric_p.calculate_effective_ac()
+        self.assertEqual(base_ac, 16)
+
+        apply_buff_to_target(self.cleric_p, self.cleric_p, 'Shield')
+        self.assertTrue(self.cleric_p.has_buff('Shield'))
+        self.assertEqual(self.cleric_p.calculate_effective_ac(), 21)
+
+    def test_mage_armor_unarmored_ac(self):
+        """Mage Armor sets unarmored base AC to 13 + Dex mod."""
+        # Unarmored wizard (Dex 14 -> mod +2)
+        wizard_class = CharacterClass.objects.create(name='wizard', hit_dice='d6', primary_ability='INT')
+        wizard_char = Character.objects.create(
+            name='Gandalf', user=self.user, level=1, character_class=wizard_class, race=self.race
+        )
+        CharacterStats.objects.create(
+            character=wizard_char, hit_points=8, max_hit_points=8, armor_class=12, dexterity=14, intelligence=16
+        )
+        wizard_p = CombatParticipant.objects.create(
+            combat_session=self.session,
+            participant_type='character',
+            character=wizard_char,
+            current_hp=8,
+            max_hp=8,
+            armor_class=12,
+            initiative=10
+        )
+        self.assertEqual(wizard_p.calculate_effective_ac(), 12)
+
+        # Cast Mage Armor: 13 + Dex(2) = 15 AC
+        apply_buff_to_target(wizard_p, wizard_p, 'Mage Armor')
+        self.assertTrue(wizard_p.has_buff('Mage Armor'))
+        self.assertEqual(wizard_p.calculate_effective_ac(), 15)
+
+    def test_blur_gives_attackers_disadvantage(self):
+        """Blur should give attackers Disadvantage on attack rolls."""
+        adv, disadv, reasons = evaluate_attack_roll_conditions(self.skeleton_p, self.cleric_p)
+        self.assertFalse(disadv)
+
+        apply_buff_to_target(self.cleric_p, self.cleric_p, 'Blur')
+        self.assertTrue(self.cleric_p.has_buff('Blur'))
+
+        adv, disadv, reasons = evaluate_attack_roll_conditions(self.skeleton_p, self.cleric_p)
+        self.assertTrue(disadv)
+        self.assertTrue(any('Blur' in r for r in reasons))

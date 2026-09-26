@@ -1096,9 +1096,19 @@ class CombatParticipant(models.Model):
         magic_bonuses = self.get_magic_item_bonuses()
         base_ac += magic_bonuses['to_ac']
         
-        # Add active buffs AC bonuses (e.g. Shield of Faith +2, Haste +2)
+        # Add active buffs AC bonuses (e.g. Shield of Faith +2, Haste +2, Shield +5)
         for buff in self.get_active_buffs():
             base_ac += buff.get('ac_bonus', 0)
+
+        # Ensure Shield spell +5 AC is applied if active via action or flag without duplicate
+        has_shield_buff = any(b.get('name', '').lower() == 'shield' for b in self.get_active_buffs())
+        if not has_shield_buff:
+            try:
+                from combat.spell_rules import has_active_shield
+                if has_active_shield(self):
+                    base_ac += 5
+            except Exception:
+                pass
             
         # Barkskin: Target's AC cannot be less than 16
         if self.has_buff('barkskin'):
