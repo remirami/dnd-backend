@@ -5,6 +5,7 @@ Contains the CombatActionMixin with attack, cast_spell, and saving_throw actions
 """
 import logging
 import random
+import re
 
 from rest_framework import status
 from rest_framework.decorators import action

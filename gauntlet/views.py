@@ -31,7 +31,7 @@ class GauntletViewSet(viewsets.ModelViewSet):
         qs = GauntletRun.objects.prefetch_related(
             'snapshot_heroes',
             'snapshot_heroes__character'
-        ).select_related('current_combat_session').order_by('-started_at')
+        ).select_related('current_combat_session').order_by('-created_at')
 
         if user and user.is_authenticated and not user.is_staff:
             return qs.filter(user=user)
