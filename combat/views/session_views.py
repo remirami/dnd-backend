@@ -105,6 +105,9 @@ class CombatSessionViewSet(
             has_unplaced = session.participants.filter(position_x=0, position_y=0).exists()
             if has_unplaced:
                 session.initialize_grid_positions()
+                if hasattr(session, '_prefetched_objects_cache'):
+                    session._prefetched_objects_cache.clear()
+                session = self.get_queryset().get(pk=session.pk)
         serializer = self.get_serializer(session)
         return Response(serializer.data)
 
@@ -205,7 +208,10 @@ class CombatSessionViewSet(
         
         logger.info(f"Combat {pk} started with {participants.count()} participants")
         
-        serializer = self.get_serializer(session)
+        if hasattr(session, '_prefetched_objects_cache'):
+            session._prefetched_objects_cache.clear()
+        fresh_session = self.get_queryset().get(pk=session.pk)
+        serializer = self.get_serializer(fresh_session)
         return Response({
             "message": "Combat started",
             "session": serializer.data
@@ -491,7 +497,10 @@ class CombatSessionViewSet(
                 status=status.HTTP_400_BAD_REQUEST
             )
         
-        serializer = self.get_serializer(session)
+        if hasattr(session, '_prefetched_objects_cache'):
+            session._prefetched_objects_cache.clear()
+        fresh_session = self.get_queryset().get(pk=session.pk)
+        serializer = self.get_serializer(fresh_session)
         return Response({
             "message": f"Turn advanced to {next_participant.get_name()}",
             "session": serializer.data

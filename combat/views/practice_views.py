@@ -219,7 +219,10 @@ class CombatPracticeMixin:
             # Advance to next turn
             next_participant = session.next_turn()
             
-            serializer = self.get_serializer(session)
+            if hasattr(session, '_prefetched_objects_cache'):
+                session._prefetched_objects_cache.clear()
+            fresh_session = self.get_queryset().get(pk=session.pk)
+            serializer = self.get_serializer(fresh_session)
             return Response({
                 "message": f"{current.get_name()}'s turn resolved by AI",
                 "actor": current.get_name(),
@@ -234,7 +237,10 @@ class CombatPracticeMixin:
                 next_participant = session.next_turn()
             except Exception:
                 next_participant = None
-            serializer = self.get_serializer(session)
+            if hasattr(session, '_prefetched_objects_cache'):
+                session._prefetched_objects_cache.clear()
+            fresh_session = self.get_queryset().get(pk=session.pk)
+            serializer = self.get_serializer(fresh_session)
             return Response({
                 "message": f"AI turn for {current.get_name()} failed and was skipped: {e!s}",
                 "actor": current.get_name(),
@@ -297,8 +303,11 @@ class CombatPracticeMixin:
                 if living_players == 0:
                     break
             
-            serializer = self.get_serializer(session)
-            current = session.get_current_participant()
+            if hasattr(session, '_prefetched_objects_cache'):
+                session._prefetched_objects_cache.clear()
+            fresh_session = self.get_queryset().get(pk=session.pk)
+            serializer = self.get_serializer(fresh_session)
+            current = fresh_session.get_current_participant()
             
             return Response({
                 "message": f"Resolved {turns_resolved} enemy turn(s)",
