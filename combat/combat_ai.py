@@ -76,9 +76,10 @@ def resolve_enemy_turn(session, participant):
         actions.append(result)
         return actions
 
-    # 2. Check for Pack Tactics
+    # 2. Determine tactical archetype & preferred combat mode
+    archetype = _determine_archetype(participant, enemy)
     has_pack_tactics = False
-    if participant.has_trait('pack_tactics'):
+    if archetype == 'pack_hunter' or participant.has_trait('pack_tactics'):
         # Check if another living ally is active in the session
         ally_count = session.participants.filter(
             participant_type='enemy',
@@ -96,53 +97,97 @@ def resolve_enemy_turn(session, participant):
         })
         return actions
 
+    has_melee_atk = any(_is_attack_melee(a) for a in enemy_attacks)
+    has_ranged_atk = any(_is_attack_ranged(a) for a in enemy_attacks)
+
+    if archetype in ['sniper', 'caster'] and has_ranged_atk:
+        preferred_mode = 'ranged'
+    elif has_melee_atk:
+        preferred_mode = 'melee'
+    else:
+        preferred_mode = 'ranged'
+
     # 4. Multiattack evaluation
     attack_count, attack_sequence = _check_multiattack(participant, enemy)
 
-    # Tactical movement phase before attacking: close into reach or position
-    initial_target = _select_target(targets, attacker=participant, enemy=enemy)
-    first_attack = _select_attack(enemy_attacks, attacker=participant, enemy=enemy, target=initial_target)
+    # 5. Grid-aware target selection
+    target = _select_target(targets, attacker=participant, enemy=enemy, preferred_mode=preferred_mode)
+    if not target:
+        actions.append({
+            'type': 'skip',
+            'message': f"{participant.get_name()} has no valid targets to attack.",
+        })
+        return actions
 
-    if initial_target and first_attack:
-        move_action = _execute_ai_movement(session, participant, initial_target, first_attack)
-        if move_action:
-            actions.append(move_action)
+    intended_attack = _select_intended_attack(enemy_attacks, preferred_mode=preferred_mode)
 
-    # If we have an explicit sequence (e.g. [{'action_name': 'Bite', 'count': 1}, {'action_name': 'Claw', 'count': 2}])
+    # 6. 🐾 TACTICAL MOVEMENT PHASE (FIRST)
+    # Melee combatants close distance into reach before attacking.
+    # Ranged/Caster combatants back up if adjacent (to avoid disadvantage) or maintain distance.
+    move_action = _execute_ai_movement(
+        session, participant, target,
+        attack=intended_attack,
+        preferred_mode=preferred_mode
+    )
+    if move_action:
+        actions.append(move_action)
+
+    # 7. ⚔️ ATTACK RESOLUTION PHASE (SECOND)
+    reach = participant.get_reach() if hasattr(participant, 'get_reach') else 5
+
     if attack_sequence:
+        current_target = target
         for seq_item in attack_sequence:
             atk_name = seq_item['action_name']
             count = seq_item.get('count', 1)
-            # Find matching attack
             matched_atk = next((a for a in enemy_attacks if a['name'].lower() == atk_name.lower()), None)
             if not matched_atk:
-                matched_atk = _select_attack(enemy_attacks, attacker=participant, enemy=enemy, target=initial_target)
+                matched_atk = intended_attack
 
             for _ in range(count):
-                target = _select_target(targets, attacker=participant, enemy=enemy)
-                if not target:
-                    break
-                if target.id != initial_target.id:
-                    follow_move = _execute_ai_movement(session, participant, target, matched_atk)
+                # If current target died, pick next living target and move if movement remains
+                if current_target.current_hp <= 0 or not current_target.is_active:
+                    targets = [t for t in targets if t.current_hp > 0 and t.is_active]
+                    if not targets:
+                        break
+                    current_target = _select_target(targets, attacker=participant, enemy=enemy, preferred_mode=preferred_mode)
+                    follow_move = _execute_ai_movement(session, participant, current_target, attack=matched_atk, preferred_mode=preferred_mode)
                     if follow_move:
                         actions.append(follow_move)
-                res = _execute_attack(session, participant, target, matched_atk, advantage=has_pack_tactics)
-                actions.append(res)
+
+                in_range, _, _, _ = _check_action_range(participant, current_target, matched_atk.get('action_obj'), default_reach=reach)
+                if in_range:
+                    res = _execute_attack(session, participant, current_target, matched_atk, advantage=has_pack_tactics)
+                    actions.append(res)
+                else:
+                    ranged_fallback = _find_ranged_fallback(enemy_attacks, participant, current_target, default_reach=reach)
+                    if ranged_fallback:
+                        res = _execute_attack(session, participant, current_target, ranged_fallback, advantage=has_pack_tactics)
+                        actions.append(res)
                 targets = [t for t in targets if t.current_hp > 0 and t.is_active]
     else:
-        # Standard multiattack loop
+        current_target = target
         for _ in range(attack_count):
-            target = _select_target(targets, attacker=participant, enemy=enemy)
-            if not target:
-                break
-            if target.id != initial_target.id:
-                follow_move = _execute_ai_movement(session, participant, target, first_attack)
+            if current_target.current_hp <= 0 or not current_target.is_active:
+                targets = [t for t in targets if t.current_hp > 0 and t.is_active]
+                if not targets:
+                    break
+                current_target = _select_target(targets, attacker=participant, enemy=enemy, preferred_mode=preferred_mode)
+                follow_move = _execute_ai_movement(session, participant, current_target, attack=intended_attack, preferred_mode=preferred_mode)
                 if follow_move:
                     actions.append(follow_move)
-            attack = _select_attack(enemy_attacks, attacker=participant, enemy=enemy, target=target)
-            res = _execute_attack(session, participant, target, attack, advantage=has_pack_tactics)
-            actions.append(res)
+
+            attack_to_use = _select_attack_for_distance(enemy_attacks, participant, current_target, preferred_mode=preferred_mode, default_reach=reach)
+            if attack_to_use:
+                res = _execute_attack(session, participant, current_target, attack_to_use, advantage=has_pack_tactics)
+                actions.append(res)
             targets = [t for t in targets if t.current_hp > 0 and t.is_active]
+
+    if not actions:
+        actions.append({
+            'type': 'skip',
+            'message': f"{participant.get_name()} took a defensive stance and held their ground.",
+        })
 
     return actions
 
@@ -247,28 +292,51 @@ def _determine_archetype(participant, enemy):
     if participant and participant.has_trait('pack_tactics'):
         return 'pack_hunter'
 
-    if enemy:
-        # Check for spellcasting
-        if enemy.actions.filter(attack_type__in=['melee_spell', 'ranged_spell']).exists():
-            return 'caster'
-        # Check for ranged attacks
-        if enemy.actions.filter(attack_type='ranged_weapon').exists():
-            return 'sniper'
-        # Check high STR or giant/brute
-        if enemy.creature_type in ['giant', 'monstrosity'] or (hasattr(enemy, 'stats') and enemy.stats and enemy.stats.strength >= 16):
-            return 'brute'
+    if not enemy:
+        return 'skirmisher'
+
+    # Check for spellcasting actions or features
+    if enemy.actions.filter(attack_type__in=['melee_spell', 'ranged_spell']).exists():
+        return 'caster'
+
+    ranged_actions = enemy.actions.filter(attack_type='ranged_weapon')
+    melee_actions = enemy.actions.filter(attack_type='melee_weapon')
+    has_ranged = ranged_actions.exists()
+    has_melee = melee_actions.exists()
+
+    name_lower = (enemy.name or '').lower()
+    is_explicit_archer = any(term in name_lower for term in [
+        'archer', 'scout', 'sniper', 'marksman', 'sharpshooter', 'crossbowman', 'bowman'
+    ])
+
+    # If only ranged attacks, or name explicitly indicates archer/sniper
+    if has_ranged and (not has_melee or is_explicit_archer):
+        return 'sniper'
+
+    str_val = getattr(getattr(enemy, 'stats', None), 'strength', 10) or 10
+    dex_val = getattr(getattr(enemy, 'stats', None), 'dexterity', 10) or 10
+
+    # If creature has ranged weapons and DEX > STR, classify as sniper unless giant/monstrosity/beast
+    if has_ranged and dex_val > str_val and enemy.creature_type not in ['giant', 'monstrosity', 'beast']:
+        return 'sniper'
+
+    # Check high STR or giant/monstrosity/brute
+    if enemy.creature_type in ['giant', 'monstrosity'] or str_val >= 15:
+        return 'brute'
 
     return 'skirmisher'
 
 
-def _select_target(targets, attacker=None, enemy=None):
+def _select_target(targets, attacker=None, enemy=None, preferred_mode='melee'):
     """
-    Tactical Target Evaluation (Pillar 5):
-    Evaluates:
-    - Auto-crit vulnerability: Incapacitated (paralyzed/unconscious) targets receive massive priority (+50).
+    Tactical Target Evaluation (Pillar 5 & Pillar 6):
+    Grid-aware target selection that balances:
+    - Distance & Reachability: Can the attacker reach this target this turn?
+    - Auto-crit vulnerability: Incapacitated (paralyzed/unconscious) targets receive massive priority (+45).
     - Concentration threat: Casters & snipers target concentrating heroes to disrupt big spells (+35).
-    - Wounded/Kill shot: Targets with <=25% HP receive high focus (+30) to eliminate actions from the party.
-    - Low AC vulnerability: Brutes favor easier targets to guarantee high damage hits (+15).
+    - Wounded/Kill shot: Targets with <=25% HP receive high focus (+25) to eliminate party action economy.
+    - Low AC vulnerability: Brutes favor easier targets to guarantee hits (+15).
+    - Pack Hunter ally focus: (+20) when allies are engaging the target.
     """
     if not targets:
         return None
@@ -278,22 +346,59 @@ def _select_target(targets, attacker=None, enemy=None):
     best_target = None
     best_score = -999999.0
 
+    cur_x = (attacker.position_x or 0) if attacker else 0
+    cur_y = (attacker.position_y or 0) if attacker else 0
+    speed = (attacker.speed or 30) if attacker else 30
+    movement_remaining = max(0, speed - ((attacker.movement_used or 0) if attacker else 0))
+    reach = (attacker.get_reach() if hasattr(attacker, 'get_reach') else 5) if attacker else 5
+    has_coords = attacker and (attacker.position_x != 0 or attacker.position_y != 0)
+
     for target in targets:
         score = 0.0
+        tgt_x = target.position_x or 0
+        tgt_y = target.position_y or 0
+        dist = max(abs(cur_x - tgt_x), abs(cur_y - tgt_y)) if has_coords else 5
 
-        # 1. Incapacitated target execution (+50)
+        # ── Distance & Reachability Scoring ──
+        if has_coords:
+            if preferred_mode == 'melee':
+                if dist <= reach:
+                    # Target is ALREADY in melee reach: huge priority!
+                    # Saves movement, avoids opportunity attacks, enables full multiattack
+                    score += 60.0
+                elif dist <= movement_remaining + reach:
+                    # Reachable with movement this turn: high priority, closer is better
+                    score += 35.0 - (dist / 5.0) * 2.0
+                else:
+                    # Unreachable this turn: heavy penalty so reachable targets are always chosen first.
+                    # If all targets are unreachable, closest will still have the highest score
+                    score -= 80.0 + (dist / 5.0) * 3.0
+            else:
+                # Ranged / Caster
+                if dist <= 5:
+                    # In melee: disadvantage on ranged attacks!
+                    score -= 15.0
+                elif 15 <= dist <= 60:
+                    # Optimal firing range
+                    score += 30.0
+                elif dist > 60:
+                    # Long range or far away
+                    score -= (dist - 60) * 0.5
+
+        # ── Tactical 5e Priorities ──
+        # 1. Incapacitated target execution (+45)
         if target.is_incapacitated():
-            score += 50.0
+            score += 45.0
 
         # 2. Concentration disruption
         if getattr(target, 'is_concentrating', False):
             score += 35.0 if archetype in ['caster', 'sniper'] else 15.0
 
-        # 3. Wounded / Low HP priority (up to +30)
+        # 3. Wounded / Low HP priority (up to +25)
         if target.max_hp > 0:
             hp_percent = target.current_hp / target.max_hp
             if hp_percent <= 0.25:
-                score += 30.0
+                score += 25.0
             elif hp_percent <= 0.50:
                 score += 15.0
             score += (1.0 - hp_percent) * 10.0
@@ -305,16 +410,16 @@ def _select_target(targets, attacker=None, enemy=None):
 
         # 5. Pack Hunter ally focus
         if archetype == 'pack_hunter':
-            score += 15.0
+            score += 20.0
 
-        # Small random jitter
-        score += random.uniform(0, 3)
+        # Small random jitter (0..1.5) to avoid robotic determinism on ties
+        score += random.uniform(0, 1.5)
 
         if score > best_score:
             best_score = score
             best_target = target
 
-    return best_target or random.choice(targets)
+    return best_target or targets[0]
 
 
 def _parse_action_range(action_obj, default_reach=5):
@@ -362,6 +467,82 @@ def _check_action_range(attacker, target, action_obj, default_reach=5):
     if not is_melee and dist > normal_r:
         return True, True, dist, max_r
     return True, False, dist, max_r
+
+
+def _is_attack_melee(attack, default_reach=5):
+    """Check if an attack is a melee attack."""
+    if not attack:
+        return True
+    act = attack.get('action_obj')
+    if act:
+        _, _, is_melee = _parse_action_range(act, default_reach=default_reach)
+        return is_melee
+    name = (attack.get('name') or '').lower()
+    ranged_terms = ['bow', 'crossbow', 'dart', 'sling', 'blowgun', 'ranged', 'ray', 'blast', 'javelin', 'rock']
+    return not any(term in name for term in ranged_terms)
+
+
+def _is_attack_ranged(attack, default_reach=5):
+    """Check if an attack is a ranged attack."""
+    return not _is_attack_melee(attack, default_reach=default_reach)
+
+
+def _select_intended_attack(attacks, preferred_mode='melee'):
+    """Select the intended attack for closing distance."""
+    if not attacks:
+        return None
+    if preferred_mode == 'melee':
+        melee_atks = [a for a in attacks if _is_attack_melee(a)]
+        if melee_atks:
+            return max(melee_atks, key=lambda a: a.get('bonus', 0))
+    else:
+        ranged_atks = [a for a in attacks if _is_attack_ranged(a)]
+        if ranged_atks:
+            return max(ranged_atks, key=lambda a: a.get('bonus', 0))
+    return max(attacks, key=lambda a: a.get('bonus', 0))
+
+
+def _select_attack_for_distance(attacks, attacker, target, preferred_mode='melee', default_reach=5):
+    """Select the best attack considering actual post-movement distance to target."""
+    if not attacks or not attacker or not target:
+        return attacks[0] if attacks else None
+
+    dist = attacker.get_distance_to(target) if hasattr(attacker, 'get_distance_to') else max(
+        abs((attacker.position_x or 0) - (target.position_x or 0)),
+        abs((attacker.position_y or 0) - (target.position_y or 0))
+    )
+
+    # In melee reach
+    if dist <= default_reach:
+        if preferred_mode == 'melee':
+            melee_atks = [a for a in attacks if _is_attack_melee(a, default_reach=default_reach)]
+            if melee_atks:
+                return max(melee_atks, key=lambda a: a.get('bonus', 0))
+        return max(attacks, key=lambda a: a.get('bonus', 0))
+
+    # Outside melee reach: look for attacks that can reach dist
+    in_range_attacks = []
+    for a in attacks:
+        act = a.get('action_obj')
+        in_range, _, _, _ = _check_action_range(attacker, target, act, default_reach=default_reach)
+        if in_range:
+            in_range_attacks.append(a)
+
+    if in_range_attacks:
+        return max(in_range_attacks, key=lambda a: a.get('bonus', 0))
+
+    return None
+
+
+def _find_ranged_fallback(attacks, attacker, target, default_reach=5):
+    """Find a ranged attack that can reach the target if melee attack is out of reach."""
+    for a in attacks:
+        if _is_attack_ranged(a, default_reach=default_reach):
+            act = a.get('action_obj')
+            in_range, _, _, _ = _check_action_range(attacker, target, act, default_reach=default_reach)
+            if in_range:
+                return a
+    return None
 
 
 def _select_attack(attacks, attacker=None, enemy=None, target=None):
@@ -743,7 +924,7 @@ LAYOUT_OBSTACLES = {
 }
 
 
-def _execute_ai_movement(session, participant, target, attack=None):
+def _execute_ai_movement(session, participant, target, attack=None, preferred_mode=None):
     """
     Tactical movement phase for enemy AI.
     Calculates whether the enemy needs to close distance (for melee)
@@ -766,15 +947,22 @@ def _execute_ai_movement(session, participant, target, attack=None):
 
     # Determine melee vs ranged and reach
     action_obj = attack.get('action_obj') if attack else None
-    normal_r, max_r, is_melee = _parse_action_range(
+    normal_r, max_r, parsed_is_melee = _parse_action_range(
         action_obj,
         default_reach=participant.get_reach() if hasattr(participant, 'get_reach') else 5
     )
-    if not action_obj and attack and any(term in attack.get('name', '').lower() for term in ['bow', 'crossbow', 'dart', 'sling', 'blowgun', 'ranged', 'ray', 'blast', 'javelin']):
-        is_melee = False
+    if not action_obj and attack and any(term in attack.get('name', '').lower() for term in ['bow', 'crossbow', 'dart', 'sling', 'blowgun', 'ranged', 'ray', 'blast', 'javelin', 'rock']):
+        parsed_is_melee = False
         normal_r, max_r = 60, 120
 
-    reach = normal_r if is_melee else 5
+    if preferred_mode == 'melee':
+        is_melee = True
+    elif preferred_mode == 'ranged':
+        is_melee = False
+    else:
+        is_melee = parsed_is_melee
+
+    reach = normal_r if (is_melee and action_obj) else (participant.get_reach() if hasattr(participant, 'get_reach') else 5)
 
     # If already in melee reach, no need to move
     if is_melee and cur_dist <= reach:
@@ -838,6 +1026,12 @@ def _execute_ai_movement(session, participant, target, attack=None):
         participant.movement_used = (participant.movement_used or 0) + best_step_cost
         participant.save(update_fields=['position_x', 'position_y', 'movement_used'])
 
+        move_desc = (
+            f"{participant.get_name()} moved {best_step_cost} ft towards {target.get_name()}."
+            if is_melee or cur_dist > 30
+            else f"{participant.get_name()} repositioned {best_step_cost} ft to maintain distance from {target.get_name()}."
+        )
+
         from combat.models import CombatAction
         try:
             CombatAction.objects.create(
@@ -846,7 +1040,7 @@ def _execute_ai_movement(session, participant, target, attack=None):
                 action_type='move',
                 round_number=session.current_round,
                 turn_number=session.current_turn_index,
-                description=f"{participant.get_name()} moved {best_step_cost} ft towards {target.get_name()}.",
+                description=move_desc,
             )
         except Exception:
             pass
@@ -860,7 +1054,7 @@ def _execute_ai_movement(session, participant, target, attack=None):
             'from_y': old_y,
             'to_x': best_tile[0],
             'to_y': best_tile[1],
-            'message': f"🐾 {participant.get_name()} moved {best_step_cost} ft towards {target.get_name()}.",
+            'message': f"🐾 {move_desc}",
         }
 
     return None

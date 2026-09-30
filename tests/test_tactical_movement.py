@@ -333,3 +333,159 @@ class TacticalMovementTests(TestCase):
         move_actions = [a for a in actions if a.get('type') == 'move']
         self.assertTrue(len(move_actions) >= 1)
 
+    def test_melee_ai_moves_first_then_attacks(self):
+        """Verify that melee AI outputs a move action FIRST, followed by the attack action SECOND."""
+        from combat.combat_ai import resolve_enemy_turn
+        # Hero at (10, 10), Enemy at (25, 10) -> 15 ft away
+        enemy = CombatParticipant.objects.create(
+            combat_session=self.session,
+            participant_type='enemy',
+            name='Orc Warrior',
+            current_hp=15,
+            max_hp=15,
+            armor_class=13,
+            position_x=25,
+            position_y=10,
+        )
+        actions = resolve_enemy_turn(self.session, enemy)
+        enemy.refresh_from_db()
+
+        # Must have at least 2 actions: move first, attack second
+        self.assertGreaterEqual(len(actions), 2)
+        self.assertEqual(actions[0]['type'], 'move')
+        self.assertEqual(actions[1]['type'], 'attack')
+        # Movement ended adjacent to hero (<= 5 ft)
+        dist = max(abs(enemy.position_x - self.hero.position_x), abs(enemy.position_y - self.hero.position_y))
+        self.assertLessEqual(dist, 5)
+
+    def test_melee_ai_prioritizes_reachable_target_over_distant_target(self):
+        """Melee monster attacks the adjacent target instead of running across the battlefield to a concentrating wizard."""
+        from combat.combat_ai import resolve_enemy_turn
+        # Create distant concentrating wizard at (45, 35) (35 ft away from enemy)
+        wizard_char = Character.objects.create(
+            name='Distant Wizard',
+            user=self.user,
+            character_class=CharacterClass.objects.get_or_create(name='wizard')[0],
+            race=CharacterRace.objects.get_or_create(name='elf')[0],
+            level=3
+        )
+        CharacterStats.objects.create(
+            character=wizard_char,
+            hit_points=12,
+            max_hit_points=12,
+            armor_class=10
+        )
+        distant_target = CombatParticipant.objects.create(
+            combat_session=self.session,
+            participant_type='character',
+            character=wizard_char,
+            name='Distant Wizard',
+            current_hp=12,
+            max_hp=12,
+            armor_class=10,
+            position_x=45,
+            position_y=35,
+            is_concentrating=True,
+        )
+
+        # Melee enemy placed at (15, 10) -> 5 ft away from self.hero at (10, 10)
+        enemy = CombatParticipant.objects.create(
+            combat_session=self.session,
+            participant_type='enemy',
+            name='Cave Bear',
+            current_hp=42,
+            max_hp=42,
+            armor_class=12,
+            position_x=15,
+            position_y=10,
+        )
+
+        actions = resolve_enemy_turn(self.session, enemy)
+        # Enemy should NOT move to distant wizard; it should attack the adjacent hero!
+        attack_actions = [a for a in actions if a.get('type') == 'attack']
+        self.assertTrue(len(attack_actions) >= 1)
+        self.assertEqual(attack_actions[0]['target'], self.hero.get_name())
+
+    def test_ranged_ai_maintains_distance_does_not_rush_into_melee(self):
+        """Ranged monster at comfortable distance (25 ft) fires ranged attack without rushing into melee."""
+        from combat.combat_ai import resolve_enemy_turn
+        from bestiary.models import Enemy, EnemyAction
+
+        enemy_model = Enemy.objects.create(name='Goblin Sniper', creature_type='humanoid')
+        EnemyAction.objects.create(
+            enemy=enemy_model,
+            name='Shortbow',
+            attack_type='ranged_weapon',
+            attack_bonus=4,
+            reach_or_range='80/320 ft.'
+        )
+
+        enemy = CombatParticipant.objects.create(
+            combat_session=self.session,
+            participant_type='enemy',
+            name='Goblin Sniper 1',
+            current_hp=7,
+            max_hp=7,
+            armor_class=13,
+            position_x=35,
+            position_y=10,  # 25 ft away from hero at (10, 10)
+        )
+        # Link enemy model
+        from combat.models import EncounterEnemy
+        ee = EncounterEnemy.objects.create(encounter=self.encounter, enemy=enemy_model, name='Goblin Sniper 1', current_hp=7)
+        enemy.encounter_enemy = ee
+        enemy.save()
+
+        actions = resolve_enemy_turn(self.session, enemy)
+        enemy.refresh_from_db()
+
+        # Should NOT move into melee reach (should stay at 35, 10)
+        self.assertEqual(enemy.position_x, 35)
+        # Should execute attack directly
+        attack_actions = [a for a in actions if a.get('type') == 'attack']
+        self.assertTrue(len(attack_actions) >= 1)
+        self.assertEqual(attack_actions[0]['attack_name'], 'Shortbow')
+        # No move action needed
+        move_actions = [a for a in actions if a.get('type') == 'move']
+        self.assertEqual(len(move_actions), 0)
+
+    def test_ranged_ai_backs_up_when_cornered_in_melee(self):
+        """Ranged monster cornered in melee (5 ft) repositions backwards before shooting."""
+        from combat.combat_ai import resolve_enemy_turn
+        from bestiary.models import Enemy, EnemyAction
+
+        enemy_model = Enemy.objects.create(name='Kobold Archer', creature_type='humanoid')
+        EnemyAction.objects.create(
+            enemy=enemy_model,
+            name='Shortbow',
+            attack_type='ranged_weapon',
+            attack_bonus=4,
+            reach_or_range='80/320 ft.'
+        )
+
+        enemy = CombatParticipant.objects.create(
+            combat_session=self.session,
+            participant_type='enemy',
+            name='Kobold Archer 1',
+            current_hp=5,
+            max_hp=5,
+            armor_class=12,
+            position_x=15,
+            position_y=10,  # 5 ft away from hero at (10, 10)
+        )
+        from combat.models import EncounterEnemy
+        ee = EncounterEnemy.objects.create(encounter=self.encounter, enemy=enemy_model, name='Kobold Archer 1', current_hp=5)
+        enemy.encounter_enemy = ee
+        enemy.save()
+
+        actions = resolve_enemy_turn(self.session, enemy)
+        enemy.refresh_from_db()
+
+        # Should reposition away from (10, 10)
+        dist = max(abs(enemy.position_x - self.hero.position_x), abs(enemy.position_y - self.hero.position_y))
+        self.assertGreater(dist, 5)
+        # Should have move action first
+        self.assertEqual(actions[0]['type'], 'move')
+        self.assertIn('repositioned', actions[0]['message'])
+
+
