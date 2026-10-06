@@ -9,6 +9,7 @@ Resolves an enemy's turn by:
 """
 import random
 import re
+from django.db import models
 
 from combat.utils import roll_d20
 
@@ -64,8 +65,8 @@ def resolve_enemy_turn(session, participant):
 
     enemy = _resolve_enemy(participant)
 
-    # 1. Check for charged special action (e.g. Breath Weapon)
-    special_action = _get_ready_special_action(participant, enemy)
+    # 1. Check for charged special action (e.g. Breath Weapon, AoE, or big spell)
+    special_action = _get_ready_special_action(participant, enemy, session=session)
 
     # Flying AI: If capable of flight and not airborne, take flight to rain breath/ranged attacks from above
     if participant.can_fly() and not participant.is_flying and not participant.is_incapacitated() and not participant.grappled_by:
@@ -123,7 +124,7 @@ def resolve_enemy_turn(session, participant):
         preferred_mode = 'ranged'
 
     # 4. Multiattack evaluation
-    attack_count, attack_sequence = _check_multiattack(participant, enemy)
+    attack_count, attack_sequence = _check_multiattack(participant, enemy, enemy_attacks=enemy_attacks)
 
     # 5. Grid-aware target selection
     target = _select_target(targets, attacker=participant, enemy=enemy, preferred_mode=preferred_mode)
@@ -145,7 +146,7 @@ def resolve_enemy_turn(session, participant):
             desc = f"🦅 {participant.get_name()} swoops down to {desired_alt} ft altitude to strike {target.get_name()} in melee!"
             actions.append({'type': 'move', 'message': desc})
 
-    intended_attack = _select_intended_attack(enemy_attacks, preferred_mode=preferred_mode)
+    intended_attack = _select_intended_attack(enemy_attacks, preferred_mode=preferred_mode, participant=participant, session=session)
 
     # 6. 🐾 TACTICAL MOVEMENT PHASE (FIRST)
     # Melee combatants close distance into reach before attacking.
@@ -166,7 +167,7 @@ def resolve_enemy_turn(session, participant):
         for seq_item in attack_sequence:
             atk_name = seq_item['action_name']
             count = seq_item.get('count', 1)
-            matched_atk = next((a for a in enemy_attacks if a['name'].lower() == atk_name.lower()), None)
+            matched_atk = _find_best_matching_attack(enemy_attacks, atk_name)
             if not matched_atk:
                 matched_atk = intended_attack
 
@@ -194,7 +195,28 @@ def resolve_enemy_turn(session, participant):
                 targets = [t for t in targets if t.current_hp > 0 and t.is_active]
     else:
         current_target = target
-        for _ in range(attack_count):
+        reach = participant.get_reach() if hasattr(participant, 'get_reach') else 5
+        melee_atks = [a for a in enemy_attacks if _is_attack_melee(a, default_reach=reach)]
+        ranged_atks = [a for a in enemy_attacks if not _is_attack_melee(a, default_reach=reach)]
+        candidate_pool = melee_atks if preferred_mode == 'melee' and melee_atks else (ranged_atks if ranged_atks else enemy_attacks)
+
+        # Filter out attacks currently on simulated cooldown (unless all are on cooldown)
+        feature_uses = getattr(participant, 'feature_uses', {}) or {}
+        cooldowns = feature_uses.get('cooldowns', {}) if isinstance(feature_uses, dict) else {}
+        current_r = getattr(session, 'current_round', 1) or 1
+        non_cooldown = [a for a in candidate_pool if current_r >= cooldowns.get(a['name'], 0)]
+        if non_cooldown:
+            candidate_pool = non_cooldown
+
+        # Dynamic turn-to-turn rotation:
+        # If candidate pool has multiple options and the first one was used on the last turn,
+        # rotate the pool so the enemy cycles dynamically instead of spamming the same attack!
+        last_atk = feature_uses.get('last_attack_name') if isinstance(feature_uses, dict) else None
+        if len(candidate_pool) > 1 and last_atk:
+            if candidate_pool[0]['name'] == last_atk:
+                candidate_pool = candidate_pool[1:] + [candidate_pool[0]]
+
+        for attack_idx in range(attack_count):
             if current_target.current_hp <= 0 or not current_target.is_active:
                 targets = [t for t in targets if t.current_hp > 0 and t.is_active]
                 if not targets:
@@ -204,7 +226,12 @@ def resolve_enemy_turn(session, participant):
                 if follow_move:
                     actions.append(follow_move)
 
-            attack_to_use = _select_attack_for_distance(enemy_attacks, participant, current_target, preferred_mode=preferred_mode, default_reach=reach)
+            # Cycle across distinct available attacks / spells in candidate pool if possible
+            if candidate_pool:
+                attack_to_use = candidate_pool[attack_idx % len(candidate_pool)]
+            else:
+                attack_to_use = _select_attack_for_distance(enemy_attacks, participant, current_target, preferred_mode=preferred_mode, default_reach=reach)
+
             if attack_to_use:
                 pack_adv = _check_pack_tactics(session, participant, current_target)
                 res = _execute_attack(session, participant, current_target, attack_to_use, advantage=pack_adv)
@@ -302,23 +329,209 @@ def _resolve_enemy(participant):
     return participant.resolve_enemy()
 
 
-def _get_ready_special_action(participant, enemy):
-    """Return a charged high-impact special action (breath weapon or AoE saving throw)."""
+class DummyConditions:
+    def exists(self):
+        return False
+    def all(self):
+        return []
+
+class DummyDamageRolls:
+    def __init__(self, rolls=None):
+        self._rolls = rolls or []
+    def exists(self):
+        return bool(self._rolls)
+    def all(self):
+        return self._rolls
+    def first(self):
+        return self._rolls[0] if self._rolls else None
+
+class ParsedSpellAction:
+    def __init__(self, name, attack_type, attack_bonus=None, damage_formula='1d10 fire',
+                 reach_or_range='120 ft.', saving_throw_dc=None, saving_throw_ability=None,
+                 half_damage_on_save=True, damage_type='fire', is_special=False, cooldown_rounds=0):
+        self.name = name
+        self.attack_type = attack_type
+        self.attack_bonus = attack_bonus
+        self.reach_or_range = reach_or_range
+        self.saving_throw_dc = saving_throw_dc
+        self.saving_throw_ability = saving_throw_ability
+        self.half_damage_on_save = half_damage_on_save
+        self.damage_type_name = damage_type
+        self.damage_dice = damage_formula
+        self.has_recharge = False
+        self.is_special = is_special
+        self.cooldown_rounds = cooldown_rounds
+        self.conditions_inflicted = DummyConditions()
+        self.damage_rolls = DummyDamageRolls([])
+
+    def __str__(self):
+        return f"ParsedSpellAction({self.name})"
+
+
+# Canonical 5e SRD offensive spells recognized for spellcaster monsters
+SPELL_DATA = {
+    # Cantrips (at will, cooldown=0)
+    'fire bolt': {'type': 'ranged_spell', 'damage': '2d10 fire', 'range': 'range 120 ft.', 'is_aoe': False, 'cooldown': 0, 'damage_type': 'fire'},
+    'ray of frost': {'type': 'ranged_spell', 'damage': '2d8 cold', 'range': 'range 60 ft.', 'is_aoe': False, 'cooldown': 0, 'damage_type': 'cold'},
+    'shocking grasp': {'type': 'melee_spell', 'damage': '2d8 lightning', 'range': 'reach 5 ft.', 'is_aoe': False, 'cooldown': 0, 'damage_type': 'lightning'},
+    'chill touch': {'type': 'ranged_spell', 'damage': '2d8 necrotic', 'range': 'range 120 ft.', 'is_aoe': False, 'cooldown': 0, 'damage_type': 'necrotic'},
+    'eldritch blast': {'type': 'ranged_spell', 'damage': '2d10 force', 'range': 'range 120 ft.', 'is_aoe': False, 'cooldown': 0, 'damage_type': 'force'},
+    'sacred flame': {'type': 'ranged_spell', 'damage': '2d8 radiant', 'range': 'range 60 ft.', 'is_aoe': False, 'cooldown': 0, 'save_ability': 'DEX', 'damage_type': 'radiant'},
+    'toll the dead': {'type': 'ranged_spell', 'damage': '2d12 necrotic', 'range': 'range 60 ft.', 'is_aoe': False, 'cooldown': 0, 'save_ability': 'WIS', 'damage_type': 'necrotic'},
+    'poison spray': {'type': 'ranged_spell', 'damage': '2d12 poison', 'range': 'range 10 ft.', 'is_aoe': False, 'cooldown': 0, 'save_ability': 'CON', 'damage_type': 'poison'},
+    'acid splash': {'type': 'ranged_spell', 'damage': '2d6 acid', 'range': 'range 60 ft.', 'is_aoe': False, 'cooldown': 0, 'save_ability': 'DEX', 'damage_type': 'acid'},
+    'vicious mockery': {'type': 'ranged_spell', 'damage': '2d4 psychic', 'range': 'range 60 ft.', 'is_aoe': False, 'cooldown': 0, 'save_ability': 'WIS', 'damage_type': 'psychic'},
+
+    # Leveled Single Target Spells (cooldown=2)
+    'magic missile': {'type': 'ranged_spell', 'damage': '3d4+3 force', 'range': 'range 120 ft.', 'is_aoe': False, 'cooldown': 2, 'damage_type': 'force'},
+    'guiding bolt': {'type': 'ranged_spell', 'damage': '4d6 radiant', 'range': 'range 120 ft.', 'is_aoe': False, 'cooldown': 2, 'damage_type': 'radiant'},
+    'inflict wounds': {'type': 'melee_spell', 'damage': '3d10 necrotic', 'range': 'reach 5 ft.', 'is_aoe': False, 'cooldown': 2, 'damage_type': 'necrotic'},
+    'scorching ray': {'type': 'ranged_spell', 'damage': '4d6 fire', 'range': 'range 120 ft.', 'is_aoe': False, 'cooldown': 2, 'damage_type': 'fire'},
+    'spiritual weapon': {'type': 'ranged_spell', 'damage': '1d8+3 force', 'range': 'range 60 ft.', 'is_aoe': False, 'cooldown': 2, 'damage_type': 'force'},
+    'blight': {'type': 'ranged_spell', 'damage': '8d8 necrotic', 'range': 'range 30 ft.', 'is_aoe': False, 'cooldown': 2, 'save_ability': 'CON', 'damage_type': 'necrotic'},
+    'disintegrate': {'type': 'ranged_spell', 'damage': '10d6+40 force', 'range': 'range 60 ft.', 'is_aoe': False, 'cooldown': 3, 'save_ability': 'DEX', 'damage_type': 'force'},
+
+    # Leveled AoE / Special Action Spells (is_aoe=True, cooldown=2)
+    'fireball': {'type': 'saving_throw', 'damage': '8d6 fire', 'range': 'range 150 ft.', 'is_aoe': True, 'cooldown': 2, 'save_ability': 'DEX', 'damage_type': 'fire'},
+    'lightning bolt': {'type': 'saving_throw', 'damage': '8d6 lightning', 'range': '100-foot line', 'is_aoe': True, 'cooldown': 2, 'save_ability': 'DEX', 'damage_type': 'lightning'},
+    'cone of cold': {'type': 'saving_throw', 'damage': '8d8 cold', 'range': '60-foot cone', 'is_aoe': True, 'cooldown': 2, 'save_ability': 'CON', 'damage_type': 'cold'},
+    'ice storm': {'type': 'saving_throw', 'damage': '2d8 bludgeoning + 4d6 cold', 'range': 'range 300 ft.', 'is_aoe': True, 'cooldown': 2, 'save_ability': 'DEX', 'damage_type': 'cold'},
+    'burning hands': {'type': 'saving_throw', 'damage': '3d6 fire', 'range': '15-foot cone', 'is_aoe': True, 'cooldown': 2, 'save_ability': 'DEX', 'damage_type': 'fire'},
+    'shatter': {'type': 'saving_throw', 'damage': '3d8 thunder', 'range': 'range 60 ft.', 'is_aoe': True, 'cooldown': 2, 'save_ability': 'CON', 'damage_type': 'thunder'},
+    'chain lightning': {'type': 'saving_throw', 'damage': '10d8 lightning', 'range': 'range 150 ft.', 'is_aoe': True, 'cooldown': 3, 'save_ability': 'DEX', 'damage_type': 'lightning'},
+}
+
+
+def _parse_enemy_spells(enemy):
+    """
+    Parse offensive and AoE spells from EnemyAction('Spellcasting') or EnemySpell.
+    Returns list of dicts suitable for enemy_attacks or special_actions.
+    """
+    if not enemy:
+        return []
+
+    spells = []
+    seen_names = set()
+
+    spell_actions = enemy.actions.filter(
+        models.Q(name__icontains='spellcasting') | models.Q(name__icontains='innate spell')
+    )
+
+    combined_text = " ".join([a.description for a in spell_actions] + [a.name for a in spell_actions]).lower()
+
+    if hasattr(enemy, 'spells'):
+        enemy_spell_names = [s.name.lower() for s in enemy.spells.all()]
+        combined_text += " " + " ".join(enemy_spell_names)
+
+    if not combined_text.strip():
+        return []
+
+    bonus_match = re.search(r'\+(\d+)\s+to hit', combined_text)
+    dc_match = re.search(r'(?:spell save dc|dc)\s+(\d+)', combined_text)
+
+    stats = getattr(enemy, 'stats', None)
+    int_mod = getattr(stats, 'intelligence_modifier', 0) or 0
+    wis_mod = getattr(stats, 'wisdom_modifier', 0) or 0
+    cha_mod = getattr(stats, 'charisma_modifier', 0) or 0
+    stat_mod = max(int_mod, wis_mod, cha_mod, 3)
+    prof = getattr(stats, 'proficiency_bonus', 2) or 2
+
+    spell_bonus = int(bonus_match.group(1)) if bonus_match else (stat_mod + prof)
+    spell_dc = int(dc_match.group(1)) if dc_match else (8 + stat_mod + prof)
+
+    for spell_name, data in SPELL_DATA.items():
+        if re.search(rf'\b{re.escape(spell_name)}\b', combined_text):
+            title_name = spell_name.title()
+            if title_name in seen_names:
+                continue
+            seen_names.add(title_name)
+
+            parsed = ParsedSpellAction(
+                name=title_name,
+                attack_type=data['type'],
+                attack_bonus=spell_bonus,
+                damage_formula=data['damage'],
+                reach_or_range=data['range'],
+                saving_throw_dc=spell_dc,
+                saving_throw_ability=data.get('save_ability', 'DEX'),
+                half_damage_on_save=True,
+                damage_type=data.get('damage_type', 'fire'),
+                is_special=data['is_aoe'],
+                cooldown_rounds=data['cooldown'],
+            )
+
+            spells.append({
+                'name': title_name,
+                'bonus': spell_bonus,
+                'damage': data['damage'],
+                'action_obj': parsed,
+                'is_spell': True,
+                'is_special': data['is_aoe'],
+                'is_attack': not data['is_aoe'],
+                'cooldown_rounds': data['cooldown'],
+            })
+
+    return spells
+
+
+def _get_parsed_spell_special_actions(enemy):
+    """Extract ready high-impact AoE / saving throw spells from spellcasting actions."""
+    if not enemy:
+        return []
+    parsed_spells = _parse_enemy_spells(enemy)
+    return [sp['action_obj'] for sp in parsed_spells if sp.get('is_special') and sp.get('action_obj')]
+
+
+def _get_ready_special_action(participant, enemy, session=None):
+    """
+    Return a charged high-impact special action (breath weapon, AoE saving throw, or high-level spell).
+    Supports:
+    - Real recharge abilities (has_recharge=True, Recharge 5-6)
+    - Simulated cooldowns for non-recharge special actions & big spells (preventing spamming)
+    - Dynamic rotation among multiple available special actions
+    """
     if not enemy:
         return None
 
-    # Check EnemyAction records
+    current_round = getattr(session, 'current_round', 1) or 1
+    feature_uses = getattr(participant, 'feature_uses', {}) or {}
+    cooldowns = feature_uses.get('cooldowns', {}) if isinstance(feature_uses, dict) else {}
+    last_special = feature_uses.get('last_special_used') if isinstance(feature_uses, dict) else None
+
+    ready_actions = []
+
+    # 1. Check EnemyAction records with explicit recharge (e.g. Breath Weapon Recharge 5-6)
+    recharge_state = getattr(participant, 'recharge_state', {}) or {}
     for act in enemy.actions.filter(has_recharge=True):
-        is_ready = participant.recharge_state.get(act.name, True)
+        is_ready = recharge_state.get(act.name, True)
         if is_ready:
-            return act
+            ready_actions.append(act)
 
-    # Check for saving_throw actions without recharge that deal heavy damage
-    st_action = enemy.actions.filter(attack_type='saving_throw', has_recharge=False).first()
-    if st_action and st_action.damage_rolls.exists():
-        return st_action
+    # 2. Check saving_throw actions without recharge that deal heavy damage or conditions (with simulated cooldown)
+    st_actions = enemy.actions.filter(attack_type='saving_throw', has_recharge=False)
+    for act in st_actions:
+        if act.damage_rolls.exists() or act.conditions_inflicted.exists():
+            ready_round = cooldowns.get(act.name, 0)
+            if current_round >= ready_round:
+                ready_actions.append(act)
 
-    return None
+    # 3. Check parsed AoE spells from Spellcasting if any
+    spell_aoe_actions = _get_parsed_spell_special_actions(enemy)
+    for sp_act in spell_aoe_actions:
+        ready_round = cooldowns.get(sp_act.name, 0)
+        if current_round >= ready_round:
+            ready_actions.append(sp_act)
+
+    if not ready_actions:
+        return None
+
+    # Dynamic rotation: If multiple special actions are ready, rotate so we don't repeat the last one
+    if len(ready_actions) > 1 and last_special:
+        non_recent = [a for a in ready_actions if a.name != last_special]
+        if non_recent:
+            return non_recent[0]
+
+    return ready_actions[0]
 
 
 def _get_enemy_attacks(participant, enemy):
@@ -326,28 +539,47 @@ def _get_enemy_attacks(participant, enemy):
     attacks = []
     
     if enemy:
-        # Prefer structured EnemyAction records (excluding Multiattack utility entries)
-        melee_or_ranged = enemy.actions.filter(
+        # Prefer structured EnemyAction records (excluding Multiattack utility and Spellcasting container entries)
+        actions_qs = enemy.actions.exclude(name__icontains='multiattack')
+
+        weapon_or_spell_actions = actions_qs.filter(
             attack_type__in=['melee_weapon', 'ranged_weapon', 'melee_spell', 'ranged_spell']
-        ).exclude(name__icontains='multiattack')
-        if melee_or_ranged.exists():
-            for act in melee_or_ranged:
-                dmg_rolls = list(act.damage_rolls.all())
-                dmg_str = " + ".join([d.formula for d in dmg_rolls]) if dmg_rolls else "1d6 bludgeoning"
-                attacks.append({
-                    'name': act.name,
-                    'bonus': act.attack_bonus or 3,
-                    'damage': dmg_str,
-                    'action_obj': act,
-                })
-        else:
-            # Fallback to legacy EnemyAttack (excluding any named Multiattack)
-            for atk in enemy.attacks.exclude(name__icontains='multiattack'):
+        ).exclude(
+            name__icontains='spellcasting'
+        ).exclude(
+            name__icontains='innate spell'
+        )
+
+        for act in weapon_or_spell_actions:
+            dmg_rolls = list(act.damage_rolls.all())
+            dmg_str = " + ".join([d.formula for d in dmg_rolls]) if dmg_rolls else "1d6 bludgeoning"
+            is_spell = 'spell' in getattr(act, 'attack_type', '')
+            cooldown = 2 if (is_spell and len(dmg_rolls) > 1) else 0
+            attacks.append({
+                'name': act.name,
+                'bonus': act.attack_bonus or 3,
+                'damage': dmg_str,
+                'action_obj': act,
+                'is_spell': is_spell,
+                'cooldown_rounds': cooldown,
+            })
+
+        # Parse spells from Spellcasting action(s) or enemy.spells if available
+        parsed_spells = _parse_enemy_spells(enemy)
+        for sp in parsed_spells:
+            if sp.get('is_attack'):
+                attacks.append(sp)
+
+        if not attacks:
+            # Fallback to legacy EnemyAttack (excluding any named Multiattack or Spellcasting)
+            for atk in enemy.attacks.exclude(name__icontains='multiattack').exclude(name__icontains='spellcasting'):
                 attacks.append({
                     'name': atk.name,
                     'bonus': atk.bonus,
                     'damage': atk.damage,
                     'action_obj': None,
+                    'is_spell': False,
+                    'cooldown_rounds': 0,
                 })
 
     if not attacks:
@@ -358,12 +590,126 @@ def _get_enemy_attacks(participant, enemy):
             'bonus': max(1, str_mod + 2),
             'damage': f'1d6+{max(0, str_mod)} bludgeoning' if str_mod > 0 else '1d6 bludgeoning',
             'action_obj': None,
+            'is_spell': False,
+            'cooldown_rounds': 0,
         })
     
     return attacks
 
 
-def _check_multiattack(participant, enemy):
+def _find_best_matching_attack(attacks, target_name):
+    """
+    Intelligently match a multiattack sequence action name against available attacks.
+    Handles:
+    - Exact match ("Bite" == "Bite")
+    - Plural / singular normalization ("Claw" matches "Claws", "Fists" matches "Fist")
+    - Substring / Form matches ("Claw" matches "Claw (Bear or Hybrid Form Only)")
+    - Irregular plurals ("Hoof" matches "Hooves")
+    """
+    if not attacks or not target_name:
+        return None
+
+    target_norm = target_name.strip().lower()
+    target_stem = target_norm.rstrip('s')
+
+    # 1. Exact case-insensitive match
+    for atk in attacks:
+        if atk['name'].strip().lower() == target_norm:
+            return atk
+
+    # 2. Singular / Plural stem match (e.g. "Claw" vs "Claws", "Slam" vs "Slams")
+    for atk in attacks:
+        atk_stem = atk['name'].strip().lower().rstrip('s')
+        if atk_stem == target_stem:
+            return atk
+
+    # 3. Irregular plurals
+    irregulars = {'hoof': 'hooves', 'hooves': 'hoof', 'tooth': 'teeth', 'teeth': 'tooth'}
+    if target_norm in irregulars:
+        irr_target = irregulars[target_norm]
+        for atk in attacks:
+            if irr_target in atk['name'].lower():
+                return atk
+
+    # 4. Prefix or Substring match (e.g. target "Claw" in "Claw (Bear or Hybrid Form Only)")
+    for atk in attacks:
+        atk_clean = atk['name'].strip().lower()
+        if target_norm in atk_clean or target_stem in atk_clean:
+            return atk
+
+    # 5. Reverse Substring match (e.g. target "Shortbow Attack" matches "Shortbow")
+    for atk in attacks:
+        atk_clean = atk['name'].strip().lower()
+        if atk_clean in target_norm or atk_clean.rstrip('s') in target_stem:
+            return atk
+
+    # 6. Word-level token overlap
+    target_words = set(re.findall(r'\w+', target_stem))
+    for atk in attacks:
+        atk_words = set(re.findall(r'\w+', atk['name'].lower()))
+        if target_words & atk_words:
+            return atk
+
+    return None
+
+
+def _derive_sequence_from_desc(desc, enemy, enemy_attacks):
+    """
+    Dynamically extract a multiattack sequence from descriptive text
+    by mapping against the monster's actual known attacks.
+    e.g. "The bear makes two attacks: one with its bite and one with its claws." -> Bite x1, Claws x1
+    e.g. "In bear form, the werebear makes two claw attacks." -> Claw x2
+    """
+    if not desc or not enemy_attacks:
+        return []
+
+    word_numbers = {
+        'one': 1, 'two': 2, 'three': 3, 'four': 4, 'five': 5,
+        '1': 1, '2': 2, '3': 3, '4': 4, '5': 5, 'a': 1, 'an': 1,
+    }
+
+    desc_lower = desc.lower()
+    sequence = []
+
+    for atk in enemy_attacks:
+        atk_name = atk['name']
+        atk_lower = atk_name.lower()
+        clean_name = re.sub(r'\(.*?\)', '', atk_lower).strip()
+        stem = clean_name.rstrip('s')
+        if not stem or len(stem) < 3:
+            continue
+
+        patterns = [
+            rf'(one|two|three|four|five|\d+|a|an)\s+(?:melee\s+|ranged\s+|weapon\s+)?attacks?\s+(?:with\s+(?:its\s+)?)?{re.escape(stem)}',
+            rf'(one|two|three|four|five|\d+|a|an)\s+(?:with\s+(?:its\s+)?)?{re.escape(stem)}',
+            rf'{re.escape(stem)}\s+(?:and\s+)?(one|two|three|four|five|\d+|a|an)\s+(?:attacks?\s+)?',
+            rf'(one|two|three|four|five|\d+|a|an)\s+{re.escape(stem)}\s+attacks?',
+        ]
+
+        count = None
+        for pat in patterns:
+            m = re.search(pat, desc_lower)
+            if m:
+                count_str = m.group(1).lower()
+                count = word_numbers.get(count_str, 1)
+                break
+
+        if count is not None:
+            sequence.append({
+                'action_name': atk_name,
+                'count': count,
+            })
+        elif stem in desc_lower and 'multiattack' not in atk_lower:
+            if any(term in desc_lower for term in [f"its {stem}", f"{stem} attack", f"with {stem}", f"{stem}s"]):
+                sequence.append({
+                    'action_name': atk_name,
+                    'count': 1,
+                })
+
+    return sequence
+
+
+def _check_multiattack(participant, enemy, enemy_attacks=None):
     """Check if enemy has multiattack and return count & sequence."""
     if not enemy:
         return 1, []
@@ -373,7 +719,15 @@ def _check_multiattack(participant, enemy):
             item for item in (enemy.multiattack.sequence or [])
             if 'multiattack' not in item.get('action_name', '').lower()
         ]
-        return max(1, enemy.multiattack.action_count), seq
+        if seq:
+            return max(1, enemy.multiattack.action_count), seq
+
+        if enemy_attacks and enemy.multiattack.description:
+            derived = _derive_sequence_from_desc(enemy.multiattack.description, enemy, enemy_attacks)
+            if derived:
+                return max(1, enemy.multiattack.action_count), derived
+
+        return max(1, enemy.multiattack.action_count), []
 
     # Fallback parsing
     for ability in enemy.abilities.all():
@@ -384,10 +738,18 @@ def _check_multiattack(participant, enemy):
                 'two': 2, 'three': 3, 'four': 4, 'five': 5,
                 '2': 2, '3': 3, '4': 4, '5': 5,
             }
-            for word, count in number_words.items():
+            count = 2
+            for word, c in number_words.items():
                 if word in desc:
-                    return count, []
-            return 2, []
+                    count = c
+                    break
+
+            if enemy_attacks:
+                derived = _derive_sequence_from_desc(ability.description, enemy, enemy_attacks)
+                if derived:
+                    return count, derived
+
+            return count, []
 
     return 1, []
 
@@ -404,7 +766,12 @@ def _determine_archetype(participant, enemy=None):
         return 'skirmisher'
 
     # Check for spellcasting actions or features
-    if enemy.actions.filter(attack_type__in=['melee_spell', 'ranged_spell']).exists():
+    if (
+        enemy.actions.filter(attack_type__in=['melee_spell', 'ranged_spell']).exists()
+        or enemy.actions.filter(name__icontains='spellcasting').exists()
+        or enemy.actions.filter(name__icontains='innate spell').exists()
+        or (hasattr(enemy, 'spells') and enemy.spells.exists())
+    ):
         return 'caster'
 
     ranged_actions = enemy.actions.filter(attack_type='ranged_weapon')
@@ -611,19 +978,32 @@ def _is_attack_ranged(attack, default_reach=5):
     return not _is_attack_melee(attack, default_reach=default_reach)
 
 
-def _select_intended_attack(attacks, preferred_mode='melee'):
-    """Select the intended attack for closing distance."""
+def _select_intended_attack(attacks, preferred_mode='melee', participant=None, session=None):
+    """Select the intended attack for closing distance with cooldown and rotation awareness."""
     if not attacks:
         return None
+
+    feature_uses = getattr(participant, 'feature_uses', {}) or {}
+    cooldowns = feature_uses.get('cooldowns', {}) if isinstance(feature_uses, dict) else {}
+    current_r = getattr(session, 'current_round', 1) or 1
+    avail = [a for a in attacks if current_r >= cooldowns.get(a['name'], 0)]
+    if not avail:
+        avail = attacks
+
     if preferred_mode == 'melee':
-        melee_atks = [a for a in attacks if _is_attack_melee(a)]
-        if melee_atks:
-            return max(melee_atks, key=lambda a: a.get('bonus', 0))
+        melee_atks = [a for a in avail if _is_attack_melee(a)]
+        pool = melee_atks if melee_atks else avail
     else:
-        ranged_atks = [a for a in attacks if _is_attack_ranged(a)]
-        if ranged_atks:
-            return max(ranged_atks, key=lambda a: a.get('bonus', 0))
-    return max(attacks, key=lambda a: a.get('bonus', 0))
+        ranged_atks = [a for a in avail if _is_attack_ranged(a)]
+        pool = ranged_atks if ranged_atks else avail
+
+    last_atk = feature_uses.get('last_attack_name') if isinstance(feature_uses, dict) else None
+    if len(pool) > 1 and last_atk:
+        non_last = [a for a in pool if a['name'] != last_atk]
+        if non_last:
+            return max(non_last, key=lambda a: a.get('bonus', 0))
+
+    return max(pool, key=lambda a: a.get('bonus', 0))
 
 
 def _select_attack_for_distance(attacks, attacker, target, preferred_mode='melee', default_reach=5):
@@ -721,11 +1101,13 @@ def _execute_special_action(session, attacker, targets, action_obj):
 
     # Roll base damage for the ability
     total_damage = 0
-    dmg_rolls = list(action_obj.damage_rolls.all())
-    if dmg_rolls:
+    if hasattr(action_obj, 'damage_rolls') and action_obj.damage_rolls.exists():
+        dmg_rolls = list(action_obj.damage_rolls.all())
         for d in dmg_rolls:
             roll_sum = sum(random.randint(1, d.dice_sides) for _ in range(d.dice_count)) + d.damage_bonus
             total_damage += max(0, roll_sum)
+    elif getattr(action_obj, 'damage_dice', None):
+        total_damage, _ = _parse_and_roll_damage(action_obj.damage_dice)
     else:
         total_damage = random.randint(10, 25)
 
@@ -760,15 +1142,17 @@ def _execute_special_action(session, attacker, targets, action_obj):
 
         # Apply damage
         damage_taken = (total_damage // 2) if (saved and half_on_save) else (0 if saved else total_damage)
-        first_dr = action_obj.damage_rolls.first() if action_obj.damage_rolls.exists() else None
-        special_dtype = first_dr.damage_type.name if (first_dr and first_dr.damage_type) else None
+        special_dtype = getattr(action_obj, 'damage_type_name', None)
+        if not special_dtype and hasattr(action_obj, 'damage_rolls') and action_obj.damage_rolls.exists():
+            first_dr = action_obj.damage_rolls.first()
+            special_dtype = first_dr.damage_type.name if (first_dr and first_dr.damage_type) else None
         if damage_taken > 0:
             target.take_damage(damage_taken, damage_type=special_dtype, is_critical=False)
             if getattr(target, 'last_undead_fortitude_triggered', False):
                 affected_summaries.append(f"{target.get_name()}: Undead Fortitude kept them at 1 HP!")
 
         # Apply conditions on failed save
-        if not saved and action_obj.conditions_inflicted.exists():
+        if not saved and hasattr(action_obj, 'conditions_inflicted') and action_obj.conditions_inflicted.exists():
             from combat.condition_effects import is_condition_immune
             for c in action_obj.conditions_inflicted.all():
                 if not is_condition_immune(target, c.name):
@@ -780,15 +1164,26 @@ def _execute_special_action(session, attacker, targets, action_obj):
         status_txt = f"{target.get_name()}: {'Saved' if saved else 'Failed'} (took {damage_taken} dmg)"
         affected_summaries.append(status_txt)
 
-    # Set ability to uncharged and mark action economy as used
+    # Set ability to uncharged or apply simulated cooldown, and mark action economy as used
     attacker.action_used = True
     attacker.attacks_remaining = 0
     fields_to_update = ['action_used', 'attacks_remaining']
-    if action_obj.has_recharge:
+    if getattr(action_obj, 'has_recharge', False):
         if attacker.recharge_state is None:
             attacker.recharge_state = {}
         attacker.recharge_state[action_name] = False
         fields_to_update.append('recharge_state')
+    else:
+        # Simulated cooldown for special actions/spells without explicit recharge
+        if not isinstance(attacker.feature_uses, dict):
+            attacker.feature_uses = {}
+        if 'cooldowns' not in attacker.feature_uses:
+            attacker.feature_uses['cooldowns'] = {}
+        cooldown_rounds = getattr(action_obj, 'cooldown_rounds', 2) or 2
+        curr_r = getattr(session, 'current_round', 1) or 1
+        attacker.feature_uses['cooldowns'][action_name] = curr_r + cooldown_rounds
+        attacker.feature_uses['last_special_used'] = action_name
+        fields_to_update.append('feature_uses')
     attacker.save(update_fields=fields_to_update)
 
     summary_desc = f"{attacker.get_name()} unleashes {action_name}! " + ", ".join(affected_summaries)
@@ -940,6 +1335,7 @@ def _execute_attack(session, attacker, target, attack, advantage=False):
         'attacker_id': attacker.id,
         'target': target.get_name(),
         'target_id': target.id,
+        'action': attack_name,
         'attack_name': attack_name,
         'roll': roll,
         'attack_bonus': attack_bonus,
@@ -1017,7 +1413,17 @@ def _execute_attack(session, attacker, target, attack, advantage=False):
 
     attacker.action_used = True
     attacker.attacks_remaining = max(0, (attacker.attacks_remaining or 1) - 1)
-    attacker.save(update_fields=['action_used', 'attacks_remaining'])
+    fields_to_update = ['action_used', 'attacks_remaining']
+    if not isinstance(attacker.feature_uses, dict):
+        attacker.feature_uses = {}
+    attacker.feature_uses['last_attack_name'] = attack_name
+    if attack.get('cooldown_rounds'):
+        if 'cooldowns' not in attacker.feature_uses:
+            attacker.feature_uses['cooldowns'] = {}
+        curr_r = getattr(session, 'current_round', 1) or 1
+        attacker.feature_uses['cooldowns'][attack_name] = curr_r + attack['cooldown_rounds']
+    fields_to_update.append('feature_uses')
+    attacker.save(update_fields=fields_to_update)
 
     return result
 

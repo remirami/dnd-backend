@@ -86,6 +86,14 @@ def parse_multiattack(name: str, desc: str):
         re.IGNORECASE
     )
 
+    # Also match direct attack patterns like "makes two claw attacks" or "two greataxe attacks"
+    if not breakdown_parts:
+        breakdown_parts = re.findall(
+            r'(one|two|three|four|five|\d+)\s+([a-zA-Z\s]+?)\s+attacks?(?:and|or|,|\.|$)',
+            desc_clean,
+            re.IGNORECASE
+        )
+
     if breakdown_parts:
         for count_str, atk_name in breakdown_parts:
             cnt = WORD_NUMBERS.get(count_str.lower(), 1)

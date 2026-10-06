@@ -739,3 +739,218 @@ class MonsterActionsCombatTests(TestCase):
         self.assertEqual(response.status_code, 400)
         self.assertIn("too large", response.data.get('error', ''))
 
+    def test_bear_multiattack_bite_and_claws(self):
+        """Bear with multiattack sequence ['Bite', 'Claw'] executes Bite AND Claws (not two Bites)."""
+        from bestiary.models import EnemyMultiattack
+        from combat.combat_ai import resolve_enemy_turn
+
+        bear_enemy = Enemy.objects.create(name='Brown Bear', hp=34, ac=11, challenge_rating='1')
+        bite = EnemyAction.objects.create(enemy=bear_enemy, name='Bite', attack_type='melee_weapon', attack_bonus=5)
+        EnemyActionDamage.objects.create(action=bite, dice_count=1, dice_sides=8, damage_bonus=4)
+        claws = EnemyAction.objects.create(enemy=bear_enemy, name='Claws', attack_type='melee_weapon', attack_bonus=5)
+        EnemyActionDamage.objects.create(action=claws, dice_count=2, dice_sides=6, damage_bonus=4)
+
+        EnemyMultiattack.objects.create(
+            enemy=bear_enemy,
+            description="The bear makes two attacks: one with its bite and one with its claws.",
+            action_count=2,
+            sequence=[{"action_name": "Bite", "count": 1}, {"action_name": "Claw", "count": 1}]
+        )
+
+        bear = CombatParticipant.objects.create(
+            combat_session=self.session,
+            participant_type='enemy',
+            name='Brown Bear',
+            current_hp=34,
+            max_hp=34,
+            armor_class=11,
+            initiative=10,
+            position_x=5,
+            position_y=0
+        )
+        self.char_participant.position_x = 0
+        self.char_participant.position_y = 0
+        self.char_participant.save()
+
+        actions = resolve_enemy_turn(self.session, bear)
+        attack_actions = [a for a in actions if a.get('type') == 'attack']
+        self.assertEqual(len(attack_actions), 2)
+        used_action_names = [a.get('action') for a in attack_actions]
+        self.assertIn('Bite', used_action_names)
+        self.assertIn('Claws', used_action_names)
+
+    def test_bear_multiattack_derived_from_description(self):
+        """When sequence is empty, multiattack dynamically derives Bite and Claws from description."""
+        from bestiary.models import EnemyMultiattack
+        from combat.combat_ai import resolve_enemy_turn
+
+        bear_enemy = Enemy.objects.create(name='Black Bear', hp=19, ac=11, challenge_rating='1/2')
+        bite = EnemyAction.objects.create(enemy=bear_enemy, name='Bite', attack_type='melee_weapon', attack_bonus=3)
+        EnemyActionDamage.objects.create(action=bite, dice_count=1, dice_sides=6, damage_bonus=2)
+        claws = EnemyAction.objects.create(enemy=bear_enemy, name='Claws', attack_type='melee_weapon', attack_bonus=3)
+        EnemyActionDamage.objects.create(action=claws, dice_count=2, dice_sides=4, damage_bonus=2)
+
+        EnemyMultiattack.objects.create(
+            enemy=bear_enemy,
+            description="The bear makes two attacks: one with its bite and one with its claws.",
+            action_count=2,
+            sequence=[]  # unparsed / empty sequence
+        )
+
+        bear = CombatParticipant.objects.create(
+            combat_session=self.session,
+            participant_type='enemy',
+            name='Black Bear',
+            current_hp=19,
+            max_hp=19,
+            armor_class=11,
+            initiative=10,
+            position_x=5,
+            position_y=0
+        )
+        self.char_participant.position_x = 0
+        self.char_participant.position_y = 0
+        self.char_participant.save()
+
+        actions = resolve_enemy_turn(self.session, bear)
+        attack_actions = [a for a in actions if a.get('type') == 'attack']
+        self.assertEqual(len(attack_actions), 2)
+        used_action_names = [a.get('action') for a in attack_actions]
+        self.assertIn('Bite', used_action_names)
+        self.assertIn('Claws', used_action_names)
+
+    def test_mage_dynamic_spell_cycling_and_cooldown(self):
+        """Mage casts Fireball in round 1, then falls back to spell attacks in round 2 due to cooldown."""
+        from combat.combat_ai import resolve_enemy_turn
+
+        mage_enemy = Enemy.objects.create(name='Evil Mage', hp=40, ac=12, challenge_rating='6')
+        EnemyAction.objects.create(
+            enemy=mage_enemy,
+            name='Spellcasting',
+            attack_type='melee_weapon',
+            description=(
+                "The mage is a 9th-level spellcaster. Its spellcasting ability is Intelligence "
+                "(spell save DC 14, +6 to hit with spell attacks). Prepared spells:\n"
+                "* Cantrips: fire bolt, ray of frost\n"
+                "* 3rd level: fireball\n"
+            )
+        )
+        EnemyAction.objects.create(
+            enemy=mage_enemy,
+            name='Dagger',
+            attack_type='melee_weapon',
+            attack_bonus=5,
+            reach_or_range='reach 5 ft.'
+        )
+
+        mage = CombatParticipant.objects.create(
+            combat_session=self.session,
+            participant_type='enemy',
+            name='Evil Mage',
+            current_hp=40,
+            max_hp=40,
+            armor_class=12,
+            initiative=12,
+            position_x=30,
+            position_y=0
+        )
+        self.char_participant.position_x = 0
+        self.char_participant.position_y = 0
+        self.char_participant.save()
+
+        # Round 1: Mage unleashes Fireball as special action
+        self.session.current_round = 1
+        self.session.save()
+        actions_r1 = resolve_enemy_turn(self.session, mage)
+        special_r1 = [a for a in actions_r1 if a.get('type') == 'special_action']
+        self.assertEqual(len(special_r1), 1)
+        self.assertEqual(special_r1[0]['action_name'], 'Fireball')
+
+        mage.refresh_from_db()
+        cooldowns = mage.feature_uses.get('cooldowns', {})
+        self.assertIn('Fireball', cooldowns)
+        self.assertGreater(cooldowns['Fireball'], 1)
+
+        # Round 2: Fireball is on cooldown! Mage must NOT cast Fireball, but use spell attack
+        self.session.current_round = 2
+        self.session.save()
+        mage.action_used = False
+        mage.attacks_remaining = 1
+        mage.save()
+
+        actions_r2 = resolve_enemy_turn(self.session, mage)
+        special_r2 = [a for a in actions_r2 if a.get('type') == 'special_action']
+        self.assertEqual(len(special_r2), 0)  # Fireball on cooldown!
+
+        attack_r2 = [a for a in actions_r2 if a.get('type') == 'attack']
+        self.assertEqual(len(attack_r2), 1)
+        used_spell = attack_r2[0].get('action') or attack_r2[0].get('attack_name')
+        self.assertIn(used_spell, ['Fire Bolt', 'Ray Of Frost'])
+
+    def test_saving_throw_special_action_simulated_cooldown(self):
+        """Monsters with saving throw abilities without recharge enter simulated cooldown instead of spamming."""
+        from combat.combat_ai import resolve_enemy_turn
+
+        flayer_enemy = Enemy.objects.create(name='Mind Flayer', hp=71, ac=15, challenge_rating='7')
+        mind_blast = EnemyAction.objects.create(
+            enemy=flayer_enemy,
+            name='Mind Blast',
+            attack_type='saving_throw',
+            saving_throw_dc=15,
+            saving_throw_ability='INT',
+            half_damage_on_save=True,
+            has_recharge=False  # No explicit recharge
+        )
+        EnemyActionDamage.objects.create(action=mind_blast, dice_count=4, dice_sides=8, damage_bonus=4)
+
+        tentacles = EnemyAction.objects.create(
+            enemy=flayer_enemy,
+            name='Tentacles',
+            attack_type='melee_weapon',
+            attack_bonus=7,
+            reach_or_range='reach 5 ft.'
+        )
+        EnemyActionDamage.objects.create(action=tentacles, dice_count=2, dice_sides=10, damage_bonus=4)
+
+        flayer = CombatParticipant.objects.create(
+            combat_session=self.session,
+            participant_type='enemy',
+            name='Mind Flayer',
+            current_hp=71,
+            max_hp=71,
+            armor_class=15,
+            initiative=15,
+            position_x=5,
+            position_y=0
+        )
+        self.char_participant.position_x = 0
+        self.char_participant.position_y = 0
+        self.char_participant.save()
+
+        # Round 1: Mind Flayer fires Mind Blast
+        self.session.current_round = 1
+        self.session.save()
+        actions_r1 = resolve_enemy_turn(self.session, flayer)
+        special_r1 = [a for a in actions_r1 if a.get('type') == 'special_action']
+        self.assertEqual(len(special_r1), 1)
+        self.assertEqual(special_r1[0]['action_name'], 'Mind Blast')
+
+        flayer.refresh_from_db()
+        cooldowns = flayer.feature_uses.get('cooldowns', {})
+        self.assertIn('Mind Blast', cooldowns)
+
+        # Round 2: Mind Blast is on simulated cooldown! Flayer attacks with Tentacles
+        self.session.current_round = 2
+        self.session.save()
+        flayer.action_used = False
+        flayer.attacks_remaining = 1
+        flayer.save()
+
+        actions_r2 = resolve_enemy_turn(self.session, flayer)
+        special_r2 = [a for a in actions_r2 if a.get('type') == 'special_action']
+        self.assertEqual(len(special_r2), 0)  # Cannot spam Mind Blast!
+
+        attack_r2 = [a for a in actions_r2 if a.get('type') == 'attack']
+        self.assertEqual(len(attack_r2), 1)
+        self.assertEqual(attack_r2[0].get('action'), 'Tentacles')
+
