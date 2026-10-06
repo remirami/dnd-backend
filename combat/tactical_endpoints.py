@@ -256,6 +256,16 @@ def grapple_endpoint(self, request, pk=None):
             {"error": f"{target.get_name()} is already grappled"},
             status=http_status.HTTP_400_BAD_REQUEST
         )
+
+    # 5e Size Limitation: The target of your grapple must be no more than one size larger than you.
+    size_rank = {'T': 0, 'S': 1, 'M': 2, 'L': 3, 'H': 4, 'G': 5}
+    g_rank = size_rank.get(grappler.get_size(), 2)
+    t_rank = size_rank.get(target.get_size(), 2)
+    if t_rank > g_rank + 1:
+        return Response(
+            {"error": f"{target.get_name()} ({target.get_size_dimensions()['name']}) is too large for {grappler.get_name()} to grapple (maximum one size larger)."},
+            status=http_status.HTTP_400_BAD_REQUEST
+        )
     
     # Contested check: Grappler's Athletics vs Target's Athletics or Acrobatics
     grappler_roll, _ = roll_d20(lucky=getattr(grappler, 'has_lucky_trait', lambda: False)())

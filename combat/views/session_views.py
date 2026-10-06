@@ -108,6 +108,12 @@ class CombatSessionViewSet(
                 if hasattr(session, '_prefetched_objects_cache'):
                     session._prefetched_objects_cache.clear()
                 session = self.get_queryset().get(pk=session.pk)
+            else:
+                nudged = session.sanitize_grid_positions()
+                if nudged:
+                    if hasattr(session, '_prefetched_objects_cache'):
+                        session._prefetched_objects_cache.clear()
+                    session = self.get_queryset().get(pk=session.pk)
         serializer = self.get_serializer(session)
         return Response(serializer.data)
 

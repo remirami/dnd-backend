@@ -39,8 +39,9 @@ class CombatParticipantSerializer(serializers.ModelSerializer):
                 'is_dead': instance.death_save_failures >= 3
             }
         
-        # Effective AC including buffs, armor, and magic items
+        # Effective AC including buffs, armor, magic items, and dynamic cover props
         data['effective_ac'] = instance.calculate_effective_ac()
+        data['cover'] = instance.get_cover_details() if hasattr(instance, 'get_cover_details') else None
 
         # Active buffs representation
         active_buffs = instance.get_active_buffs() if hasattr(instance, 'get_active_buffs') else (instance.feature_uses or {}).get('active_buffs', [])
@@ -62,8 +63,17 @@ class CombatParticipantSerializer(serializers.ModelSerializer):
                 existing_cond_names.add(b_name.lower())
         data['conditions'] = conds
 
-        # Creature size & racial trait flags
+        # Creature size & 3D flying properties
         data['size'] = instance.get_size()
+        size_dims = instance.get_size_dimensions()
+        data['size_dimensions'] = size_dims
+        data['size_display'] = size_dims.get('name', 'Medium')
+        data['occupied_cells'] = instance.get_occupied_cells()
+        data['altitude'] = instance.altitude or 0
+        data['is_flying'] = bool(instance.is_flying)
+        data['fly_speed'] = instance.get_fly_speed()
+        data['has_hover'] = instance.has_hover()
+        data['can_fly'] = instance.can_fly()
         if instance.character:
             data['race_name'] = instance.character.race.name.lower() if instance.character.race else ''
             data['has_lucky_trait'] = instance.has_lucky_trait()
@@ -158,10 +168,18 @@ class CombatParticipantSerializer(serializers.ModelSerializer):
             enemy = EnemyModel.objects.filter(name=instance.name).first()
         
         if enemy:
+            data['creature_type'] = enemy.get_creature_type_display() if hasattr(enemy, 'get_creature_type_display') else getattr(enemy, 'creature_type', '')
+            data['alignment'] = enemy.get_alignment_display() if hasattr(enemy, 'get_alignment_display') else getattr(enemy, 'alignment', '')
+            data['challenge_rating'] = str(enemy.challenge_rating) if enemy.challenge_rating is not None else None
+            if hasattr(enemy, 'get_size_display') and enemy.get_size_display():
+                data['size_display'] = enemy.get_size_display()
+
             # Ability scores
             if hasattr(enemy, 'stats'):
                 stats = enemy.stats
                 data['enemy_stats'] = {
+                    'size': enemy.size,
+                    'size_display': enemy.get_size_display() if hasattr(enemy, 'get_size_display') else size_dims.get('name', 'Medium'),
                     'ability_scores': {
                         'strength': {'score': stats.strength, 'modifier': stats.strength_modifier},
                         'dexterity': {'score': stats.dexterity, 'modifier': stats.dexterity_modifier},
@@ -456,7 +474,8 @@ class CombatSessionSerializer(serializers.ModelSerializer):
 class AttackRequestSerializer(serializers.Serializer):
     """Serializer for attack requests"""
     attacker_id = serializers.IntegerField()
-    target_id = serializers.IntegerField()
+    target_id = serializers.IntegerField(required=False, allow_null=True)
+    target_ids = serializers.ListField(child=serializers.IntegerField(), required=False, default=list)
     attack_name = serializers.CharField(required=False, allow_blank=True)
     advantage = serializers.BooleanField(default=False)
     disadvantage = serializers.BooleanField(default=False)

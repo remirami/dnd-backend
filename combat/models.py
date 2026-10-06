@@ -67,12 +67,29 @@ class CombatSession(models.Model):
         if not participants:
             return None
         
-        # Reset legendary actions and reactions for all participants at start of round
-        if self.current_turn_index == 0:
-            for participant in participants:
-                if participant.legendary_actions_max > 0:
-                    participant.reset_legendary_actions()
-                participant.reset_reaction()
+        # 5e Legendary Action Weaving:
+        # At the end of another creature's turn, an active boss can use a legendary action.
+        previous_participant = self.get_current_participant()
+        if previous_participant and previous_participant.is_active:
+            boss = self.participants.filter(
+                participant_type='enemy',
+                is_active=True,
+                current_hp__gt=0,
+                legendary_actions_remaining__gt=0
+            ).exclude(id=previous_participant.id).first()
+            if not boss:
+                boss = self.participants.filter(
+                    participant_type='enemy',
+                    is_active=True,
+                    current_hp__gt=0,
+                    legendary_actions_max__gt=0
+                ).exclude(id=previous_participant.id).first()
+            if boss and not boss.is_incapacitated():
+                from combat.combat_ai import execute_ai_legendary_action
+                try:
+                    execute_ai_legendary_action(self, boss, trigger_participant=previous_participant)
+                except Exception:
+                    pass
 
         # Advance turn index, wrapping around to new rounds and skipping dead/defeated participants
         max_steps = len(participants) + 1
@@ -131,64 +148,159 @@ class CombatSession(models.Model):
                         app.remove('duration_expired')
 
     
+    def sanitize_grid_positions(self):
+        """
+        Verify that all living combatants fit completely inside arena bounds (0..45ft X, 0..35ft Y)
+        and that NO square of their multi-tile footprint overlaps an impassable solid obstacle.
+        If an overlap or out-of-bounds is detected, nudges the creature to the nearest valid tile.
+        """
+        from combat.battlefield import is_tile_solid
+        all_participants = list(self.participants.filter(is_active=True, current_hp__gt=0).order_by('id'))
+        
+        # Track all occupied cells by creature
+        occupied_by = {}
+        for p in all_participants:
+            tiles = p.get_size_dimensions()['tiles'] if hasattr(p, 'get_size_dimensions') else 1
+            for ox in range(tiles):
+                for oy in range(tiles):
+                    cell = (p.position_x + ox * 5, p.position_y + oy * 5)
+                    occupied_by[cell] = p.id
+
+        changed = False
+        for p in all_participants:
+            tiles = p.get_size_dimensions()['tiles'] if hasattr(p, 'get_size_dimensions') else 1
+            
+            def is_valid(tx, ty):
+                for ox in range(tiles):
+                    for oy in range(tiles):
+                        cx = tx + ox * 5
+                        cy = ty + oy * 5
+                        if cx < 0 or cx > 45 or cy < 0 or cy > 35:
+                            return False
+                        if is_tile_solid(self.id or 0, cx // 5, cy // 5):
+                            return False
+                        other_id = occupied_by.get((cx, cy))
+                        if other_id and other_id != p.id:
+                            return False
+                return True
+
+            if not is_valid(p.position_x, p.position_y):
+                # Find closest valid tile within widening search radius
+                for radius in range(1, 10):
+                    candidates = []
+                    for dx in range(-radius, radius + 1):
+                        for dy in range(-radius, radius + 1):
+                            if max(abs(dx), abs(dy)) == radius:
+                                nx = p.position_x + dx * 5
+                                ny = p.position_y + dy * 5
+                                if is_valid(nx, ny):
+                                    candidates.append((nx, ny))
+                    if candidates:
+                        # Choose candidate closest to current position
+                        best_cand = min(candidates, key=lambda pt: (pt[0] - p.position_x)**2 + (pt[1] - p.position_y)**2)
+                        for ox in range(tiles):
+                            for oy in range(tiles):
+                                occupied_by.pop((p.position_x + ox * 5, p.position_y + oy * 5), None)
+                        p.position_x, p.position_y = best_cand
+                        p.save(update_fields=['position_x', 'position_y'])
+                        for ox in range(tiles):
+                            for oy in range(tiles):
+                                occupied_by[(p.position_x + ox * 5, p.position_y + oy * 5)] = p.id
+                        changed = True
+                        break
+        return changed
+
     def initialize_grid_positions(self):
         """
         Deploy participants to tactical starting zones on a 10x8 grid (50ft x 40ft).
-        Party on Left flank within an organic, unaligned 20ft area (X: 5-15ft, Y: 10-25ft).
-        Enemies on Right flank within an organic, unaligned 20ft area (X: 30-40ft, Y: 10-25ft).
-        No two participants share a tile.
+        Ensures multi-tile footprints (Large 2x2, Huge 3x3) never spawn overlapping solid obstacles
+        or extending out of arena bounds.
         """
+        from combat.battlefield import is_tile_solid
         party = list(self.participants.filter(participant_type='character').order_by('id'))
         enemies = list(self.participants.filter(participant_type='enemy').order_by('id'))
         
-        occupied = set(
-            self.participants.filter(position_x__gt=0, position_y__gt=0)
-            .values_list('position_x', 'position_y')
-        )
+        occupied = set()
+        for p in self.participants.filter(is_active=True, current_hp__gt=0):
+            if p.position_x > 0 or p.position_y > 0:
+                p_tiles = p.get_size_dimensions()['tiles'] if hasattr(p, 'get_size_dimensions') else 1
+                for ox in range(p_tiles):
+                    for oy in range(p_tiles):
+                        occupied.add((p.position_x + ox * 5, p.position_y + oy * 5))
 
-        # 1. Party candidate starting tiles (20ft x 20ft zone on Left flank)
-        # Cols 1..3 (5..15 ft), Rows 2..5 (10..25 ft), with overflow to 5/30 ft
+        def find_spawn_spot(creature, candidate_pts):
+            c_tiles = creature.get_size_dimensions()['tiles'] if hasattr(creature, 'get_size_dimensions') else 1
+            for cx, cy in candidate_pts:
+                valid = True
+                for ox in range(c_tiles):
+                    for oy in range(c_tiles):
+                        fx = cx + ox * 5
+                        fy = cy + oy * 5
+                        if fx < 0 or fx > 45 or fy < 0 or fy > 35:
+                            valid = False
+                            break
+                        if is_tile_solid(self.id or 0, fx // 5, fy // 5):
+                            valid = False
+                            break
+                        if (fx, fy) in occupied:
+                            valid = False
+                            break
+                    if not valid:
+                        break
+                if valid:
+                    return cx, cy
+            return None
+
+        # 1. Party candidate starting tiles (Left flank)
         party_candidates = [
             (x, y)
             for y in [15, 20, 10, 25, 5, 30]
-            for x in [10, 15, 5]
-            if (x, y) not in occupied
+            for x in [5, 10, 15, 0]
         ]
         rng_party = random.Random(self.id or None)
         rng_party.shuffle(party_candidates)
 
         for hero in party:
             if hero.position_x == 0 and hero.position_y == 0:
-                if party_candidates:
-                    pos = party_candidates.pop(0)
-                    hero.position_x, hero.position_y = pos
-                    occupied.add(pos)
+                h_tiles = hero.get_size_dimensions()['tiles'] if hasattr(hero, 'get_size_dimensions') else 1
+                spot = find_spawn_spot(hero, party_candidates)
+                if spot:
+                    hero.position_x, hero.position_y = spot
                 else:
-                    hero.position_x = 10
-                    hero.position_y = min(35, 5 + len(occupied) * 5)
+                    fallback_pts = [(x, y) for x in range(0, 20, 5) for y in range(0, 35, 5)]
+                    spot = find_spawn_spot(hero, fallback_pts)
+                    if spot:
+                        hero.position_x, hero.position_y = spot
+                for ox in range(h_tiles):
+                    for oy in range(h_tiles):
+                        occupied.add((hero.position_x + ox * 5, hero.position_y + oy * 5))
                 hero.save(update_fields=['position_x', 'position_y'])
 
-        # 2. Enemy candidate starting tiles (20ft x 20ft zone on Right flank)
-        # Cols 6..8 (30..40 ft), Rows 2..5 (10..25 ft), with overflow to 45 ft and 5/30 ft
+        # 2. Enemy candidate starting tiles (Right flank)
         enemy_candidates = [
             (x, y)
             for y in [15, 20, 10, 25, 5, 30]
-            for x in [35, 30, 40, 45]
-            if (x, y) not in occupied
+            for x in [35, 30, 40, 25]
         ]
         rng_enemy = random.Random((self.id or 0) + 77)
         rng_enemy.shuffle(enemy_candidates)
 
         for enemy in enemies:
             if enemy.position_x == 0 and enemy.position_y == 0:
-                if enemy_candidates:
-                    pos = enemy_candidates.pop(0)
-                    enemy.position_x, enemy.position_y = pos
-                    occupied.add(pos)
+                e_tiles = enemy.get_size_dimensions()['tiles'] if hasattr(enemy, 'get_size_dimensions') else 1
+                spot = find_spawn_spot(enemy, enemy_candidates)
+                if spot:
+                    enemy.position_x, enemy.position_y = spot
                 else:
-                    enemy.position_x = 35
-                    enemy.position_y = min(35, 5 + len(occupied) * 5)
+                    fallback_pts = [(x, y) for x in range(25, 45, 5) for y in range(0, 35, 5)]
+                    spot = find_spawn_spot(enemy, fallback_pts)
+                    if spot:
+                        enemy.position_x, enemy.position_y = spot
+                for ox in range(e_tiles):
+                    for oy in range(e_tiles):
+                        occupied.add((enemy.position_x + ox * 5, enemy.position_y + oy * 5))
                 enemy.save(update_fields=['position_x', 'position_y'])
+
 
     def get_or_create_log(self):
         """Get or create combat log for this session"""
@@ -532,6 +644,8 @@ class CombatParticipant(models.Model):
     # Phase 1: Position tracking for AOE targeting
     position_x = models.IntegerField(default=0, help_text="X coordinate on battlefield grid (in feet)")
     position_y = models.IntegerField(default=0, help_text="Y coordinate on battlefield grid (in feet)")
+    altitude = models.IntegerField(default=0, help_text="Current altitude above ground in feet (Z-axis)")
+    is_flying = models.BooleanField(default=False, help_text="True if participant is currently airborne")
     
     # Phase 2: Grappling mechanics
     is_grappling = models.BooleanField(default=False, help_text="True if this participant is grappling someone")
@@ -608,9 +722,16 @@ class CombatParticipant(models.Model):
         Returns list of newly recharged ability names.
         """
         enemy = self.resolve_enemy()
-        if not enemy or not self.recharge_state:
+        if not enemy:
             return []
-        
+
+        # Ensure recharge_state is initialized if enemy has recharge actions
+        if not self.recharge_state:
+            self.init_recharge_state()
+            if not self.recharge_state:
+                return []
+            self.save(update_fields=['recharge_state'])
+
         import random
         recharged = []
         updated = False
@@ -634,8 +755,40 @@ class CombatParticipant(models.Model):
         """Check if enemy participant has a specific trait type."""
         enemy = self.resolve_enemy()
         if enemy:
-            return enemy.traits.filter(trait_type=trait_type).exists()
+            normalized = trait_type.lower().replace('_', ' ')
+            return enemy.traits.filter(
+                models.Q(trait_type__iexact=trait_type) |
+                models.Q(name__icontains=normalized)
+            ).exists()
         return False
+
+    def check_legendary_resistance(self, save_ability, save_dc, save_total):
+        """
+        Check if this enemy participant can use Legendary Resistance to turn a failed saving throw into a success.
+        Returns: (used, new_success, log_message)
+        """
+        if self.participant_type != 'enemy':
+            return False, (save_total >= save_dc), ""
+        if not self.has_trait('legendary_resistance'):
+            return False, (save_total >= save_dc), ""
+        if save_total >= save_dc:
+            return False, True, ""
+
+        if not isinstance(self.feature_uses, dict):
+            self.feature_uses = {}
+
+        if 'legendary_resistance_remaining' not in self.feature_uses:
+            self.feature_uses['legendary_resistance_remaining'] = 3
+
+        remaining = self.feature_uses.get('legendary_resistance_remaining', 0)
+        if remaining > 0:
+            self.feature_uses['legendary_resistance_remaining'] = remaining - 1
+            self.save(update_fields=['feature_uses'])
+            rem = self.feature_uses['legendary_resistance_remaining']
+            msg = f"🛡️ {self.get_name()} used Legendary Resistance to turn a failed DC {save_dc} {save_ability} save into a SUCCESS! ({rem} uses remaining)"
+            return True, True, msg
+
+        return False, False, ""
 
     def has_condition(self, name):
         """Check if participant has a specific condition by name."""
@@ -712,14 +865,46 @@ class CombatParticipant(models.Model):
 
     def get_distance_to(self, other):
         """
-        Calculate 5e grid distance to another participant in feet.
-        Uses Chebyshev distance: max(|dx|, |dy|) feet.
+        Calculate true 5e Chebyshev 3D distance between two creatures in feet.
+        Accounts for multi-square footprints (Large, Huge, Gargantuan) and 3D altitude.
+        Measures distance between the closest occupied squares of both creatures.
         """
         if not other:
             return 999
-        dx = abs(self.position_x - other.position_x)
-        dy = abs(self.position_y - other.position_y)
-        return max(dx, dy)
+
+        dim_self = self.get_size_dimensions()
+        dim_other = other.get_size_dimensions()
+
+        self_min_x = self.position_x
+        self_max_x = self.position_x + dim_self['feet'] - 5
+        self_min_y = self.position_y
+        self_max_y = self.position_y + dim_self['feet'] - 5
+
+        other_min_x = other.position_x
+        other_max_x = other.position_x + dim_other['feet'] - 5
+        other_min_y = other.position_y
+        other_max_y = other.position_y + dim_other['feet'] - 5
+
+        # Horizontal dx (closest edge to closest edge)
+        if self_max_x < other_min_x:
+            dx = other_min_x - self_max_x
+        elif other_max_x < self_min_x:
+            dx = self_min_x - other_max_x
+        else:
+            dx = 0
+
+        # Vertical dy (closest edge to closest edge)
+        if self_max_y < other_min_y:
+            dy = other_min_y - self_max_y
+        elif other_max_y < self_min_y:
+            dy = self_min_y - other_max_y
+        else:
+            dy = 0
+
+        # Altitude dz
+        dz = abs((self.altitude or 0) - (other.altitude or 0))
+
+        return max(dx, dy, dz)
 
     def is_adjacent_to(self, other):
         """Check if target is within 5 feet (adjacent square in 5e grid)."""
@@ -1059,6 +1244,39 @@ class CombatParticipant(models.Model):
             self.feature_uses['active_buffs'] = new_buffs
             self.save(update_fields=['feature_uses'])
 
+    def get_cover_details(self):
+        """
+        Determines if participant is within 5 ft of any cover obstacle or terrain prop
+        on the active battlefield layout, or in an environmental cover area.
+        Returns dict with cover info, or None.
+        """
+        try:
+            from combat.battlefield import get_participant_cover
+            sess_id = self.combat_session_id or (self.combat_session.id if self.combat_session else 0)
+            alt = getattr(self, 'altitude', 0) or 0
+            size_tiles = self.get_size_dimensions()['tiles'] if hasattr(self, 'get_size_dimensions') else 1
+            cover_info = get_participant_cover(sess_id, self.position_x, self.position_y, altitude=alt, size_tiles=size_tiles)
+
+            if cover_info:
+                return cover_info
+        except Exception:
+            pass
+
+        # Also check ParticipantPosition.current_cover if set by EnvironmentalEffect
+        try:
+            if hasattr(self, 'position') and self.position and self.position.current_cover:
+                ctype = self.position.current_cover
+                if ctype == 'half':
+                    return {'type': 'half', 'bonus': 2, 'source': 'Environmental Cover'}
+                elif ctype in ['three_quarters', 'three-quarters']:
+                    return {'type': 'three_quarters', 'bonus': 5, 'source': 'Environmental Cover'}
+                elif ctype in ['total', 'full']:
+                    return {'type': 'total', 'bonus': 5, 'source': 'Total Cover'}
+        except Exception:
+            pass
+
+        return None
+
     def calculate_effective_ac(self, cover_bonus=0):
         """Calculate effective AC including armor, magic items, cover, and active buffs"""
         base_ac = self.armor_class
@@ -1114,12 +1332,17 @@ class CombatParticipant(models.Model):
         if self.has_buff('barkskin'):
             base_ac = max(base_ac, 16)
         
-        # Add cover bonus
+        # Add cover bonus (from parameter or dynamically computed from nearby props)
+        if cover_bonus == 0:
+            cover_info = self.get_cover_details()
+            if cover_info:
+                cover_bonus = cover_info.get('bonus', 0)
         base_ac += cover_bonus
         
         return base_ac
+
     
-    def take_damage(self, amount, damage_type=None, check_concentration=True):
+    def take_damage(self, amount, damage_type=None, check_concentration=True, is_critical=False):
         """
         Apply damage to this participant, factoring in:
         1. Barbarian Rage resistance (bludgeoning/piercing/slashing)
@@ -1219,6 +1442,8 @@ class CombatParticipant(models.Model):
                 }
 
         self.last_relentless_endurance_triggered = False
+        self.last_undead_fortitude_triggered = False
+        self.undead_fortitude_details = None
         concentration_broken = False
         potential_hp = self.current_hp - actual_damage
         if potential_hp <= 0 and self.current_hp > 0 and self.has_relentless_endurance():
@@ -1232,6 +1457,31 @@ class CombatParticipant(models.Model):
                         self.feature_uses = {}
                     self.feature_uses['relentless_endurance_used'] = True
                     self.last_relentless_endurance_triggered = True
+                else:
+                    self.current_hp = 0
+                    self.is_active = False
+            else:
+                self.current_hp = 0
+                self.is_active = False
+        elif potential_hp <= 0 and self.current_hp > 0 and self.participant_type == 'enemy' and self.has_trait('undead_fortitude'):
+            # 5e Undead Fortitude: DC 5 + damage taken CON save (unless radiant damage or critical hit)
+            is_radiant = (dtype_name == 'radiant')
+            if not is_radiant and not is_critical:
+                from combat.utils import roll_d20
+                dc = 5 + actual_damage
+                con_mod = self.get_ability_modifier('CON')
+                r, _ = roll_d20()
+                save_total = r + con_mod
+                if save_total >= dc:
+                    self.current_hp = 1
+                    self.is_active = True
+                    self.last_undead_fortitude_triggered = True
+                    self.undead_fortitude_details = {
+                        'roll': r,
+                        'con_mod': con_mod,
+                        'total': save_total,
+                        'dc': dc,
+                    }
                 else:
                     self.current_hp = 0
                     self.is_active = False
@@ -1464,6 +1714,15 @@ class CombatParticipant(models.Model):
             return True
         return self.character.features.filter(name__icontains='Hellish Resistance').exists()
 
+    SIZE_SCALE = {
+        'T': {'tiles': 1, 'feet': 5, 'name': 'Tiny'},
+        'S': {'tiles': 1, 'feet': 5, 'name': 'Small'},
+        'M': {'tiles': 1, 'feet': 5, 'name': 'Medium'},
+        'L': {'tiles': 2, 'feet': 10, 'name': 'Large'},
+        'H': {'tiles': 3, 'feet': 15, 'name': 'Huge'},
+        'G': {'tiles': 4, 'feet': 20, 'name': 'Gargantuan'},
+    }
+
     def get_size(self) -> str:
         """Get 5E creature size letter ('T', 'S', 'M', 'L', 'H', 'G')."""
         if self.character:
@@ -1479,6 +1738,104 @@ class CombatParticipant(models.Model):
             size_raw = str(enemy.size).strip().upper()
             return size_raw[:1]
         return 'M'
+
+    def get_size_dimensions(self):
+        """Return dict with tile count, width/height in feet, and display name."""
+        size_code = self.get_size()
+        return self.SIZE_SCALE.get(size_code, self.SIZE_SCALE['M'])
+
+    def get_occupied_cells(self):
+        """
+        Return list of (x, y) coordinates in feet occupied by this creature on the grid.
+        Position (position_x, position_y) is the top-left tile of the footprint.
+        """
+        feet = self.get_size_dimensions()['feet']
+        cells = []
+        for dx in range(0, feet, 5):
+            for dy in range(0, feet, 5):
+                cells.append((self.position_x + dx, self.position_y + dy))
+        return cells
+
+    def get_fly_speed(self) -> int:
+        """Extract fly speed in feet from enemy speed string or character features."""
+        if self.participant_type == 'enemy':
+            enemy = self.resolve_enemy()
+            if enemy and hasattr(enemy, 'stats') and enemy.stats and enemy.stats.speed:
+                speed_str = enemy.stats.speed.lower()
+                import re
+                match = re.search(r'fly\s+(\d+)\s*ft', speed_str)
+                if match:
+                    return int(match.group(1))
+        # Check active buff/spell like Fly
+        if hasattr(self, 'has_buff') and self.has_buff('fly'):
+            return 60
+        return 0
+
+    def has_hover(self) -> bool:
+        """Check if creature has hover flight trait."""
+        if self.participant_type == 'enemy':
+            enemy = self.resolve_enemy()
+            if enemy and hasattr(enemy, 'stats') and enemy.stats and enemy.stats.speed:
+                if 'hover' in enemy.stats.speed.lower():
+                    return True
+            if self.has_trait('hover'):
+                return True
+        return False
+
+    def can_fly(self) -> bool:
+        """Check if participant has an active fly speed."""
+        return self.get_fly_speed() > 0
+
+    def handle_flying_fall(self, session=None):
+        """
+        5e Rule: If a flying creature is knocked prone, its fly speed is reduced to 0,
+        or it is incapacitated, and it does not have the hover trait, it falls immediately.
+        Takes 1d6 bludgeoning damage per 10 feet fallen (max 20d6) and lands prone on the ground.
+        """
+        if not self.is_flying or (self.altitude or 0) <= 0:
+            return 0, ""
+
+        if self.has_hover():
+            return 0, f"{self.get_name()} hovers safely in place!"
+
+        fall_dist = self.altitude
+        dice_count = min(20, max(1, fall_dist // 10)) if fall_dist >= 10 else 0
+        fall_dmg = 0
+        import random
+        if dice_count > 0:
+            fall_dmg = sum(random.randint(1, 6) for _ in range(dice_count))
+            self.take_damage(fall_dmg, damage_type='bludgeoning', is_critical=False)
+
+        self.altitude = 0
+        self.is_flying = False
+        self.save(update_fields=['altitude', 'is_flying'])
+
+        from bestiary.models import Condition
+        prone_cond, _ = Condition.objects.get_or_create(name='prone')
+        if not self.conditions.filter(name='prone').exists():
+            self.conditions.add(prone_cond)
+
+        msg = f"📉 {self.get_name()} fell {fall_dist} ft from the sky"
+        if fall_dmg > 0:
+            msg += f", taking {fall_dmg} falling damage ({dice_count}d6) and crashing prone!"
+        else:
+            msg += " and landed prone!"
+
+        if session:
+            from combat.models import CombatAction
+            try:
+                CombatAction.objects.create(
+                    combat_session=session,
+                    actor=self,
+                    action_type='other',
+                    round_number=session.current_round,
+                    turn_number=session.current_turn_index,
+                    description=msg,
+                )
+            except Exception:
+                pass
+
+        return fall_dmg, msg
     
     def make_death_save(self, roll=None):
         """
@@ -1589,6 +1946,13 @@ class CombatParticipant(models.Model):
         self.reaction_used = False
         self.movement_used = 0
         self.attacks_remaining = self._calculate_attacks_per_action()
+        if self.legendary_actions_max > 0:
+            self.legendary_actions_remaining = self.legendary_actions_max
+        elif self.participant_type == 'enemy':
+            enemy = self.resolve_enemy()
+            if enemy and (enemy.legendary_actions.exists() or enemy.actions.filter(action_type='legendary_action').exists()):
+                self.legendary_actions_max = 3
+                self.legendary_actions_remaining = 3
         if self.feature_uses:
             self.feature_uses['dash_active'] = False
             self.feature_uses['disengaged'] = False
@@ -1598,7 +1962,22 @@ class CombatParticipant(models.Model):
             self.feature_uses['reckless_attack_active'] = False
             self.feature_uses['shield_spell_active'] = False
         if self.participant_type == 'enemy':
-            self.check_recharges()
+            recharged_items = self.check_recharges()
+            session = getattr(self, 'combat_session', None) or getattr(self, 'session', None)
+            if recharged_items and session:
+                try:
+                    for rec_name in recharged_items:
+                        CombatAction.objects.create(
+                            combat_session=session,
+                            actor=self,
+                            action_type='other',
+                            attack_name=rec_name,
+                            round_number=session.current_round,
+                            turn_number=session.current_turn_index,
+                            description=f"✦ {self.get_name()}'s {rec_name} has recharged! ✦",
+                        )
+                except Exception:
+                    pass
         self.save()
     
     def _calculate_attacks_per_action(self):

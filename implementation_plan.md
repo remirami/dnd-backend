@@ -17,8 +17,9 @@ A comprehensive architectural blueprint and development roadmap for the **5e Cam
 10. [Pillar 8: 🗄️ Database Architecture & Production Persistence [COMPLETED]](#pillar-8-️-database-architecture--production-persistence-completed)
 11. [Pillar 9: ⚔️ Combat Arena Layout & Ergonomic UX Redesign [COMPLETED]](#pillar-9-️-combat-arena-layout--ergonomic-ux-redesign-completed)
 12. [Pillar 10: 🎲 5e Mechanical Correctness & Rules Engine [IN PROGRESS]](#pillar-10--5e-mechanical-correctness--rules-engine-in-progress)
-13. [Long-Term Phased Implementation Roadmap](#11-long-term-phased-implementation-roadmap)
-14. [Master Reference Document Status](#12-master-reference-document-status)
+13. [Pillar 11: 🗺️ 2.5D Isometric Combat Grid, Thematic Battlemats & Multi-Tile Tokens [PLANNED]](#pillar-11-️-25d-isometric-combat-grid-thematic-battlemats--multi-tile-tokens-planned)
+14. [Long-Term Phased Implementation Roadmap](#12-long-term-phased-implementation-roadmap)
+15. [Master Reference Document Status](#13-master-reference-document-status)
 
 ---
 
@@ -36,6 +37,7 @@ A comprehensive architectural blueprint and development roadmap for the **5e Cam
 | **Pillar 8** | 🗄️ **Database & Persistence** | **`✅ COMPLETED`** | PostgreSQL 16 on Neon Cloud Serverless, dual-branching (`dev` & `production`), 28,753 records migrated, sequence resync, in-memory testing. |
 | **Pillar 9** | ⚔️ **Combat Arena UX Redesign** | **`✅ COMPLETED`** | Bottom tactical action dock & drawers (Weapons, Spells, Features/Feats, Consumables, Maneuvers), contextual Clash Card, spell slot reset on combat end. |
 | **Pillar 10** | 🎲 **5e Mechanical Correctness** | **`🔧 IN PROGRESS`** | Damage type propagation & resistance/immunity/vulnerability engine, spell range validation (Touch/Self/X ft), condition immunity enforcement, enemy action range checks, spell-specific rules lookup table. |
+| **Pillar 11** | 🗺️ **2.5D Isometric Combat Grid & Tokens** | **`⏳ PLANNED / SPECIFIED`** | 2.5D angled perspective viewport (45°–60° tilt + 2D toggle), authentic multi-tile token footprints (Large 2×2, Huge 3×3, Gargantuan 4×4), upright billboard standee tokens with depth Z-sorting, thematic high-res battlemats (Crypt, Magma, Colosseum, Bog). |
 
 ---
 
@@ -200,10 +202,28 @@ bestiary/models.py
 │   └── legendary_actions (3 points per round, costs 1-3 points per action)
 ```
 
-### 4.3 Automated SRD Data Import Pipeline
-- Create a comprehensive seeder command: `python manage.py import_srd_monsters`.
-- Parses official 5e SRD monster datasets (all ~320 core SRD creatures from Goblin to Ancient Red Dragon).
-- Accurately parses dice formulas (e.g. `2d6 + 3 slashing`), saving throw DCs, reach/range, recharge mechanics, and condition riders into relational fields.
+### 4.3 Automated SRD Data Import Pipeline & Structured Parser [COMPLETED]
+- Executed `python manage.py parse_existing_monsters --clear-existing` across all 315 SRD monsters.
+- Transformed unstructured string abilities and attacks into fully relational models:
+  - **1,059 Structured Enemy Actions** (melee, ranged, saving throw, utility, bonus action, and legendary action records).
+  - **788 Damage Roll Formulas** linked with authentic damage types (e.g. `12d8 acid`, `2d10+6 piercing`).
+  - **134 Multiattack Sequences** with sequence breakdowns and action counts.
+  - **835 Special Traits** categorized by trait type (`pack_tactics`, `undead_fortitude`, `nimble_escape`, `legendary_resistance`, etc.).
+  - **112 Legendary Actions** synchronized across both `EnemyAction` and `EnemyLegendaryAction`.
+
+### 4.4 Dedicated Standalone Bestiary Compendium (`/bestiary`) & Dashboard Placement
+*Elevate monster inspection from an in-combat modal into a first-class compendium browser.*
+
+1. **Dashboard Placement (Dual-Tome Lower Grid)**:
+   - Preserves the sacred **Three Pillars** on the main dashboard (`CHARACTERS`, `COMBAT ARENA`, `GAUNTLET`).
+   - Transforms the lower-left informational parchment scroll ("The Realm Companion") into **"The Bestiary & Monster Archives"** parchment tome.
+   - Symmetrically balances the **Chronicles (Recent Updates)** card on the right, providing two thematic reference codices at the bottom of the realm portal.
+   - Displays real-time catalog stats: "2,321 SRD Beasts & Adversaries", category tag teasers (Dragons, Undead, Fiends, Beasts), and a direct action link: `✦ OPEN THE BESTIARY ARCHIVES → ✦`.
+
+2. **Compendium Browser Features (`/bestiary`)**:
+   - **Multi-Attribute Filter Bar**:
+     - Challenge Rating (CR 0 to CR 30 with fractional CR 1/8, 1/4, 1/2 support).
+     - **Parchment Statblock View**: Full 5E statblock styling with ability scores, saving throws, damage resistances/immunities, traits, multiattack routines, and action breakdown with dice formula tooltips.
 
 ---
 
@@ -240,6 +260,26 @@ Each monster turn evaluates:
 3. **Target Evaluation Score**:
    $$\text{Score} = w_1 \cdot (1 - \frac{\text{Current HP}}{\text{Max HP}}) + w_2 \cdot \text{Is Concentrating} + w_3 \cdot \text{Proximity} + w_4 \cdot \text{Can Trigger Pack Tactics}$$
 4. **Action Execution**: Execute highest-impact available action (AoE $\to$ Multiattack $\to$ Single attack $\to$ Dash/Reposition).
+
+### 5.3 Monster Actions & Tactical Traits Engine [COMPLETED]
+- **Phase 1 Completed (Structured Monster Data Pipeline & Bestiary Modal Display)**:
+  - 315 SRD monsters parsed into structured `EnemyAction`, `EnemyActionDamage`, `EnemyTrait`, `EnemyMultiattack`, and `EnemyLegendaryAction` relational records.
+  - Interactive bestiary stat block modal displays formatted damage rolls, reach/range, saving throw DCs, and legendary point costs with authentic parchment styling.
+- **Phase 2 Completed (Combat Engine AoE & Saving Throw Actions)**:
+  - Turn-start 1d6 recharge rolls re-enable `has_recharge=True` actions when roll $\ge$ `recharge_min_roll` (5–6) with automatic `CombatAction` event logging.
+  - Multi-target AoE and breath weapons support `target_ids` batch execution with DC saving throws, half damage on save, and condition rider applications.
+  - Damage resistances/immunities integrated into saving throw damage resolution via `target.take_damage(damage_type=...)`.
+  - Action economy enforcement: `action_used = True`, `attacks_remaining = 0`, and `recharge_state[action_name] = False`.
+- **Phase 3 Completed (Tactical Monster Traits)**:
+  - **Pack Tactics**: Advantage calculation based on ally engagement ($\le 5\text{ ft}$) and intelligent target swarming (+25 focus).
+  - **Nimble Escape**: Goblin / skirmisher bonus action Disengage and tactical repositioning away from melee threats.
+  - **Undead Fortitude**: Zombie CON save ($5 + \text{damage taken}$) on lethal damage to remain at 1 HP, bypassed by radiant damage and critical hits.
+  - **Legendary Resistance (3/Day)**: Boss monsters automatically convert failed saving throws into successes with charge tracking and combat notices.
+- **Phase 4 Completed (Legendary Action Weaving & Dynamic Reaction Triggers)**:
+  - **Legendary Action Weaving**: Bosses weave actions (`execute_ai_legendary_action`) between participants at the conclusion of other creatures' turns (`next_turn`). Supports Cost 2 Wing Attack (AoE DEX save, knock prone, tactical repositioning) and Cost 1 Tail Attacks, spending points from the 3-point pool. Points reset at the start of the boss's own turn.
+  - **Defensive Shield Reaction**: Enemy spellcasters with Shield dynamically react when incoming attack rolls would hit, gaining $+5$ AC to turn hits into misses (`reaction_used = True`, `shield_spell_active = True`).
+  - **Grid-Based Opportunity Attacks**: Non-disengaging participants moving away from enemy reach trigger tactical opportunity attacks along the path.
+- **Verification**: 15/15 tests passing in `combat.test_monster_actions`, 78/78 tests passing in `combat`, and Next.js frontend builds cleanly with 0 errors.
 
 ---
 
@@ -291,25 +331,49 @@ Each monster turn evaluates:
 
 ---
 
-## Pillar 7: 🧱 Battlefield Obstacles, Cover & Hazards [PLANNED / FUTURE]
+## Pillar 7: 🧱 2.5D Isometric Combat Grid & Environmental Arena System [PLANNED / FUTURE]
 
-### 7.1 Cover System & Line-of-Sight (LoS)
+### 7.1 2.5D Isometric & Angled Viewport
+1. **Camera Perspective Projection**:
+   - Tilting perspective (e.g. 45°–60° pitch, subtle isometric rotation) to introduce true battlefield depth while strictly maintaining discrete 5-foot tile-based Chebyshev movement `(x, y)`.
+   - **Dual-View Toggle**: HUD switcher between **Top-Down 2D** (pure tactical overview) and **2.5D Angled Overview** (cinematic depth).
+   - Smooth pan and zoom controls for large battlefields.
+2. **Upright 2.5D Billboard Tokens**:
+   - Miniature tokens, monster portraits, and spell markers stand upright facing the camera (billboard orientation).
+   - Grounded perspective drop-shadows anchored directly to floor tiles to indicate position, elevation, or flight.
+   - Active turn aura rings and selection borders projected flat on the floor underneath upright tokens.
+
+### 7.2 Custom & Environmental Grid Geometries (Non-Rectangular Arenas)
+1. **Beyond Rigid Rectangles**:
+   - Replaces static N×M rectangular boxes with organic, tactical battlefield layouts:
+     - **Chokepoint Corridors**: Narrow 1–2 tile dungeon hallways and cavern tunnels.
+     - **Circular Arenas & Colosseums**: Radial or polygonal fighting pits with perimeter boundary walls.
+     - **Chasms & Ravines**: Impassable void gaps between stone platforms that require jump mechanics, spells, or bridges to cross.
+     - **L-Shaped & Multi-Room Layouts**: Connected chambers with door transitions and vision obstruction.
+2. **Dynamic Tile Matrix States**:
+   - Every tile in the arena evaluates: `Walkable`, `Void / Pit`, `Difficult Terrain` (2x cost), `Hazard` (Lava/Acid), and `Wall / Obstacle`.
+
+### 7.3 Thematic Biome Backgrounds & Textures
+1. **Biome-Specific Battlemats**:
+   - *Crypt of the Undead*: Cracked ancient stone slabs, cobwebs, dark moss, bone piles.
+   - *Infernal Pit*: Volcanic basalt rock with glowing magma channels and embers.
+   - *Colosseum of Blades*: Blood-stained sand with wooden boundary fences and spectator railings.
+   - *Sunken Dungeon / Cavern*: Wet stone reflections, puddles, stalagmites.
+   - *Savage Wilds*: Dirt path, dense foliage borders, fallen logs.
+2. **Atmospheric Effects & HUD Controls**:
+   - Layered atmospheric particles (dust motes, smoke, torchlight vignettes).
+   - Grid line opacity slider (10% to 100%) allowing players to prioritize environmental immersion or tactical precision.
+
+### 7.4 Cover System, Line-of-Sight & Interactive 2.5D Props
 1. **Raycasting Line of Sight**:
    - Evaluates straight-line rays from attacker token center to the 4 corners of the target token.
-2. **Cover Tiers**:
-   - **Half Cover (+2 AC, +2 DEX saves)**: Intervening low obstacles (low walls, tables, barrels, or another creature).
-   - **Three-Quarters Cover (+5 AC, +5 DEX saves)**: Substantial obstruction (arrow slits, portcullis, thick tree trunks).
-   - **Full Cover (Cannot be directly targeted)**: Complete visual obstruction (solid stone walls, closed doors).
-
-### 7.2 Battlefield Hazards & Terrain Effects
-1. **Hazardous Surfaces**:
-   - **Lava / Fire**: Entering or ending turn in fire deals $2d6$ fire damage.
-   - **Acid Pools**: Deals $2d4$ acid damage and reduces AC until cleaned.
-   - **Spike Growth / Briars**: Moving through deals $2d4$ piercing damage per 5 ft of movement.
-2. **Interactive Battlefield Props**:
-   - **Destructible Props**: Barricades and wooden doors have AC (e.g. 15) and HP (e.g. 25). Can be attacked and destroyed to open pathways.
-   - **High Ground / Elevated Ledges**: Creatures attacking from high ground gain +1 to hit with ranged weapons.
-   - **Hazardous Forced Movement**: Shoving, Repelling Blast, or Thunderwave pushes enemies into hazards for bonus tactical damage.
+2. **Tactical Cover Tiers**:
+   - **Half Cover (+2 AC, +2 DEX saves)**: Low stone walls, crates, barrels, overturned tables, or intervening creatures.
+   - **Three-Quarters Cover (+5 AC, +5 DEX saves)**: Portcullises, thick stone pillars, statue pedestals, arrow slits.
+   - **Full Cover (Cannot be directly targeted)**: Heavy masonry walls, closed dungeon doors.
+3. **Interactive Battlefield Props**:
+   - Destructible props with AC and HP (wooden doors, barricades).
+   - Interactive manipulation: opening/closing doors, climbing onto elevated ledges, pushing enemies into hazard zones.
 
 ---
 
@@ -443,9 +507,15 @@ Based on the verified UI mockups and design references, a full layout overhaul i
     - Built using smooth CSS/Radix hover micro-interactions anchored directly beneath each card.
     - On hover/focus (desktop), slides down with a gentle fade (`transition-all duration-200`) showing the dark card with crimson border `#a63a3a`, parchment text `#d1cdb8` in Lora, and diamond headers.
     - On touch devices (mobile/tablet), tapping once expands the tooltip info; tapping again or pressing the action navigates to the page.
-- **Changelog Card**:
-  - Header: `Changelog` with version tag `v1.7.0` in crimson `#a63a3a` (Lora bold).
-  - Bulleted updates in parchment `#d1cdb8` (Lora regular).
+- **The Dual-Tome Lower Grid (Reference Codices)**:
+  - **Left Tome**: **The Bestiary & Monster Archives Parchment Scroll** (`ParchmentScroll.tsx`):
+    - Replaces the static welcoming text with an active compendium gateway.
+    - Header: `MONSTER ARCHIVES` with antique wax seal stamp and golden filigree divider.
+    - Real-time catalog summary: "2,321 SRD Beasts & Adversaries from Open5e".
+    - Quick category chips (Dragons, Fiends, Undead, Beasts) and prompt link navigating directly to `/bestiary`.
+  - **Right Tome**: **The Chronicles (Changelog Card)** (`FantasyCard.tsx`):
+    - Header: `Chronicles` with version tag `v1.13.1` in crimson `#a63a3a` (Lora bold).
+    - Bulleted release ledger in parchment `#d1cdb8` with link to full `/changelog`.
 - **Footer**:
   - Required Wizards of the Coast SRD 5.1 / 5.2 Creative Commons CC-BY-4.0 attribution and trademark notice in `#404552` (Lora).
 
@@ -703,7 +773,199 @@ These require deeper architectural patterns and are deferred until the foundatio
 
 ---
 
-## 11. Long-Term Phased Implementation Roadmap
+## Pillar 11: 🗺️ 2.5D Isometric Combat Grid, Thematic Battlemats & Multi-Tile Tokens [PLANNED]
+
+### 11.1 The Problem: Flat 2D Matrix & Collapsed Multi-Tile Scale
+While the interactive tactical grid (`BattleGrid.tsx`) successfully supports point-to-point movement, distance math, and AoE templates, it suffers from significant visual and spatial limitations:
+1. **Collapsed Multi-Tile Scale**: Prior to fix, all creatures (from Tiny imps to Gargantuan dragons) visually occupied a single 1×1 tile (`w-9.5 h-9.5`), breaking the tabletop illusion of towering bosses and multi-creature board control.
+2. **Flat Programmatic Grid Surface**: The arena renders as a stark flat obsidian matrix (`#090b10`) with dark border lines and emoji icons for pillars/barricades, lacking atmospheric depth, realistic stone masonry, or fantasy terrain textures.
+3. **Flat Top-Down Perspective**: Looking straight down from 90° eliminates verticality, character silhouette visibility, and grounded token presence. Modern tactical RPGs (such as *Baldur's Gate 3*, *Solasta*, *Divinity*, *Final Fantasy Tactics*, and *Owlbear Rodeo 2.5D*) use angled perspective (45°–60°) with depth Z-sorting to make battlefields feel alive.
+4. **Emoji Tokens vs. Physical Miniature Standees**: Creatures are represented by single emoji symbols (`🐉`, `👹`, `🛡️`) rather than high-definition circular tabletop miniatures, class crests, and monster portraits with beveled metallic bases.
+
+---
+
+### 11.2 2.5D Angled Viewport & Perspective Camera Architecture
+
+```
+                  ┌──────────────────────────────────────────────┐
+                  │          2.5D Perspective Viewport           │
+                  │   perspective: 1200px; transform-style: 3D   │
+                  └──────────────────────┬───────────────────────┘
+                                         │
+                 ┌───────────────────────▼────────────────────────┐
+                 │       Angled Tactical Grid Stage (Ground)      │
+                 │     transform: rotateX(45deg) rotateZ(0deg)    │
+                 │      • High-Res Thematic Battlemat Tilemap     │
+                 │      • Dynamic Projected Range & AoE Reticles  │
+                 │      • Realistic Grid Lines (subtle gold/dim)  │
+                 └───────────────────────┬────────────────────────┘
+                                         │
+        ┌────────────────────────────────┴────────────────────────────────┐
+        ▼                                                                 ▼
+┌───────────────────────────────┐               ┌─────────────────────────────────┐
+│     Multi-Tile Token Footprint │               │     Upright Billboard Standees  │
+│ • Medium: 1×1 tile (5×5 ft)   │               │ • Counter-rotated rotateX(-45°) │
+│ • Large: 2×2 tiles (10×10 ft) │               │ • Faces player camera directly  │
+│ • Huge: 3×3 tiles (15×15 ft)  │               │ • Metallic circular base ring   │
+│ • Gargantuan: 4×4+ (20×20 ft) │               │ • Authentic creature art/crest  │
+│ • Dynamic oval ground shadow  │               │ • Dynamic Z-index: row * 10     │
+└───────────────────────────────┘               └─────────────────────────────────┘
+```
+
+#### 11.2.1 Camera View Modes & Perspective Toggle
+- **2.5D Tactical Angled View (Default)**:
+  - Container uses CSS 3D context (`perspective: 1200px`, `perspective-origin: 50% 65%`).
+  - Ground plane is tilted back at $45^\circ$ (`transform: rotateX(45deg)`), creating realistic foreground-to-background spatial recession.
+- **Top-Down 2D Blueprint View (Toggle)**:
+  - Instant 1-click toggle button on the grid controls (`[ 📐 2.5D Tactical ]` $\leftrightarrow$ `[ 🗺️ Top-Down 2D ]`) for players who prefer classic top-down tactical surveying.
+- **Pan & Zoom Canvas**:
+  - Full mouse wheel zoom ($0.75\times$ to $1.6\times$) and middle-click / drag pan with clamping within arena boundary walls.
+
+#### 11.2.2 Y-Depth Z-Index Sorting
+In an angled 2.5D perspective, objects standing on lower rows (closer to the camera) must render in front of objects standing on higher rows (further up).
+- **Z-Index Formula**:
+  $$\text{zIndex} = (\text{row} \times 10) + (\text{isFlying} \ ? \ 50 : 0) + (\text{isSelected} \ ? \ 100 : 0)$$
+- Guarantees seamless depth occlusion where a standing warrior correctly overlaps a dragon behind them without clipping artifacts.
+
+---
+
+### 11.3 Authentic 5e Multi-Tile Footprint Scaling
+
+Each creature's footprint on the grid maps to its canonical 5e size category:
+
+| Size Category | 5e Space (Feet) | Grid Squares | Base Diameter | Visual Footprint & Miniature Ring Style |
+| :--- | :--- | :--- | :--- | :--- |
+| **Tiny** | 2.5 × 2.5 ft. | 0.5 × 0.5 (or centered 1×1) | 24px | Diminutive base with glowing aura pip (Familiars, Imps, Pixies) |
+| **Small** | 5 × 5 ft. | 1 × 1 tile | 44px | Standard silver/bronze ring base (Halflings, Gnomes, Goblins) |
+| **Medium** | 5 × 5 ft. | 1 × 1 tile | 48px | Standard gold-trimmed miniature base (Humans, Elves, Orcs) |
+| **Large** | 10 × 10 ft. | 2 × 2 tiles | 96px | Heavy 2-tile wide base with radial ground shadow (Ogres, Horses, Minotaurs) |
+| **Huge** | 15 × 15 ft. | 3 × 3 tiles | 144px | Massive 3-tile wide base with ambient footprint ring (Young/Adult Dragons, Giants) |
+| **Gargantuan**| 20 × 20+ ft.| 4 × 4+ tiles | 192px+ | Colossal multi-tile stage presence with boss pulse aura (Ancient Dragons, Krakens) |
+
+#### 11.3.1 Multi-Tile Spatial Mechanics
+1. **Occupied Cell Matrix**:
+   - When a Large ($2\times 2$) or Huge ($3\times 3$) unit occupies `(col, row)`, all $N \times N$ tiles `[col .. col+N-1, row .. row+N-1]` are registered in the obstacle collision map.
+2. **Chebyshev Bounding-Box Distance**:
+   - Melee reach and ranged distances calculate from the closest edge of the multi-tile bounding box:
+     $$\text{dist} = \max(0, \Delta x_{\text{box}}, \Delta y_{\text{box}}, \Delta z_{\text{alt}})$$
+3. **Reach Threat Perimeters**:
+   - Threat aura circles visually project outward from the creature's entire multi-tile footprint (e.g., Huge dragon with 10 ft. reach threatens all cells within 2 tiles of any part of its $3\times 3$ body).
+
+---
+
+### 11.4 Realistic Physical Miniature Tokens (Billboard Standee Style)
+
+Rather than flat digital stickers, tokens are styled after high-end physical tabletop miniatures and acrylic standees:
+
+1. **Upright Billboard Counter-Rotation**:
+   - While the ground plane tilts at $45^\circ$, each token's portrait disc counter-rotates (`transform: rotateX(-45deg)`).
+   - This ensures character and monster art stands completely upright and directly faces the player's view, creating a tactile diorama feel.
+2. **Weighted Circular Miniature Base**:
+   - Grounded elliptical base ring with beveled rim, drop shadow, and faction tint:
+     - 🛡️ **Player Adventurers**: Polished antique gold rim (`#c5a059`) with inner emerald health arc.
+     - 👹 **Hostile Adversaries**: Crimson iron rim (`#ef4444`) with blood-red danger pulse.
+     - 👑 **Bosses / Legendary Creatures**: Heavy double-banded filigree rim with pulsing runic light.
+3. **Airborne Elevation Riser & Ground Shadow**:
+   - Airborne creatures (`altitude > 0`):
+     - The upright miniature token translates vertically along the Y-axis:
+       $$\Delta y = -\text{Math.min}(48, 8 + \text{altitude} \times 1.2)\text{ px}$$
+     - A translucent acrylic elevation rod connects the floating miniature to the ground.
+     - A dark, diffuse oval ground shadow remains anchored to the terrain tiles directly below.
+4. **Status & Aura Rings**:
+   - **Concentration Aura**: Soft violet runic ring rotating beneath the caster's base.
+   - **Condition Pips**: Miniature status badges (Stunned ⚡, Blinded 👁️, Poisoned 🧪) orbiting the upper lip of the base.
+
+---
+
+### 11.5 Thematic High-Resolution Battlemats & Environmental Biomes
+
+Replaces the generic flat black grid with curated, high-atmosphere fantasy battlemats:
+
+1. **Biome Battlemat Presets**:
+   - 🏛️ **The Forgotten Crypt**: Cobblestone flagstones, carved burial slabs, dust particles, faint teal soul-lantern illumination.
+   - 🌋 **Infernal Caldera**: Cracked black basalt slabs bordered by animated glowing magma channels with heat shimmer.
+   - 🌲 **Verdant Wilderness / Dark Woods**: Tangled roots, pine needles, mossy boulders, fallen logs, dappled canopy light.
+   - 🏰 **Gladiator Arena / Colosseum**: Scorched sand, trampled bloodstains, timber barricades, iron grate storm drains.
+   - 🌊 **Sunken Mire / Flooded Ruins**: Submerged stone walkways, murky water reflections, dripping stalactites.
+2. **Subtle Tactile Grid Overlay**:
+   - High-precision 5-ft. grid lines rendered with fine gold/slate filigree (`opacity: 0.18–0.25`), perfectly aligned with multi-tile coordinates.
+   - Dynamic cell coordinate markers (A1–J8) subtly etched into border stones.
+3. **Dynamic Interactive Terrain Objects**:
+   - Solid pillars and walls rendered as 2.5D extruded columns casting shadows across the floor.
+   - Half-cover barricades (crates, low walls) that combatants can crouch behind.
+
+---
+
+### 11.6 Vertical Depth & Multi-Tier Battlemats (Topological Elevation, Cliffs & Fall Mechanics)
+
+Tabletop combat is profoundly enhanced when terrain possesses **verticality** — balconies, cliffs, ramparts, sunken chasms, and bridges that dictate tactical advantage and danger.
+
+```
+                          [TOWER BALCONY / RAMPART: Z = +10 to +20 ft]
+                                ┌───────────────────────────┐
+                                │ 🏹 Ranger (High Ground)   │ • +2 To-Hit Bonus / Advantage
+                                └─────────────┬─────────────┘ • Can fire over low cover
+                                              │
+                    [STONE STAIRCASE / RAMP]  │ 10 ft Drop (1d6 Fall Dmg + Prone)
+                          ┌───────────────────┘
+                          ▼
+        ┌───────────────────────────────────┐
+        │ 🛡️ MAIN ARENA FLOOR: Z = 0 ft     │
+        │ • Melee Clash (Paladin vs Ogre)   │
+        └─────────────────┬─────────────────┘
+                          │ 
+                          │ Cliff Edge / Shove Hazard (Thunderwave / Repelling Blast)
+                          ▼
+        ┌───────────────────────────────────┐
+        │ ☠️ SUNKEN CHASM / PIT: Z = -10 ft │ • Toxic Gas / Spikes / Lava Hazard
+        └───────────────────────────────────┘ • Difficult terrain to climb out
+```
+
+#### 11.6.1 Topological Elevation Tiers ($Z$-Coordinates)
+Every cell $(x, y)$ in a battlemat layout possesses an intrinsic terrain elevation $Z$ in feet:
+- **Sunken Chasms / Trenches ($Z = -10\text{ ft}$)**: Pits, acid canals, spike traps, or rushing underground rivers.
+- **Main Arena Floor ($Z = 0\text{ ft}$)**: Standard ground combat plane.
+- **Elevated Terraces / Dais ($Z = +5\text{ to }+10\text{ ft}$)**: Temple altars, ruined fortress ramparts, wooden scaffolding, stone bridges.
+- **Watchtowers & High Perches ($Z = +15\text{ to }+20\text{ ft}$)**: Sniper nests, battlements, parapets.
+
+#### 11.6.2 Visual 2.5D Layering & Iso-Extrusion
+1. **Extruded 2.5D Cliff Faces**:
+   - Elevated tiers are rendered with vertical rock faces and stone masonry blocks connecting the raised surface to the lower floor.
+   - Raised cliffs cast soft ambient occlusion and directional drop-shadows onto lower tiles.
+2. **Staircases, Ladders & Ramps**:
+   - Explicit transition cells marked with directional steps that permit walking between $Z$-tiers without expending extra climbing movement.
+3. **Multi-Level Masking & Overpasses**:
+   - Arched stone bridges and catwalks allow creatures to stand **on top** ($Z = +10\text{ ft}$) while other units walk **underneath** ($Z = 0\text{ ft}$).
+   - Units standing beneath higher architecture render with subtle transparency / occlusion outlines when camera angles overlap.
+
+#### 11.6.3 5E Tactical Rules for Verticality
+1. **High-Ground Tactical Advantage**:
+   - Ranged weapon and spell attacks originating from $\ge 10\text{ ft.}$ elevation above the target receive a **+2 tactical to-hit bonus** (or Advantage on roll prediction) and bypass intervening half-cover.
+2. **Falling Damage & Shoving Off Ledges**:
+   - When a unit is shoved, pushed (*Thunderwave*, *Repelling Blast*), or steps off a cliff ledge:
+     - **Damage**: $1\text{d}6$ bludgeoning damage per $10\text{ ft.}$ of vertical drop (max $20\text{d}6$).
+     - **Prone Condition**: The fallen creature lands **Prone** unless it negates the damage (e.g. *Feather Fall*, Monk *Slow Fall*, or landing in deep water).
+3. **Climbing & Jumping Movement Cost**:
+   - Ascending a vertical wall without stairs or ladders costs **$2\times$ movement** ($10\text{ ft.}$ of movement budget per $5\text{ ft.}$ climbed), unless the creature has an innate Climb speed (e.g., Giant Spider).
+   - Sheer or slick walls trigger an Athletics check (DC 12–15); failure halts movement or causes a slide.
+   - Horizontal chasm jumps require $1\text{ ft.}$ of movement per foot cleared (up to Strength score with a 10-ft. running start).
+
+---
+
+### 11.7 Implementation Phases & Milestones
+
+| Phase | Milestone | Deliverables | Status |
+| :--- | :--- | :--- | :--- |
+| **Phase 11.1** | **Multi-Tile Footprint Sizing Fix** | Fix `getParticipantSizeTiles` to parse `size_dimensions` dict, single-letter codes (`H`, `L`, `G`), and `size_display`. Update `cellOccupancy` multi-cell loops. | **`✅ COMPLETED`** |
+| **Phase 11.2** | **2.5D Perspective Camera & Depth Sorting** | CSS 3D perspective viewport (`perspective: 1200px`, `rotateX(36deg)`), 2.5D/2D toggle button, tactical zoom controls (70%–150%), upright billboard counter-rotation (`rotateX(-36deg)`), dynamic Y-depth Z-index sorting. | **`✅ COMPLETED`** |
+| **Phase 11.3** | **Upright Billboard Miniature Tokens & 3D BattleProps** | HeroForge 12-class miniature token suite, `tokenResolver.ts`, `BattleToken.tsx` (2.5D standees, weighted 3D beveled bases, HP radial gauge, threat badges, ground shadows, flight altitude acrylic riser stands), `BattleProp.tsx` (upright solid structures, stone plinths, cover badges), and beveled chiseled flagstone tiles. | **`✅ COMPLETED`** |
+| **Phase 11.4** | **Thematic Battlemats & Atmospheric Shaders** | 5 high-res biome battlemats (Crypt, Magma, Woods, Colosseum, Mire), textured tilemaps, dynamic grid lines. | **`⏳ PLANNED`** |
+| **Phase 11.5** | **Vertical Depth & Multi-Tier Elevation** | Multi-level $Z$-coordinate battlemats, extruded cliff faces, stairs/ramps, high-ground +2 bonus, fall damage & ledge shoving. | **`⏳ PLANNED`** |
+| **Phase 11.6** | **Multi-Tile Movement & Squeezing Engine** | Multi-tile path clearance validation in pathfinding, 5e Squeezing rules, collision avoidance with tight corridors. | **`⏳ PLANNED`** |
+
+---
+
+## 12. Long-Term Phased Implementation Roadmap
 
 ```
 Phase 0: Database & Infrastructure Foundation [COMPLETED]
@@ -839,10 +1101,15 @@ Phase 5.7: Animated Battle Grid Token Overlays & Movement-First Tactical Monster
 ├── Tactical repositioning for ranged snipers trapped in melee (<= 5 ft) to eliminate attack disadvantage
 └── Multiattack sequence re-targeting when primary targets drop mid-turn
 
-Phase 6: Battlefield Obstacles, Cover & Hazards [FUTURE]
-├── Line-of-Sight raycaster & Cover (+2 / +5 AC) modifiers
-├── Hazard zones (Lava, Acid, Spikes) & forced movement pushes
-└── Destructible obstacles & terrain props
+Phase 6: 2.5D Isometric Combat Grid & Environmental Arena System (Pillar 11) [PLANNED]
+├── 6.1: Multi-Tile Creature Footprint Scaling (Large 2×2, Huge 3×3, Gargantuan 4×4) [COMPLETED]
+├── 6.2: 2.5D Angled Viewport projection (45° perspective tilt with 2D/2.5D view toggle & Y-depth Z-sorting)
+├── 6.3: Upright 2.5D Billboard Miniature Tokens (counter-rotated standees, circular metallic bases, airborne risers)
+├── 6.4: Thematic Biome Battlemats (Crypt, Infernal Magma, Colosseum Sand, Sunken Mire, Dark Woods)
+├── 6.5: Multi-Tile Pathfinding & 5e Squeezing Rules
+├── 6.6: Line-of-Sight raycaster & Cover (+2 / +5 AC) modifiers
+├── 6.7: Hazard zones (Lava, Acid, Spikes) & forced movement pushes
+└── 6.8: Interactive destructible obstacles & 2.5D terrain props
 
 Phase 7: Campaign Mode (Persistent Adventure & Leveling) [FUTURE]
 ├── Node-based Campaign Map (biomes, encounters, treasure, campsites)
@@ -853,7 +1120,7 @@ Phase 7: Campaign Mode (Persistent Adventure & Leveling) [FUTURE]
 
 ---
 
-## 12. Master Reference Document Status
+## 13. Master Reference Document Status
 
 > [!NOTE]
 > This artifact serves as the active **Master Plan** for all upcoming feature implementations and architectural decisions across the 5e Campaign Manager. All future iterations, issues, and PR-style increments will reference and build directly upon the schemas, rules, and roadmaps documented here.

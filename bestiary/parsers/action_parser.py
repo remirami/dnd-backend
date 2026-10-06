@@ -199,7 +199,7 @@ def parse_action(name: str, desc: str, raw_attack_bonus=None, raw_damage_dice=No
     half_damage_on_save = False
 
     save_match = re.search(
-        r'DC\s+(\d+)\s+(Strength|Dexterity|Constitution|Intelligence|Wisdom|Charisma|STR|DEX|CON|INT|WIS|CHA)\s+saving throw',
+        r'DC\s+(\d+)\s+(Strength|Dexterity|Constitution|Intelligence|Wisdom|Charisma|STR|DEX|CON|INT|WIS|CHA)\s+(?:saving\s+throw|save)',
         desc_clean,
         re.IGNORECASE
     )
@@ -283,10 +283,11 @@ def parse_action(name: str, desc: str, raw_attack_bonus=None, raw_damage_dice=No
         parsed = parse_damage_formula(raw_damage_dice)
         if parsed:
             count, sides, bonus = parsed
-            # Try to find damage type in description
+            # Try to find damage type in description or raw_damage_dice
             dtype = None
+            search_text = f"{desc_clean} {raw_damage_dice}".lower()
             for dt in DAMAGE_TYPES:
-                if dt in desc_clean.lower():
+                if dt in search_text:
                     dtype = dt
                     break
             damage_rolls.append({
@@ -344,6 +345,20 @@ def parse_trait(name: str, desc: str):
         trait_type = 'legendary_resistance'
     elif 'nimble escape' in name_lower:
         trait_type = 'nimble_escape'
+    elif 'aggressive' in name_lower:
+        trait_type = 'aggressive'
+    elif 'martial advantage' in name_lower:
+        trait_type = 'martial_advantage'
+    elif 'innate spellcasting' in name_lower:
+        trait_type = 'innate_spellcasting'
+    elif 'spellcasting' in name_lower:
+        trait_type = 'spellcasting'
+    elif 'standing leap' in name_lower:
+        trait_type = 'standing_leap'
+    elif 'web walker' in name_lower:
+        trait_type = 'web_walker'
+    elif 'sunlight sensitivity' in name_lower:
+        trait_type = 'sunlight_sensitivity'
     elif 'sneak attack' in name_lower:
         trait_type = 'sneak_attack'
     else:

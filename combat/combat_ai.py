@@ -66,6 +66,30 @@ def resolve_enemy_turn(session, participant):
 
     # 1. Check for charged special action (e.g. Breath Weapon)
     special_action = _get_ready_special_action(participant, enemy)
+
+    # Flying AI: If capable of flight and not airborne, take flight to rain breath/ranged attacks from above
+    if participant.can_fly() and not participant.is_flying and not participant.is_incapacitated() and not participant.grappled_by:
+        takeoff_alt = min(30, participant.get_fly_speed())
+        if takeoff_alt <= participant.movement_remaining:
+            participant.altitude = takeoff_alt
+            participant.is_flying = True
+            participant.movement_used += takeoff_alt
+            participant.save(update_fields=['altitude', 'is_flying', 'movement_used'])
+            desc = f"🛫 {participant.get_name()} takes flight, ascending to {takeoff_alt} ft altitude!"
+            actions.append({'type': 'move', 'message': desc})
+            try:
+                from combat.models import CombatAction
+                CombatAction.objects.create(
+                    combat_session=session,
+                    actor=participant,
+                    action_type='move',
+                    round_number=session.current_round,
+                    turn_number=session.current_turn_index,
+                    description=desc
+                )
+            except Exception:
+                pass
+
     if special_action:
         # Move closer if targets are far
         if targets:
@@ -78,15 +102,6 @@ def resolve_enemy_turn(session, participant):
 
     # 2. Determine tactical archetype & preferred combat mode
     archetype = _determine_archetype(participant, enemy)
-    has_pack_tactics = False
-    if archetype == 'pack_hunter' or participant.has_trait('pack_tactics'):
-        # Check if another living ally is active in the session
-        ally_count = session.participants.filter(
-            participant_type='enemy',
-            is_active=True,
-            current_hp__gt=0,
-        ).exclude(id=participant.id).count()
-        has_pack_tactics = (ally_count > 0)
 
     # 3. Get enemy attacks / actions
     enemy_attacks = _get_enemy_attacks(participant, enemy)
@@ -118,6 +133,17 @@ def resolve_enemy_turn(session, participant):
             'message': f"{participant.get_name()} has no valid targets to attack.",
         })
         return actions
+
+    # Flying AI Swoop: If airborne with only melee attacks, swoop down to reach target
+    if participant.is_flying and not has_ranged_atk and target:
+        reach = participant.get_reach() if hasattr(participant, 'get_reach') else 5
+        target_alt = getattr(target, 'altitude', 0) or 0
+        desired_alt = target_alt + reach
+        if (participant.altitude or 0) > desired_alt:
+            participant.altitude = desired_alt
+            participant.save(update_fields=['altitude'])
+            desc = f"🦅 {participant.get_name()} swoops down to {desired_alt} ft altitude to strike {target.get_name()} in melee!"
+            actions.append({'type': 'move', 'message': desc})
 
     intended_attack = _select_intended_attack(enemy_attacks, preferred_mode=preferred_mode)
 
@@ -156,13 +182,14 @@ def resolve_enemy_turn(session, participant):
                         actions.append(follow_move)
 
                 in_range, _, _, _ = _check_action_range(participant, current_target, matched_atk.get('action_obj'), default_reach=reach)
+                pack_adv = _check_pack_tactics(session, participant, current_target)
                 if in_range:
-                    res = _execute_attack(session, participant, current_target, matched_atk, advantage=has_pack_tactics)
+                    res = _execute_attack(session, participant, current_target, matched_atk, advantage=pack_adv)
                     actions.append(res)
                 else:
                     ranged_fallback = _find_ranged_fallback(enemy_attacks, participant, current_target, default_reach=reach)
                     if ranged_fallback:
-                        res = _execute_attack(session, participant, current_target, ranged_fallback, advantage=has_pack_tactics)
+                        res = _execute_attack(session, participant, current_target, ranged_fallback, advantage=pack_adv)
                         actions.append(res)
                 targets = [t for t in targets if t.current_hp > 0 and t.is_active]
     else:
@@ -179,9 +206,55 @@ def resolve_enemy_turn(session, participant):
 
             attack_to_use = _select_attack_for_distance(enemy_attacks, participant, current_target, preferred_mode=preferred_mode, default_reach=reach)
             if attack_to_use:
-                res = _execute_attack(session, participant, current_target, attack_to_use, advantage=has_pack_tactics)
+                pack_adv = _check_pack_tactics(session, participant, current_target)
+                res = _execute_attack(session, participant, current_target, attack_to_use, advantage=pack_adv)
                 actions.append(res)
             targets = [t for t in targets if t.current_hp > 0 and t.is_active]
+
+    # 8. 💨 BONUS ACTION: NIMBLE ESCAPE (Goblin / Skirmisher)
+    # The creature takes Disengage as a bonus action and retreats away from melee threats.
+    if participant.is_active and participant.current_hp > 0:
+        has_nimble = participant.has_trait('nimble_escape') or ('goblin' in (participant.get_name() or '').lower())
+        if has_nimble and not participant.bonus_action_used:
+            hostiles = [t for t in targets if t.is_active and t.current_hp > 0]
+            is_threatened = any(
+                participant.get_distance_to(h) <= 5
+                for h in hostiles
+            ) if (participant.position_x != 0 or participant.position_y != 0) else False
+
+            speed = participant.speed or 30
+            mov_used = participant.movement_used or 0
+            remaining_movement = max(0, speed - mov_used)
+
+            if is_threatened or (preferred_mode == 'ranged' and remaining_movement >= 5):
+                participant.bonus_action_used = True
+                if not isinstance(participant.feature_uses, dict):
+                    participant.feature_uses = {}
+                participant.feature_uses['disengaged'] = True
+                participant.save(update_fields=['bonus_action_used', 'feature_uses'])
+
+                nimble_desc = f"{participant.get_name()} used Nimble Escape to Disengage as a bonus action and slipped away!"
+                from combat.models import CombatAction
+                try:
+                    CombatAction.objects.create(
+                        combat_session=session,
+                        actor=participant,
+                        action_type='other',
+                        round_number=session.current_round,
+                        turn_number=session.current_turn_index,
+                        description=f"💨 {nimble_desc}"
+                    )
+                except Exception:
+                    pass
+
+                retreat_target = min(hostiles, key=lambda h: participant.get_distance_to(h)) if hostiles else target
+                retreat_move = _execute_ai_movement(session, participant, retreat_target, preferred_mode='ranged')
+                actions.append({
+                    'type': 'nimble_escape',
+                    'message': f"💨 {nimble_desc}",
+                    'disengaged': True,
+                    'movement': retreat_move
+                })
 
     if not actions:
         actions.append({
@@ -190,6 +263,38 @@ def resolve_enemy_turn(session, participant):
         })
 
     return actions
+
+
+def _check_pack_tactics(session, attacker, target):
+    """
+    Check 5e Pack Tactics trait:
+    Advantage on attack rolls against target if at least one ally is within 5 feet of target and isn't incapacitated.
+    """
+    if not (attacker.has_trait('pack_tactics') or _determine_archetype(attacker) == 'pack_hunter'):
+        return False
+
+    allies = session.participants.filter(
+        participant_type=attacker.participant_type,
+        is_active=True,
+        current_hp__gt=0
+    ).exclude(id=attacker.id)
+
+    has_coords = (attacker.position_x != 0 or attacker.position_y != 0 or target.position_x != 0 or target.position_y != 0)
+
+    for ally in allies:
+        if ally.is_incapacitated():
+            continue
+        if has_coords:
+            dist = ally.get_distance_to(target) if hasattr(ally, 'get_distance_to') else max(
+                abs((ally.position_x or 0) - (target.position_x or 0)),
+                abs((ally.position_y or 0) - (target.position_y or 0))
+            )
+            if dist <= 5:
+                return True
+        else:
+            return True
+
+    return False
 
 
 def _resolve_enemy(participant):
@@ -287,10 +392,13 @@ def _check_multiattack(participant, enemy):
     return 1, []
 
 
-def _determine_archetype(participant, enemy):
+def _determine_archetype(participant, enemy=None):
     """Determine the tactical archetype of the combatant."""
     if participant and participant.has_trait('pack_tactics'):
         return 'pack_hunter'
+
+    if not enemy and participant:
+        enemy = _resolve_enemy(participant)
 
     if not enemy:
         return 'skirmisher'
@@ -408,9 +516,25 @@ def _select_target(targets, attacker=None, enemy=None, preferred_mode='melee'):
             target_ac = target.calculate_effective_ac() if hasattr(target, 'calculate_effective_ac') else (target.armor_class or 10)
             score += max(0, 18 - target_ac) * 1.5
 
-        # 5. Pack Hunter ally focus
-        if archetype == 'pack_hunter':
-            score += 20.0
+        # 5. Pack Hunter / Pack Tactics ally focus
+        if archetype == 'pack_hunter' or (attacker and attacker.has_trait('pack_tactics')):
+            session_ref = getattr(attacker, 'combat_session', None) or getattr(attacker, 'session', None)
+            if has_coords and session_ref:
+                allies_near = any(
+                    a.get_distance_to(target) <= 5
+                    for a in session_ref.participants.filter(
+                        participant_type=attacker.participant_type,
+                        is_active=True,
+                        current_hp__gt=0
+                    ).exclude(id=attacker.id)
+                    if not a.is_incapacitated()
+                )
+                if allies_near:
+                    score += 25.0
+                else:
+                    score += 5.0
+            else:
+                score += 15.0
 
         # Small random jitter (0..1.5) to avoid robotic determinism on ties
         score += random.uniform(0, 1.5)
@@ -629,13 +753,19 @@ def _execute_special_action(session, attacker, targets, action_obj):
             roll, _ = roll_d20()
             save_total = roll + save_mod
             saved = (save_total >= dc)
+            if not saved and hasattr(target, 'check_legendary_resistance'):
+                used_lr, saved, lr_msg = target.check_legendary_resistance(ability, dc, save_total)
+                if used_lr:
+                    affected_summaries.append(f"{target.get_name()}: Used Legendary Resistance! (SUCCESS)")
 
         # Apply damage
         damage_taken = (total_damage // 2) if (saved and half_on_save) else (0 if saved else total_damage)
         first_dr = action_obj.damage_rolls.first() if action_obj.damage_rolls.exists() else None
         special_dtype = first_dr.damage_type.name if (first_dr and first_dr.damage_type) else None
         if damage_taken > 0:
-            target.take_damage(damage_taken, damage_type=special_dtype)
+            target.take_damage(damage_taken, damage_type=special_dtype, is_critical=False)
+            if getattr(target, 'last_undead_fortitude_triggered', False):
+                affected_summaries.append(f"{target.get_name()}: Undead Fortitude kept them at 1 HP!")
 
         # Apply conditions on failed save
         if not saved and action_obj.conditions_inflicted.exists():
@@ -643,13 +773,23 @@ def _execute_special_action(session, attacker, targets, action_obj):
             for c in action_obj.conditions_inflicted.all():
                 if not is_condition_immune(target, c.name):
                     target.conditions.add(c)
+                    if c.name.lower() == 'prone' and getattr(target, 'is_flying', False):
+                        fall_dmg, fall_msg = target.handle_flying_fall(session)
+                        if fall_msg:
+                            affected_summaries.append(fall_msg)
         status_txt = f"{target.get_name()}: {'Saved' if saved else 'Failed'} (took {damage_taken} dmg)"
         affected_summaries.append(status_txt)
 
-    # Set ability to uncharged
+    # Set ability to uncharged and mark action economy as used
+    attacker.action_used = True
+    attacker.attacks_remaining = 0
+    fields_to_update = ['action_used', 'attacks_remaining']
     if action_obj.has_recharge:
+        if attacker.recharge_state is None:
+            attacker.recharge_state = {}
         attacker.recharge_state[action_name] = False
-        attacker.save(update_fields=['recharge_state'])
+        fields_to_update.append('recharge_state')
+    attacker.save(update_fields=fields_to_update)
 
     summary_desc = f"{attacker.get_name()} unleashes {action_name}! " + ", ".join(affected_summaries)
 
@@ -759,6 +899,41 @@ def _execute_attack(session, attacker, target, attack, advantage=False):
     if hit and is_auto_critical(attacker, target, is_melee=is_melee):
         is_critical = True
 
+    # 5e Defensive Reaction: Shield spell (+5 AC turns hit into a miss)
+    if hit and not is_critical and hasattr(target, 'can_use_reaction') and target.can_use_reaction() and not target.is_incapacitated():
+        has_shield = False
+        if target.participant_type == 'enemy':
+            spell_uses = getattr(target, 'spell_uses_remaining', {}) or {}
+            if spell_uses.get('Shield', 0) > 0 or spell_uses.get('shield', 0) > 0:
+                has_shield = True
+            elif target.has_trait('shield_spell') or target.has_trait('shield'):
+                has_shield = True
+        elif target.feature_uses and target.feature_uses.get('can_cast_shield'):
+            has_shield = True
+
+        if has_shield and attack_total < target_ac + 5:
+            target.use_reaction()
+            if not isinstance(target.feature_uses, dict):
+                target.feature_uses = {}
+            target.feature_uses['shield_spell_active'] = True
+            target.save(update_fields=['reaction_used', 'feature_uses'])
+            target_ac += 5
+            hit = False
+            from combat.models import CombatAction
+            try:
+                CombatAction.objects.create(
+                    combat_session=session,
+                    actor=target,
+                    action_type='reaction',
+                    attack_name='Shield',
+                    is_reaction=True,
+                    round_number=session.current_round,
+                    turn_number=session.current_turn_index,
+                    description=f"⚡ {target.get_name()} casts Shield as a reaction! +5 AC turns {attacker.get_name()}'s hit into a MISS!"
+                )
+            except Exception:
+                pass
+
     result = {
         'type': 'attack',
         'attacker': attacker.get_name(),
@@ -787,24 +962,35 @@ def _execute_attack(session, attacker, target, attack, advantage=False):
 
     if hit:
         damage_amount, damage_type = _parse_and_roll_damage(damage_str, is_critical)
-        new_hp, conc_broken = target.take_damage(damage_amount, damage_type=damage_type)
+        new_hp, conc_broken = target.take_damage(damage_amount, damage_type=damage_type, is_critical=is_critical)
         target_killed = (new_hp <= 0)
+        if getattr(target, 'last_undead_fortitude_triggered', False):
+            result['undead_fortitude_triggered'] = True
+            target_killed = False
 
         # Condition rider (e.g. Wolf bite knock prone)
         if action_obj and action_obj.saving_throw_dc and action_obj.conditions_inflicted.exists():
             save_mod = target.get_ability_modifier(action_obj.saving_throw_ability or 'STR')
             s_roll, _ = roll_d20()
             if (s_roll + save_mod) < action_obj.saving_throw_dc:
-                from combat.condition_effects import is_condition_immune
-                for c in action_obj.conditions_inflicted.all():
-                    if not is_condition_immune(target, c.name):
-                        target.conditions.add(c)
-                        result['condition_applied'] = c.name
+                # Check Legendary Resistance on condition rider
+                saved_rider = False
+                if hasattr(target, 'check_legendary_resistance'):
+                    used_lr, saved_rider, _ = target.check_legendary_resistance(
+                        action_obj.saving_throw_ability or 'STR',
+                        action_obj.saving_throw_dc,
+                        s_roll + save_mod
+                    )
+                if not saved_rider:
+                    from combat.condition_effects import is_condition_immune
+                    for c in action_obj.conditions_inflicted.all():
+                        if not is_condition_immune(target, c.name):
+                            target.conditions.add(c)
+                            result['condition_applied'] = c.name
 
         result['damage'] = damage_amount
         result['damage_type'] = damage_type
         result['target_hp_after'] = target.current_hp
-        result['target_killed'] = target_killed
         result['target_killed'] = target_killed
 
     try:
@@ -828,6 +1014,10 @@ def _execute_attack(session, attacker, target, attack, advantage=False):
         )
     except Exception:
         pass
+
+    attacker.action_used = True
+    attacker.attacks_remaining = max(0, (attacker.attacks_remaining or 1) - 1)
+    attacker.save(update_fields=['action_used', 'attacks_remaining'])
 
     return result
 
@@ -905,7 +1095,9 @@ def _format_attack_description(result):
             f"(rolled {result['roll']}+{result['attack_bonus']}={result['attack_total']} vs AC {result['target_ac']}) "
             f"dealing {result['damage']} {result['damage_type']} damage.{cond_str}"
         )
-        if result['target_killed']:
+        if result.get('undead_fortitude_triggered'):
+            msg += f" | 🧟 Undead Fortitude: Remained at 1 HP!"
+        elif result['target_killed']:
             msg += f" {target} falls!"
         return msg
 
@@ -973,13 +1165,15 @@ def _execute_ai_movement(session, participant, target, attack=None, preferred_mo
         return None
 
     # Get occupied positions of other living combatants and blocking obstacles
-    occupied = set(
-        session.participants.filter(is_active=True, current_hp__gt=0)
-        .exclude(id=participant.id)
-        .values_list('position_x', 'position_y')
-    )
-    layout_idx = (session.id or 0) % 5
-    occupied.update(LAYOUT_OBSTACLES.get(layout_idx, []))
+    from combat.battlefield import is_tile_solid
+    mover_tiles = participant.get_size_dimensions()['tiles'] if hasattr(participant, 'get_size_dimensions') else 1
+
+    occupied = set()
+    for other in session.participants.filter(is_active=True, current_hp__gt=0).exclude(id=participant.id):
+        o_tiles = other.get_size_dimensions()['tiles'] if hasattr(other, 'get_size_dimensions') else 1
+        for ox in range(o_tiles):
+            for oy in range(o_tiles):
+                occupied.add((other.position_x + ox * 5, other.position_y + oy * 5))
 
     best_tile = None
     best_dist_to_target = cur_dist
@@ -991,16 +1185,31 @@ def _execute_ai_movement(session, participant, target, attack=None, preferred_mo
             cand_x = cur_x + dx * 5
             cand_y = cur_y + dy * 5
 
-            # Must be within 10x8 grid (X: 0..45, Y: 0..35)
-            if cand_x < 0 or cand_x > 45 or cand_y < 0 or cand_y > 35:
-                continue
-
             dist_from_cur = max(abs(cand_x - cur_x), abs(cand_y - cur_y))
             if dist_from_cur <= 0 or dist_from_cur > movement_remaining:
                 continue
 
-            if (cand_x, cand_y) in occupied:
+            # Verify entire multi-tile footprint fits within bounds, avoids solid obstacles & other combatants
+            footprint_valid = True
+            for ox in range(mover_tiles):
+                for oy in range(mover_tiles):
+                    fx = cand_x + ox * 5
+                    fy = cand_y + oy * 5
+                    if fx < 0 or fx > 45 or fy < 0 or fy > 35:
+                        footprint_valid = False
+                        break
+                    if is_tile_solid(session.id or 0, fx // 5, fy // 5):
+                        footprint_valid = False
+                        break
+                    if (fx, fy) in occupied:
+                        footprint_valid = False
+                        break
+                if not footprint_valid:
+                    break
+
+            if not footprint_valid:
                 continue
+
 
             dist_to_target = max(abs(cand_x - tgt_x), abs(cand_y - tgt_y))
 
@@ -1058,3 +1267,210 @@ def _execute_ai_movement(session, participant, target, attack=None, preferred_mo
         }
 
     return None
+
+
+def execute_ai_legendary_action(session, boss, trigger_participant=None):
+    """
+    Evaluate and execute a legendary action for an enemy boss at the end of another creature's turn.
+    5e rule: Max 3 points per round, used 1 at a time at the end of another creature's turn.
+    """
+    if not boss or not boss.is_active or boss.current_hp <= 0 or boss.is_incapacitated():
+        return None
+
+    enemy = boss.resolve_enemy()
+
+    # Auto-initialize legendary actions max if not set
+    if boss.legendary_actions_max == 0:
+        if enemy and (enemy.legendary_actions.exists() or enemy.actions.filter(action_type='legendary_action').exists()):
+            boss.legendary_actions_max = 3
+            boss.legendary_actions_remaining = 3
+            boss.save(update_fields=['legendary_actions_max', 'legendary_actions_remaining'])
+
+    if boss.legendary_actions_remaining <= 0:
+        return None
+
+    # Target living player characters
+    targets = list(session.participants.filter(
+        participant_type='character',
+        is_active=True,
+        current_hp__gt=0
+    ))
+    if not targets:
+        # Fallback to opposing participants if no player characters
+        targets = list(session.participants.filter(
+            is_active=True,
+            current_hp__gt=0
+        ).exclude(id=boss.id))
+    if not targets:
+        return None
+
+    # Find available legendary action options
+    leg_actions = list(enemy.actions.filter(action_type='legendary_action')) if enemy else []
+    leg_models = list(enemy.legendary_actions.all()) if enemy else []
+
+    chosen_name = None
+    chosen_cost = 1
+    action_obj = None
+
+    # Check Wing Attack option (Cost 2): prioritize if heroes are within 10-15 ft
+    wing_act = next((a for a in leg_actions if 'wing' in a.name.lower()), None)
+    wing_model = next((m for m in leg_models if 'wing' in m.name.lower()), None)
+    if (wing_act or wing_model) and boss.legendary_actions_remaining >= 2:
+        close_targets = [
+            t for t in targets
+            if (boss.position_x == 0 and boss.position_y == 0) or boss.get_distance_to(t) <= 15
+        ]
+        if close_targets:
+            chosen_name = wing_act.name if wing_act else wing_model.name
+            chosen_cost = 2
+            action_obj = wing_act
+
+    # Fallback to attack option (Cost 1) (Tail Attack, Bite, or first available)
+    if not chosen_name:
+        for a in leg_actions:
+            if 'wing' not in a.name.lower():
+                chosen_name = a.name
+                chosen_cost = 1
+                action_obj = a
+                break
+
+    if not chosen_name and leg_models:
+        for m in leg_models:
+            if 'wing' not in m.name.lower():
+                chosen_name = m.name
+                chosen_cost = m.cost or 1
+                break
+
+    # If no structured legendary actions, fallback to standard melee attack as cost 1
+    if not chosen_name and enemy:
+        atk = enemy.actions.filter(attack_type='melee_weapon').first()
+        if atk:
+            chosen_name = f"Legendary {atk.name}"
+            chosen_cost = 1
+            action_obj = atk
+
+    # Generic fallback if participant has legendary actions enabled
+    if not chosen_name:
+        chosen_name = "Tail Attack"
+        chosen_cost = 1
+
+    if not chosen_name or chosen_cost > boss.legendary_actions_remaining:
+        return None
+
+    # Deduct legendary action points
+    boss.legendary_actions_remaining -= chosen_cost
+    boss.save(update_fields=['legendary_actions_remaining'])
+
+    from bestiary.models import Condition
+    from combat.models import CombatAction
+
+    # Execute Wing Attack (Saving throw + Knock Prone + Reposition)
+    if 'wing' in chosen_name.lower():
+        dc = (action_obj and action_obj.saving_throw_dc) or 19
+        ability = (action_obj and action_obj.saving_throw_ability) or 'DEX'
+        close_targets = [
+            t for t in targets
+            if (boss.position_x == 0 and boss.position_y == 0) or boss.get_distance_to(t) <= 15
+        ]
+        prone_cond, _ = Condition.objects.get_or_create(name='prone')
+        affected_summaries = []
+        for t in close_targets:
+            s_roll, _ = roll_d20()
+            s_mod = t.get_ability_modifier(ability)
+            saved = (s_roll + s_mod >= dc)
+            dmg = random.randint(10, 18)
+            t_dmg = dmg // 2 if saved else dmg
+            t.take_damage(t_dmg, damage_type='bludgeoning')
+            if not saved:
+                t.conditions.add(prone_cond)
+                if getattr(t, 'is_flying', False):
+                    fall_dmg, fall_msg = t.handle_flying_fall(session)
+                    if fall_msg:
+                        affected_summaries.append(fall_msg)
+                affected_summaries.append(f"{t.get_name()} took {t_dmg} bludgeoning and was knocked prone")
+            else:
+                affected_summaries.append(f"{t.get_name()} saved (took {t_dmg} dmg)")
+
+        # Reposition boss
+        old_x, old_y = boss.position_x, boss.position_y
+        if boss.position_x != 0 or boss.position_y != 0:
+            boss.position_x = min(40, max(5, boss.position_x + random.choice([-10, 10])))
+            boss.position_y = min(30, max(5, boss.position_y + random.choice([-10, 10])))
+            boss.save(update_fields=['position_x', 'position_y'])
+
+        desc = (
+            f"⚡ [LEGENDARY ACTION] {boss.get_name()} uses {chosen_name}! "
+            f"({boss.legendary_actions_remaining} legendary actions left). "
+            + (", ".join(affected_summaries) if affected_summaries else "Beats wings violently!")
+        )
+        combat_action = CombatAction.objects.create(
+            combat_session=session,
+            actor=boss,
+            action_type='legendary_action',
+            attack_name=chosen_name,
+            is_legendary_action=True,
+            legendary_action_cost=chosen_cost,
+            round_number=session.current_round,
+            turn_number=session.current_turn_index,
+            description=desc,
+        )
+        return {
+            'type': 'legendary_action',
+            'actor': boss.get_name(),
+            'action_name': chosen_name,
+            'cost': chosen_cost,
+            'remaining': boss.legendary_actions_remaining,
+            'message': desc,
+        }
+
+    # Execute Single Target Attack (e.g. Tail Attack)
+    target = min(targets, key=lambda t: boss.get_distance_to(t)) if (boss.position_x != 0 or boss.position_y != 0) else targets[0]
+    attack_bonus = (action_obj and action_obj.attack_bonus) or 11
+    roll, _ = roll_d20()
+    atk_total = roll + attack_bonus
+    target_ac = target.calculate_effective_ac() if hasattr(target, 'calculate_effective_ac') else (target.armor_class or 10)
+    hit = (roll == 20) or (roll != 1 and atk_total >= target_ac)
+    dmg_dealt = 0
+
+    if hit:
+        dmg_rolls = list(action_obj.damage_rolls.all()) if action_obj else []
+        if dmg_rolls:
+            for d in dmg_rolls:
+                dmg_dealt += sum(random.randint(1, d.dice_sides) for _ in range(d.dice_count)) + d.damage_bonus
+        else:
+            dmg_dealt = random.randint(12, 22)
+        target.take_damage(dmg_dealt, damage_type='bludgeoning')
+
+    desc = (
+        f"⚡ [LEGENDARY ACTION] {boss.get_name()} strikes {target.get_name()} with {chosen_name}! "
+        f"({'HIT for ' + str(dmg_dealt) + ' damage' if hit else 'MISSED'}) "
+        f"({boss.legendary_actions_remaining} legendary actions left)"
+    )
+    combat_action = CombatAction.objects.create(
+        combat_session=session,
+        actor=boss,
+        target=target,
+        action_type='legendary_action',
+        attack_name=chosen_name,
+        attack_roll=roll,
+        attack_modifier=attack_bonus,
+        attack_total=atk_total,
+        hit=hit,
+        damage_amount=dmg_dealt if hit else 0,
+        is_legendary_action=True,
+        legendary_action_cost=chosen_cost,
+        round_number=session.current_round,
+        turn_number=session.current_turn_index,
+        description=desc,
+    )
+    return {
+        'type': 'legendary_action',
+        'actor': boss.get_name(),
+        'target': target.get_name(),
+        'action_name': chosen_name,
+        'cost': chosen_cost,
+        'hit': hit,
+        'damage': dmg_dealt,
+        'remaining': boss.legendary_actions_remaining,
+        'message': desc,
+    }

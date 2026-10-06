@@ -58,15 +58,23 @@ class CombatActionMixin:
         
         data = serializer.validated_data
         attacker_id = data['attacker_id']
-        target_id = data['target_id']
-        
+        target_id = data.get('target_id')
+        target_ids = data.get('target_ids', [])
+        if not target_id and target_ids:
+            target_id = target_ids[0]
+
         try:
             attacker = session.participants.get(pk=attacker_id)
-            target = session.participants.get(pk=target_id)
+            target = session.participants.get(pk=target_id) if target_id else None
         except CombatParticipant.DoesNotExist:
             return Response(
                 {"error": "Attacker or target not found in combat"},
                 status=status.HTTP_404_NOT_FOUND
+            )
+        if not target:
+            return Response(
+                {"error": "Target not found in combat"},
+                status=status.HTTP_400_BAD_REQUEST
             )
         
         if not attacker.is_active:
@@ -193,9 +201,11 @@ class CombatActionMixin:
                 if not matched_action:
                     matched_action = resolved_enemy.actions.filter(name__icontains=attack_name.split()[0]).first()
 
-            # Handle Saving Throw actions (e.g. Fire Breath)
+            # Handle Saving Throw actions (e.g. Fire Breath, Acid Breath, Frightful Presence)
             if matched_action and matched_action.attack_type == 'saving_throw':
                 if matched_action.has_recharge:
+                    if attacker.recharge_state is None:
+                        attacker.init_recharge_state()
                     is_ready = attacker.recharge_state.get(matched_action.name, True)
                     if not is_ready:
                         return Response(
@@ -205,22 +215,18 @@ class CombatActionMixin:
 
                 save_ability = matched_action.saving_throw_ability or 'DEX'
                 save_dc = matched_action.saving_throw_dc or 15
-                save_mod = target.get_ability_modifier(save_ability)
 
-                from combat.condition_effects import is_auto_fail_save
-                if is_auto_fail_save(target, save_ability):
-                    saved = False
-                    s_roll = 1
-                    s_total = s_roll + save_mod
-                    s_breakdown = f"Auto-fail ({target.get_incapacitating_condition()})"
-                else:
-                    s_roll, s_breakdown = roll_d20()
-                    s_total = s_roll + save_mod
-                    saved = (s_total >= save_dc)
+                # Support multi-target AoE if target_ids provided
+                raw_target_ids = data.get('target_ids') or ([target.id] if target else [])
+                aoe_targets = list(session.participants.filter(id__in=raw_target_ids, is_active=True))
+                if not aoe_targets and target:
+                    aoe_targets = [target]
 
-                # Roll damage
+                # Roll damage once for the saving throw action
                 damage_amount = 0
                 dmg_rolls = list(matched_action.damage_rolls.all())
+                first_dr = dmg_rolls[0] if dmg_rolls else None
+                dmg_type = first_dr.damage_type.name.lower() if (first_dr and first_dr.damage_type) else None
                 if dmg_rolls:
                     for d in dmg_rolls:
                         roll_sum = sum(random.randint(1, d.dice_sides) for _ in range(d.dice_count)) + d.damage_bonus
@@ -228,64 +234,111 @@ class CombatActionMixin:
                 else:
                     damage_amount, _ = calculate_damage(damage_string, 0, False)
 
-                if saved and matched_action.half_damage_on_save:
-                    damage_amount = damage_amount // 2
-                elif saved:
-                    damage_amount = 0
+                summary_messages = []
+                last_saved = True
+                last_damage = 0
+                last_target_hp = target.current_hp if target else 0
+                last_cond = None
+                last_s_roll = 10
+                last_s_total = 10
 
-                _new_hp, concentration_broken = target.take_damage(damage_amount)
+                from combat.condition_effects import is_auto_fail_save, is_condition_immune
 
-                cond_applied = None
-                if not saved and matched_action.conditions_inflicted.exists():
-                    for c in matched_action.conditions_inflicted.all():
-                        target.conditions.add(c)
-                        cond_applied = c.name
+                for cur_target in aoe_targets:
+                    save_mod = cur_target.get_ability_modifier(save_ability)
+                    if is_auto_fail_save(cur_target, save_ability):
+                        saved = False
+                        s_roll = 1
+                        s_total = s_roll + save_mod
+                        s_breakdown = f"Auto-fail ({cur_target.get_incapacitating_condition()})"
+                    else:
+                        s_roll, s_breakdown = roll_d20()
+                        s_total = s_roll + save_mod
+                        saved = (s_total >= save_dc)
+
+                    lr_note = ""
+                    if not saved and hasattr(cur_target, 'check_legendary_resistance'):
+                        used_lr, saved, lr_msg = cur_target.check_legendary_resistance(save_ability, save_dc, s_total)
+                        if used_lr:
+                            lr_note = f" 🛡️ [Legendary Resistance Used!]"
+
+                    target_damage = (damage_amount // 2) if (saved and matched_action.half_damage_on_save) else (0 if saved else damage_amount)
+                    _new_hp, concentration_broken = cur_target.take_damage(target_damage, damage_type=dmg_type, is_critical=False)
+                    fort_note = ""
+                    if getattr(cur_target, 'last_undead_fortitude_triggered', False):
+                        f_info = getattr(cur_target, 'undead_fortitude_details', {}) or {}
+                        fort_note = f" 🧟 [Undead Fortitude: Remained at 1 HP (DC {f_info.get('dc', 0)})!]"
+
+                    cond_applied = None
+                    if not saved and matched_action.conditions_inflicted.exists():
+                        for c in matched_action.conditions_inflicted.all():
+                            if not is_condition_immune(cur_target, c.name):
+                                cur_target.conditions.add(c)
+                                cond_applied = c.name
+                                if c.name.lower() == 'prone' and getattr(cur_target, 'is_flying', False):
+                                    fall_dmg, fall_msg = cur_target.handle_flying_fall(session)
+                                    if fall_msg:
+                                        summary_messages.append(fall_msg)
+
+                    if not saved:
+                        last_saved = False
+                    last_damage = target_damage
+                    last_target_hp = cur_target.current_hp
+                    last_cond = cond_applied
+                    last_s_roll = s_roll
+                    last_s_total = s_total
+
+                    save_desc = f"{cur_target.get_name()} rolled {s_breakdown} + {save_mod} = {s_total} vs DC {save_dc} {save_ability} save ({'SUCCESS' if saved else 'FAILED'}). Took {target_damage} {dmg_type or 'damage'}.{lr_note}{fort_note}"
+                    if cond_applied:
+                        save_desc += f" Inflicted {cond_applied}!"
+                    summary_messages.append(save_desc)
+
+                    CombatAction.objects.create(
+                        combat_session=session,
+                        actor=attacker,
+                        target=cur_target,
+                        action_type='attack',
+                        attack_name=matched_action.name,
+                        attack_roll=s_roll,
+                        attack_modifier=save_mod,
+                        attack_total=s_total,
+                        hit=not saved,
+                        damage_amount=target_damage,
+                        damage_type=first_dr.damage_type if first_dr else None,
+                        round_number=session.current_round,
+                        turn_number=session.current_turn_index,
+                        description=save_desc,
+                    )
 
                 if matched_action.has_recharge:
+                    if attacker.recharge_state is None:
+                        attacker.recharge_state = {}
                     attacker.recharge_state[matched_action.name] = False
-                    attacker.save(update_fields=['recharge_state'])
 
-                attacker.attacks_remaining -= 1
-                if attacker.attacks_remaining <= 0:
-                    attacker.action_used = True
-                attacker.save()
+                attacker.attacks_remaining = 0
+                attacker.action_used = True
+                update_fields = ['attacks_remaining', 'action_used']
+                if matched_action.has_recharge:
+                    update_fields.append('recharge_state')
+                attacker.save(update_fields=update_fields)
 
-                save_desc = f"{target.get_name()} rolled {s_breakdown} + {save_mod} = {s_total} vs DC {save_dc} {save_ability} save ({'SUCCESS' if saved else 'FAILED'}). Took {damage_amount} damage."
-                if cond_applied:
-                    save_desc += f" Inflicted {cond_applied}!"
-
-                CombatAction.objects.create(
-                    combat_session=session,
-                    actor=attacker,
-                    target=target,
-                    action_type='attack',
-                    attack_name=matched_action.name,
-                    attack_roll=s_roll,
-                    attack_modifier=save_mod,
-                    attack_total=s_total,
-                    hit=not saved,
-                    damage_amount=damage_amount,
-                    round_number=session.current_round,
-                    turn_number=session.current_turn_index,
-                    description=save_desc,
-                )
+                overall_msg = f"{attacker.get_name()} uses {matched_action.name}! " + " ".join(summary_messages)
 
                 return Response({
-                    "message": f"{attacker.get_name()} uses {matched_action.name} against {target.get_name()}",
+                    "message": overall_msg,
                     "saving_throw": {
                         "ability": save_ability,
                         "dc": save_dc,
-                        "roll": s_roll,
-                        "total": s_total,
-                        "saved": saved,
+                        "roll": last_s_roll,
+                        "total": last_s_total,
+                        "saved": last_saved,
                     },
-                    "hit": not saved,
-                    "damage": damage_amount,
-                    "target_hp": target.current_hp,
-                    "attacks_remaining": attacker.attacks_remaining,
-                    "concentration_broken": concentration_broken,
-                    "condition_applied": cond_applied,
-                    "breakdown": {"save": save_desc},
+                    "hit": not last_saved,
+                    "damage": last_damage,
+                    "target_hp": last_target_hp,
+                    "attacks_remaining": 0,
+                    "condition_applied": last_cond,
+                    "breakdown": {"save": " ".join(summary_messages)},
                 })
 
             # Try to find enemy action or attack
@@ -405,22 +458,55 @@ class CombatActionMixin:
         target_has_full_cover = False
         target_position = None
         target_cover_type = None
-        
+        target_cover_source = None
+
+        # 1. Check dynamic battlefield layout props within 5ft (e.g. Timber Barricade +2 AC, Pillars/Cliffs +5 AC)
+        target_cover_info = target.get_cover_details() if hasattr(target, 'get_cover_details') else None
+        if target_cover_info:
+            target_cover_type = target_cover_info.get('type')
+            cover_bonus = target_cover_info.get('bonus', 0)
+            target_cover_source = target_cover_info.get('source')
+
+        # 2. Also check ParticipantPosition.current_cover if set by EnvironmentalEffect
         try:
             target_position = target.position
             if target_position.current_cover:
-                target_cover_type = target_position.current_cover
-                cover_bonus = calculate_cover_ac_bonus(target_position.current_cover)
-                target_has_full_cover = has_full_cover(target_position.current_cover)
+                env_cover = target_position.current_cover
+                env_bonus = calculate_cover_ac_bonus(env_cover)
+                if env_bonus > cover_bonus:
+                    cover_bonus = env_bonus
+                    target_cover_type = env_cover
+                    target_cover_source = "Environmental Cover"
         except ParticipantPosition.DoesNotExist:
             pass
-        
+
+        # 3. Check line-of-sight obstruction for total cover (cannot be targeted)
+        # 5e Rules:
+        # - Melee attacks (adjacent/within reach) NEVER suffer total cover
+        # - Ranged attacks suffer total cover ONLY if ALL tiles of target footprint are completely blocked by solid obstacles
+        if not is_melee and has_coords:
+            from combat.battlefield import check_line_of_sight
+            t_tiles = target.get_size_dimensions()['tiles'] if hasattr(target, 'get_size_dimensions') else 1
+            can_see_any = False
+            for ox in range(t_tiles):
+                for oy in range(t_tiles):
+                    tc_x = target.position_x + ox * 5
+                    tc_y = target.position_y + oy * 5
+                    if check_line_of_sight(session.id or 0, attacker.position_x, attacker.position_y, tc_x, tc_y):
+                        can_see_any = True
+                        break
+                if can_see_any:
+                    break
+            if not can_see_any:
+                target_has_full_cover = True
+
         # Full cover prevents targeting
         if target_has_full_cover:
             return Response(
                 {"error": f"{target.get_name()} has full cover and cannot be targeted"},
                 status=status.HTTP_400_BAD_REQUEST
             )
+
 
         # 5e Close Quarters: Ranged attack while a hostile is within 5 ft incurs disadvantage
         if has_coords and not is_melee:
@@ -500,6 +586,28 @@ class CombatActionMixin:
                     advantage = True
                     if "Flanking" not in adv_reasons:
                         adv_reasons.append("Flanking")
+
+        # Check Pack Tactics trait (5e rule: advantage if ally within 5 ft of target and not incapacitated)
+        if hasattr(attacker, 'has_trait') and attacker.has_trait('pack_tactics'):
+            allies = session.participants.filter(
+                participant_type=attacker.participant_type,
+                is_active=True,
+                current_hp__gt=0
+            ).exclude(id=attacker.id)
+            for ally in allies:
+                if ally.is_incapacitated():
+                    continue
+                if has_coords:
+                    if ally.get_distance_to(target) <= 5:
+                        advantage = True
+                        if "Pack Tactics" not in adv_reasons:
+                            adv_reasons.append("Pack Tactics")
+                        break
+                else:
+                    advantage = True
+                    if "Pack Tactics" not in adv_reasons:
+                        adv_reasons.append("Pack Tactics")
+                    break
 
         # Check manual inspiration or DM override if provided
         if has_inspiration:
@@ -593,7 +701,51 @@ class CombatActionMixin:
         critical = (roll == 20)  # Natural 20 is critical
         if hit and is_auto_critical(attacker, target, is_melee=is_melee):
             critical = True
-        
+
+        # 5e Defensive Reaction: Shield spell (+5 AC turns hit into a miss)
+        shield_reaction_triggered = False
+        if hit and not critical and hasattr(target, 'can_use_reaction') and target.can_use_reaction() and not target.is_incapacitated():
+            has_shield = False
+            if target.participant_type == 'enemy':
+                spell_uses = getattr(target, 'spell_uses_remaining', {}) or {}
+                if spell_uses.get('Shield', 0) > 0 or spell_uses.get('shield', 0) > 0:
+                    has_shield = True
+                elif target.has_trait('shield_spell') or target.has_trait('shield'):
+                    has_shield = True
+                else:
+                    enemy_res = target.resolve_enemy()
+                    if enemy_res and (
+                        enemy_res.actions.filter(name__iexact='shield').exists() or
+                        enemy_res.abilities.filter(name__icontains='shield').exists()
+                    ):
+                        has_shield = True
+            elif target.feature_uses and target.feature_uses.get('can_cast_shield'):
+                has_shield = True
+
+            if has_shield and attack_total < target_ac + 5:
+                target.use_reaction()
+                if not isinstance(target.feature_uses, dict):
+                    target.feature_uses = {}
+                target.feature_uses['shield_spell_active'] = True
+                target.save(update_fields=['reaction_used', 'feature_uses'])
+                target_ac += 5
+                hit = False
+                shield_reaction_triggered = True
+
+                try:
+                    CombatAction.objects.create(
+                        combat_session=session,
+                        actor=target,
+                        action_type='reaction',
+                        attack_name='Shield',
+                        is_reaction=True,
+                        round_number=session.current_round,
+                        turn_number=session.current_turn_index,
+                        description=f"⚡ {target.get_name()} casts Shield as a reaction! The shimmering magical barrier (+5 AC) deflects {attacker.get_name()}'s attack!"
+                    )
+                except Exception:
+                    pass
+
         # Calculate damage if hit
         damage_amount = 0
         damage_breakdown = ""
@@ -647,10 +799,13 @@ class CombatActionMixin:
                 if rage_bonus > 0:
                     damage_breakdown += f" (+{rage_bonus} Rage)"
 
-            _new_hp, concentration_broken = target.take_damage(damage_amount, damage_type=attack_damage_type)
+            _new_hp, concentration_broken = target.take_damage(damage_amount, damage_type=attack_damage_type, is_critical=critical)
             attack_resistance_info = getattr(target, 'last_resistance_info', None)
             if getattr(target, 'last_relentless_endurance_triggered', False):
                 damage_breakdown += " | 🛡️ Relentless Endurance: Kept at 1 HP!"
+            if getattr(target, 'last_undead_fortitude_triggered', False):
+                fort_info = getattr(target, 'undead_fortitude_details', {}) or {}
+                damage_breakdown += f" | 🧟 Undead Fortitude: Remained at 1 HP! (rolled {fort_info.get('total', 0)} vs DC {fort_info.get('dc', 0)})"
 
             # Check condition riders on hit (e.g. Wolf bite knock prone)
             if matched_action and matched_action.saving_throw_dc and matched_action.conditions_inflicted.exists():
@@ -745,6 +900,8 @@ class CombatActionMixin:
             "environmental_effects": {
                 "cover": cover_bonus > 0,
                 "cover_type": target_cover_type,
+                "cover_source": target_cover_source,
+                "cover_bonus": cover_bonus,
                 "lighting": attacker_lighting,
                 "lighting_modifier": lighting_modifier,
                 "weather": weather_effect.weather_type if weather_effect else None,
@@ -1230,6 +1387,10 @@ class CombatActionMixin:
                         prof = save_type.lower() in [s.lower() for s in t.character.saving_throw_proficiencies]
                     t_save_total, _ = calculate_saving_throw(t_save_roll, save_mod, prof_bonus, prof)
                     t_save_success = (t_save_total >= save_dc)
+                    if not t_save_success and hasattr(t, 'check_legendary_resistance'):
+                        used_lr, t_save_success, lr_msg = t.check_legendary_resistance(save_type, save_dc, t_save_total)
+                        if used_lr:
+                            rider_str += " [Legendary Resistance Used!]"
 
                 if base_damage > 0:
                     if t_save_success:
@@ -1237,14 +1398,20 @@ class CombatActionMixin:
                     else:
                         t_damage = base_damage
                     if t_damage > 0:
-                        _new_hp, concentration_broken = t.take_damage(t_damage, damage_type=spell_damage_type)
+                        _new_hp, concentration_broken = t.take_damage(t_damage, damage_type=spell_damage_type, is_critical=False)
                         if getattr(t, 'last_relentless_endurance_triggered', False):
                             rider_str += " [Relentless Endurance: Kept at 1 HP]"
+                        if getattr(t, 'last_undead_fortitude_triggered', False):
+                            f_info = getattr(t, 'undead_fortitude_details', {}) or {}
+                            rider_str += f" [Undead Fortitude: Remained at 1 HP (DC {f_info.get('dc', 0)})]"
             elif base_damage > 0:
                 t_damage = base_damage
-                _new_hp, concentration_broken = t.take_damage(t_damage, damage_type=spell_damage_type)
+                _new_hp, concentration_broken = t.take_damage(t_damage, damage_type=spell_damage_type, is_critical=False)
                 if getattr(t, 'last_relentless_endurance_triggered', False):
                     rider_str += " [Relentless Endurance: Kept at 1 HP]"
+                if getattr(t, 'last_undead_fortitude_triggered', False):
+                    f_info = getattr(t, 'undead_fortitude_details', {}) or {}
+                    rider_str += f" [Undead Fortitude: Remained at 1 HP (DC {f_info.get('dc', 0)})]"
 
             # 5E Thunderwave Forced Movement: Push 10 feet away from caster on failed save
             pushed_str = ""
@@ -1594,6 +1761,16 @@ class CombatActionMixin:
             save_total += resistance_save_bonus
 
         save_success = save_total >= save_dc
+        used_legendary_res = False
+        lr_msg = ""
+        if not save_success and hasattr(participant, 'check_legendary_resistance'):
+            used_lr, save_success, lr_msg = participant.check_legendary_resistance(save_type, save_dc, save_total)
+            if used_lr:
+                used_legendary_res = True
+
+        save_desc = f"{participant.get_name()} makes a {save_type} saving throw (rolled {save_total} vs DC {save_dc} - {'SUCCESS' if save_success else 'FAILED'})"
+        if lr_msg:
+            save_desc += f". {lr_msg}"
         
         # Create combat action
         combat_action = CombatAction.objects.create(
@@ -1606,16 +1783,17 @@ class CombatActionMixin:
             save_success=save_success,
             round_number=session.current_round,
             turn_number=session.current_turn_index,
-            description=f"{participant.get_name()} makes a {save_type} saving throw"
+            description=save_desc
         )
         
         return Response({
-            "message": f"{participant.get_name()} makes a {save_type} saving throw",
+            "message": save_desc,
             "save_type": save_type,
             "roll": roll,
             "save_total": save_total,
             "save_dc": save_dc,
             "save_success": save_success,
+            "used_legendary_resistance": used_legendary_res,
             "breakdown": {
                 "roll": roll_breakdown,
                 "save": save_breakdown
@@ -2091,21 +2269,27 @@ class CombatActionMixin:
         target_x = round(target_x / 5.0) * 5
         target_y = round(target_y / 5.0) * 5
 
-        # Arena bounds (10x8 grid: 0..45 ft in X, 0..35 ft in Y)
-        if target_x < 0 or target_x > 45 or target_y < 0 or target_y > 35:
-            return Response({
-                "error": f"Target coordinates ({target_x}, {target_y}) are out of arena bounds (0-45ft X, 0-35ft Y)."
-            }, status=status.HTTP_400_BAD_REQUEST)
+        from combat.battlefield import is_tile_solid
+        mover_tiles = participant.get_size_dimensions()['tiles'] if hasattr(participant, 'get_size_dimensions') else 1
 
-        # Check occupancy by another living combatant
-        occupied = session.participants.filter(
-            position_x=target_x,
-            position_y=target_y,
-            is_active=True,
-            current_hp__gt=0
-        ).exclude(id=participant.id).exists()
-        if occupied:
-            return Response({"error": "Destination square is already occupied."}, status=status.HTTP_400_BAD_REQUEST)
+        # Check full footprint of mover (arena bounds, solid obstacles, and other combatant occupancy)
+        for ox in range(mover_tiles):
+            for oy in range(mover_tiles):
+                cx = target_x + ox * 5
+                cy = target_y + oy * 5
+                if cx < 0 or cx > 45 or cy < 0 or cy > 35:
+                    return Response({
+                        "error": f"Creature footprint extends out of arena bounds at ({cx} ft, {cy} ft)."
+                    }, status=status.HTTP_400_BAD_REQUEST)
+                if is_tile_solid(session.id or 0, cx // 5, cy // 5):
+                    return Response({
+                        "error": f"Creature footprint overlaps an impassable solid obstacle at ({cx} ft, {cy} ft)."
+                    }, status=status.HTTP_400_BAD_REQUEST)
+                if session.participants.filter(position_x=cx, position_y=cy, is_active=True, current_hp__gt=0).exclude(id=participant.id).exists():
+                    return Response({
+                        "error": f"Destination square at ({cx} ft, {cy} ft) is already occupied."
+                    }, status=status.HTTP_400_BAD_REQUEST)
+
 
         # Calculate tile-by-tile path cost on the 5e grid (accounting for difficult terrain & obstacles)
         from combat.battlefield import calculate_tile_path
@@ -2370,6 +2554,87 @@ class CombatActionMixin:
             actor=participant,
             target=participant,
             action_type='dodge',
+            round_number=session.current_round,
+            turn_number=session.current_turn_index,
+            description=desc
+        )
+
+        fresh_session = CombatSession.objects.prefetch_related('participants', 'participants__conditions', 'actions').get(id=session.id)
+        return Response({
+            "message": desc,
+            "participant": CombatParticipantSerializer(participant).data,
+            "session": CombatSessionSerializer(fresh_session).data
+        })
+
+    @action(detail=True, methods=['post'])
+    def set_altitude(self, request, pk=None):
+        """
+        Change flying altitude or take off / land.
+        POST /api/combat/sessions/{id}/set_altitude/
+        Payload: { "participant_id": 1, "altitude": 30 }
+        """
+        session = self.get_object()
+        if session.status != 'active':
+            return Response({"error": "Combat is not active."}, status=status.HTTP_400_BAD_REQUEST)
+
+        participant_id = request.data.get('participant_id')
+        target_altitude = request.data.get('altitude')
+
+        if target_altitude is None:
+            return Response({"error": "altitude is required."}, status=status.HTTP_400_BAD_REQUEST)
+
+        try:
+            target_altitude = max(0, int(target_altitude))
+        except (ValueError, TypeError):
+            return Response({"error": "altitude must be a non-negative integer."}, status=status.HTTP_400_BAD_REQUEST)
+
+        try:
+            participant = session.participants.get(id=participant_id)
+        except CombatParticipant.DoesNotExist:
+            return Response({"error": "Participant not found."}, status=status.HTTP_404_NOT_FOUND)
+
+        if not participant.is_active or participant.current_hp <= 0:
+            return Response({"error": f"{participant.get_name()} is defeated and cannot fly."}, status=status.HTTP_400_BAD_REQUEST)
+
+        if participant.is_incapacitated():
+            return Response({"error": f"{participant.get_name()} is {participant.get_incapacitating_condition()} and cannot fly."}, status=status.HTTP_400_BAD_REQUEST)
+
+        if participant.grappled_by:
+            return Response({"error": f"{participant.get_name()} is grappled and cannot fly (speed 0)."}, status=status.HTTP_400_BAD_REQUEST)
+
+        # Check fly speed
+        fly_speed = participant.get_fly_speed()
+        if target_altitude > 0 and fly_speed <= 0 and not participant.can_fly():
+            return Response({"error": f"{participant.get_name()} does not have a flying speed or spell."}, status=status.HTTP_400_BAD_REQUEST)
+
+        current_alt = participant.altitude or 0
+        alt_change = abs(target_altitude - current_alt)
+
+        if alt_change > 0:
+            if alt_change > participant.movement_remaining:
+                return Response(
+                    {"error": f"Changing altitude by {alt_change} ft exceeds remaining movement ({participant.movement_remaining} ft)."},
+                    status=status.HTTP_400_BAD_REQUEST
+                )
+            participant.movement_used += alt_change
+
+        old_alt = participant.altitude or 0
+        participant.altitude = target_altitude
+        participant.is_flying = (target_altitude > 0)
+        participant.save(update_fields=['altitude', 'is_flying', 'movement_used'])
+
+        if target_altitude == 0:
+            desc = f"{participant.get_name()} descends and touches down on the ground."
+        elif old_alt == 0:
+            desc = f"🛫 {participant.get_name()} takes flight and ascends to {target_altitude} ft!"
+        else:
+            direction = "ascends" if target_altitude > old_alt else "descends"
+            desc = f"🛫 {participant.get_name()} {direction} to an altitude of {target_altitude} ft."
+
+        CombatAction.objects.create(
+            combat_session=session,
+            actor=participant,
+            action_type='move',
             round_number=session.current_round,
             turn_number=session.current_turn_index,
             description=desc

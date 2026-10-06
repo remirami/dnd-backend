@@ -149,11 +149,27 @@ def calculate_tile_path(
     target_col = max(0, min(COLS - 1, round(target_x / 5.0)))
     target_row = max(0, min(ROWS - 1, round(target_y / 5.0)))
 
+    mover_tiles = 1
+    if hasattr(participant, 'get_size_dimensions'):
+        mover_tiles = participant.get_size_dimensions().get('tiles', 1)
+
+    def is_footprint_clear(c: int, r: int) -> bool:
+        """Check if all squares of this creature's footprint fit inside arena and avoid solid obstacles."""
+        for ox in range(mover_tiles):
+            for oy in range(mover_tiles):
+                fc = c + ox
+                fr = r + oy
+                if fc < 0 or fc >= COLS or fr < 0 or fr >= ROWS:
+                    return False
+                if is_tile_solid(session_id, fc, fr):
+                    return False
+        return True
+
     if start_col == target_col and start_row == target_row:
         return 0, [(start_col * 5, start_row * 5)]
 
-    # If destination is solid obstacle, cannot move there
-    if is_tile_solid(session_id, target_col, target_row):
+    # If destination footprint is out of bounds or overlaps solid obstacle, cannot move there
+    if not is_footprint_clear(target_col, target_row):
         return float('inf'), []
 
     # Map hostile enemy positions that block pathing
@@ -171,16 +187,20 @@ def calculate_tile_path(
         ).exclude(id=participant.id)
         
         for c in all_living:
-            cc = round(c.position_x / 5.0)
-            cr = round(c.position_y / 5.0)
-            creature_cells.add((cc, cr))
-            if c.participant_type == opp_type:
-                # Halfling Nimbleness: Can move through space of creature larger than yours
-                if has_nimbleness:
-                    e_rank = SIZE_RANKS.get(getattr(c, 'get_size', lambda: 'M')(), 3)
-                    if e_rank > mover_rank:
-                        continue  # Nimble halfling can traverse through!
-                hostile_cells.add((cc, cr))
+            c_tiles = c.get_size_dimensions()['tiles'] if hasattr(c, 'get_size_dimensions') else 1
+            cc_base = round(c.position_x / 5.0)
+            cr_base = round(c.position_y / 5.0)
+            for ox in range(c_tiles):
+                for oy in range(c_tiles):
+                    cell = (cc_base + ox, cr_base + oy)
+                    creature_cells.add(cell)
+                    if c.participant_type == opp_type:
+                        # Halfling Nimbleness: Can move through space of creature larger than yours
+                        if has_nimbleness:
+                            e_rank = SIZE_RANKS.get(getattr(c, 'get_size', lambda: 'M')(), 3)
+                            if e_rank > mover_rank:
+                                continue  # Nimble halfling can traverse through!
+                        hostile_cells.add(cell)
 
     # Priority queue for Dijkstra: (cost, col, row, path)
     pq = [(0, start_col, start_row, [(start_col * 5, start_row * 5)])]
@@ -192,6 +212,8 @@ def calculate_tile_path(
         (-1,  0),          (1,  0),
         (-1,  1), (0,  1), (1,  1),
     ]
+
+    target_footprint = {(target_col + ox, target_row + oy) for ox in range(mover_tiles) for oy in range(mover_tiles)}
 
     while pq:
         cost, col, row, path = heapq.heappop(pq)
@@ -205,29 +227,27 @@ def calculate_tile_path(
         for dc, dr in directions:
             ncol, nrow = col + dc, row + dr
 
-            # Arena bounds check
-            if ncol < 0 or ncol >= COLS or nrow < 0 or nrow >= ROWS:
+            # All squares of the footprint must remain within bounds and not overlap solid blocks
+            if not is_footprint_clear(ncol, nrow):
                 continue
 
-            # Cannot move through solid obstacle
-            if is_tile_solid(session_id, ncol, nrow):
-                continue
-
-            # Cannot cut diagonally through two adjacent solid blocks
-            if dc != 0 and dr != 0:
+            # Corner cutting check for 1x1 creatures between two solid blocks
+            if mover_tiles == 1 and dc != 0 and dr != 0:
                 if is_tile_solid(session_id, col + dc, row) and is_tile_solid(session_id, col, row + dr):
                     continue
 
-            # Cannot move through hostile creature square (unless destination is somehow allowed)
-            if (ncol, nrow) in hostile_cells and (ncol != target_col or nrow != target_row):
+            # Cannot move through hostile creature square (unless destination is allowed)
+            candidate_footprint = {(ncol + ox, nrow + oy) for ox in range(mover_tiles) for oy in range(mover_tiles)}
+            if (candidate_footprint & hostile_cells) and (candidate_footprint != target_footprint):
                 continue
 
             # Calculate step cost
             # 5e: Difficult terrain (or moving through another creature's space) costs 10 ft per 5ft square
-            if is_tile_difficult(session, ncol, nrow) or (ncol, nrow) in creature_cells:
-                step_cost = 10
-            else:
-                step_cost = 5
+            is_step_difficult = any(
+                is_tile_difficult(session, fc, fr) or ((fc, fr) in creature_cells and (fc, fr) not in target_footprint)
+                for fc, fr in candidate_footprint
+            )
+            step_cost = 10 if is_step_difficult else 5
 
             new_cost = cost + step_cost
             if new_cost < best_costs.get((ncol, nrow), float('inf')):
@@ -236,3 +256,111 @@ def calculate_tile_path(
                 heapq.heappush(pq, (new_cost, ncol, nrow, new_path))
 
     return float('inf'), []
+
+
+def get_participant_cover(session_id: int, pos_x: int, pos_y: int, altitude: int = 0, size_tiles: int = 1) -> dict[str, Any] | None:
+    """
+    Check if a unit is within 5 ft (Chebyshev distance <= 5 ft) of any cover props
+    on the active battlefield layout.
+    
+    5e Rules:
+    - Half cover (+2 AC, +2 DEX saves): Low barricades, crates, sarcophagi, rubble.
+    - Three-quarters cover (+5 AC, +5 DEX saves): Solid pillars, cliffs, portcullises, trees.
+    
+    NOTE: Proximity to a solid obstacle grants three-quarters cover (+5 AC) against attacks
+    coming from the obstacle direction. It NEVER makes a creature untargetable ('total cover')
+    unless line of sight is completely obstructed between attacker and target.
+    
+    If altitude > 5 ft (flying unit), ground half-cover obstacles do not provide cover.
+    """
+    layout = get_battlefield_layout(session_id)
+    features = layout.get("features", [])
+
+    p_col = round((pos_x or 0) / 5.0)
+    p_row = round((pos_y or 0) / 5.0)
+
+    # All tiles in creature's footprint
+    footprint = [
+        (p_col + ox, p_row + oy)
+        for ox in range(max(1, size_tiles))
+        for oy in range(max(1, size_tiles))
+    ]
+
+    best_cover = None
+
+    for feat in features:
+        feat_cover = feat.get("cover")
+        if not feat_cover or feat_cover == "none":
+            continue
+
+        f_col = feat.get("col", 0)
+        f_row = feat.get("row", 0)
+
+        # Min Chebyshev distance from any square in creature's footprint to this feature
+        dist_tiles = min(max(abs(fc - f_col), abs(fr - f_row)) for fc, fr in footprint)
+        if dist_tiles <= 1:
+            # Low obstacles on ground don't grant cover to flying units above 5 ft
+            if altitude > 5 and feat_cover in ["half", "three_quarters", "three-quarters"]:
+                continue
+
+            # Solid obstacles (pillars, cliffs) grant +5 AC (three-quarters cover) to creatures nearby
+            bonus = 2 if feat_cover == "half" else 5
+            cover_type = "half" if feat_cover == "half" else "three_quarters"
+            prop_name = feat.get("name", "Terrain Cover")
+
+            if best_cover is None or bonus > best_cover["bonus"]:
+                best_cover = {
+                    "type": cover_type,
+                    "bonus": bonus,
+                    "source": prop_name,
+                    "col": f_col,
+                    "row": f_row,
+                }
+
+    return best_cover
+
+
+def check_line_of_sight(session_id: int, from_x: int, from_y: int, to_x: int, to_y: int) -> bool:
+    """
+    Check if there is an unblocked line of sight between two coordinates on the battlefield.
+    Uses Bresenham raycast across the 5ft grid tiles.
+    Returns True if clear, False if an impassable solid obstacle blocks the path.
+    """
+    start_col = round((from_x or 0) / 5.0)
+    start_row = round((from_y or 0) / 5.0)
+    target_col = round((to_x or 0) / 5.0)
+    target_row = round((to_y or 0) / 5.0)
+
+    # Adjacent or same tile always has direct line of sight
+    if max(abs(start_col - target_col), abs(start_row - target_row)) <= 1:
+        return True
+
+    dx = abs(target_col - start_col)
+    dy = abs(target_row - start_row)
+    x = start_col
+    y = start_row
+    n = 1 + dx + dy
+    x_inc = 1 if target_col > start_col else -1
+    y_inc = 1 if target_row > start_row else -1
+    error = dx - dy
+    dx *= 2
+    dy *= 2
+
+    for _ in range(n):
+        if (x, y) != (start_col, start_row) and (x, y) != (target_col, target_row):
+            if is_tile_solid(session_id, x, y):
+                return False
+
+        if error > 0:
+            x += x_inc
+            error -= dy
+        elif error < 0:
+            y += y_inc
+            error += dx
+        else:
+            x += x_inc
+            y += y_inc
+            error += dx - dy
+
+    return True
+
