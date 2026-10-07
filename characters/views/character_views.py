@@ -2727,18 +2727,23 @@ class CharacterViewSet(viewsets.ModelViewSet):
         regain_amount = max(1, total_hit_dice // 2)
         
         # Reduce "used" count
-        # if used is 5, regain 2 -> used becomes 3
+        if stats.hit_dice_used is None:
+            stats.hit_dice_used = 0
         stats.hit_dice_used = max(0, stats.hit_dice_used - regain_amount)
         
         # 3. Restore Spell Slots
         from ..multiclassing import calculate_multiclass_spell_slots
+        from campaigns.utils import calculate_spell_slots
         
         if CharacterClassLevel.objects.filter(character=character).count() > 1:
             max_slots = calculate_multiclass_spell_slots(character)
-        else:
+        elif character.character_class:
             max_slots = calculate_spell_slots(character.character_class.name, character.level)
+        else:
+            max_slots = {}
             
         stats.spell_slots = max_slots
+        stats.expended_spell_slots = {}
         stats.save()
         
         return Response({
@@ -2747,6 +2752,7 @@ class CharacterViewSet(viewsets.ModelViewSet):
             "hit_dice_regained": regain_amount,
             "current_hp": stats.hit_points,
             "hit_dice_remaining": total_hit_dice - stats.hit_dice_used,
-            "spell_slots": max_slots
+            "spell_slots": max_slots,
+            "expended_spell_slots": stats.expended_spell_slots
         })
 

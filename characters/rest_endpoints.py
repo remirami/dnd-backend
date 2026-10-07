@@ -36,7 +36,19 @@ def add_rest_endpoints(viewset_class):
         recover_amount = max(1, total_level // 2)
         stats.hit_dice_used = max(0, stats.hit_dice_used - recover_amount)
         
-        # 3. Reset Spell Slots (Clear expended)
+        # 3. Reset Spell Slots (Restore max slots and clear expended)
+        from campaigns.utils import calculate_spell_slots
+        from characters.multiclassing import calculate_multiclass_spell_slots
+        from characters.models import CharacterClassLevel
+
+        if CharacterClassLevel.objects.filter(character=character).count() > 1:
+            max_slots = calculate_multiclass_spell_slots(character)
+        elif character.character_class:
+            max_slots = calculate_spell_slots(character.character_class.name, character.level)
+        else:
+            max_slots = {}
+
+        stats.spell_slots = max_slots
         stats.expended_spell_slots = {}
         
         # 4. Save
@@ -45,6 +57,7 @@ def add_rest_endpoints(viewset_class):
         return Response({
             "message": "Long rest completed. HP and Spell Slots restored.",
             "hit_points": stats.hit_points,
+            "spell_slots": stats.spell_slots,
             "expended_spell_slots": stats.expended_spell_slots,
             "hit_dice_used": stats.hit_dice_used
         })
@@ -69,9 +82,9 @@ def add_rest_endpoints(viewset_class):
         if stats.hit_dice_used is None:
             stats.hit_dice_used = 0
             
-        current_hit_dice = total_hit_dice - stats.hit_dice_used
+        current_hit_dice = max(0, total_hit_dice - stats.hit_dice_used)
         
-        if hit_dice_to_spend > current_hit_dice:
+        if hit_dice_to_spend > current_hit_dice and hit_dice_to_spend > 0:
              return Response({"error": f"Not enough hit dice. have {current_hit_dice}, want {hit_dice_to_spend}"}, status=400)
         
         hp_recovered = 0
