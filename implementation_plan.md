@@ -1108,8 +1108,8 @@ Phase 5.8: Canonical Monster Multiattack Routines & Spell Attack Cooldown Rotati
 ├── Cooldown & Tactical Anti-Spam: 2-round simulated internal cooldown for high-impact monster spells and special abilities
 └── Autonomous Monster Action Verification: Automated tests for multiattack, recharge, and distinct attack rotation
 
-Phase 5.9: Character Sheet Spell Slot Dashboard & Combat Action Dock Ergonomics [PLANNED]
-├── 5.9.1: Character Sheet Spell Slot Page & Grimoire Redesign
+Phase 5.9: Character Sheet Spell Slot Dashboard & Combat Action Dock Ergonomics [IN PROGRESS]
+├── 5.9.1: Character Sheet Spell Slot Page & Grimoire Redesign [COMPLETED]
 │   ├── Dedicated Spell Slot Overview Matrix: High-level dashboard banner tracking slots per level (1st-9th) at a glance
 │   ├── Interactive Slot Dials / Pips: Visually prominent available vs. expended slot toggles with +/- quick adjusters
 │   ├── Pact Magic vs. Spellcasting Separation: Clear visual distinction for Warlock short-rest slots vs standard long-rest slots
