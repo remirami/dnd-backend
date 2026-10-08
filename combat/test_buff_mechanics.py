@@ -46,6 +46,9 @@ class BuffMechanicsCombatTests(TestCase):
         CharacterSpell.objects.create(
             character=self.cleric_char, name='Shield', level=1, is_prepared=True
         )
+        CharacterSpell.objects.create(
+            character=self.cleric_char, name='Guidance', level=0, is_prepared=True
+        )
         self.cleric_p = CombatParticipant.objects.create(
             combat_session=self.session,
             participant_type='character',
@@ -410,4 +413,82 @@ class BuffMechanicsCombatTests(TestCase):
         self.assertTrue(wizard_p.has_buff('mage armor'))
         # 13 base + 2 dex = 15 AC
         self.assertEqual(wizard_p.calculate_effective_ac(), 15)
+
+    def test_touch_spell_range_enforcement_guidance(self):
+        """Guidance is a Touch spell (5 ft): should be rejected if target is >5 ft, succeed within 5 ft or on self."""
+        # Setup positions on tactical grid
+        self.cleric_p.position_x = 0
+        self.cleric_p.position_y = 0
+        self.cleric_p.save(update_fields=['position_x', 'position_y'])
+
+        self.fighter_p.position_x = 0
+        self.fighter_p.position_y = 20  # 20 ft away!
+        self.fighter_p.save(update_fields=['position_x', 'position_y'])
+
+        cast_view = CombatSessionViewSet.as_view({'post': 'cast_spell'})
+
+        # 1. Cast at Arthur 20 ft away -> should be rejected!
+        cast_req_far = self.factory.post(
+            f'/combat/sessions/{self.session.id}/cast_spell/',
+            {
+                'caster_id': self.cleric_p.id,
+                'target_id': self.fighter_p.id,
+                'spell_name': 'Guidance',
+                'spell_level': 0,
+                'requires_concentration': True,
+            },
+            format='json'
+        )
+        force_authenticate(cast_req_far, user=self.user)
+        resp_far = cast_view(cast_req_far, pk=self.session.id)
+        self.assertEqual(resp_far.status_code, 400)
+        self.assertIn('Touch spell', resp_far.data['error'])
+
+        # 2. Move Cleric adjacent to Arthur (0, 15) -> 5 ft distance
+        self.cleric_p.position_y = 15
+        self.cleric_p.save(update_fields=['position_y'])
+
+        cast_req_reach = self.factory.post(
+            f'/combat/sessions/{self.session.id}/cast_spell/',
+            {
+                'caster_id': self.cleric_p.id,
+                'target_id': self.fighter_p.id,
+                'spell_name': 'Guidance',
+                'spell_level': 0,
+                'requires_concentration': True,
+            },
+            format='json'
+        )
+        force_authenticate(cast_req_reach, user=self.user)
+        resp_reach = cast_view(cast_req_reach, pk=self.session.id)
+        self.assertEqual(resp_reach.status_code, 200)
+
+        self.fighter_p.refresh_from_db()
+        self.assertTrue(self.fighter_p.has_buff('guidance'))
+        data = CombatParticipantSerializer(self.fighter_p).data
+        buff_names = [b['name'] for b in data['active_buffs']]
+        self.assertIn('Guidance', buff_names)
+
+        # 3. Cast Guidance on self -> reset action economy and verify Touch self-cast succeeds immediately (0 ft)
+        self.cleric_p.action_used = False
+        self.cleric_p.attacks_remaining = 1
+        self.cleric_p.save(update_fields=['action_used', 'attacks_remaining'])
+
+        cast_req_self = self.factory.post(
+            f'/combat/sessions/{self.session.id}/cast_spell/',
+            {
+                'caster_id': self.cleric_p.id,
+                'target_id': self.cleric_p.id,
+                'spell_name': 'Guidance',
+                'spell_level': 0,
+                'requires_concentration': True,
+            },
+            format='json'
+        )
+        force_authenticate(cast_req_self, user=self.user)
+        resp_self = cast_view(cast_req_self, pk=self.session.id)
+        self.assertEqual(resp_self.status_code, 200)
+        self.cleric_p.refresh_from_db()
+        self.assertTrue(self.cleric_p.has_buff('guidance'))
+
 
