@@ -1232,17 +1232,30 @@ class CombatParticipant(models.Model):
         new_buffs = [b for b in buffs if b.get('name', '').lower() != clean]
         if len(new_buffs) != len(buffs):
             self.feature_uses['active_buffs'] = new_buffs
-            self.save(update_fields=['feature_uses'])
+            update_fields = ['feature_uses']
+            if clean == 'haste':
+                self.attacks_remaining = max(0, (self.attacks_remaining or 1) - 1)
+                if self.attacks_remaining == 0:
+                    self.action_used = True
+                update_fields.extend(['attacks_remaining', 'action_used'])
+            self.save(update_fields=update_fields)
 
     def remove_buffs_by_caster(self, caster_id):
         """Remove all concentration buffs cast by a specific caster."""
         if not isinstance(self.feature_uses, dict) or caster_id is None:
             return
         buffs = list(self.feature_uses.get('active_buffs', []))
+        has_haste_removed = any(b.get('name', '').lower() == 'haste' and b.get('caster_id') == caster_id for b in buffs)
         new_buffs = [b for b in buffs if not (b.get('caster_id') == caster_id and b.get('concentration'))]
         if len(new_buffs) != len(buffs):
             self.feature_uses['active_buffs'] = new_buffs
-            self.save(update_fields=['feature_uses'])
+            update_fields = ['feature_uses']
+            if has_haste_removed:
+                self.attacks_remaining = max(0, (self.attacks_remaining or 1) - 1)
+                if self.attacks_remaining == 0:
+                    self.action_used = True
+                update_fields.extend(['attacks_remaining', 'action_used'])
+            self.save(update_fields=update_fields)
 
     def get_cover_details(self):
         """
@@ -1986,6 +1999,7 @@ class CombatParticipant(models.Model):
         - Characters: based on Extra Attack class feature, with class/level fallback
         - Enemies: based on Multiattack ability (encounter or practice mode)
         """
+        attacks = 1
         if self.character:
             from characters.models import CharacterFeature
             features = CharacterFeature.objects.filter(
@@ -1996,49 +2010,54 @@ class CombatParticipant(models.Model):
             
             # Fighter level 20: 4 attacks
             if any('extra attack (3)' in f or 'three extra attack' in f for f in feature_names):
-                return 4
+                attacks = 4
             # Fighter level 11: 3 attacks
-            if any('extra attack (2)' in f or 'two extra attack' in f for f in feature_names):
-                return 3
+            elif any('extra attack (2)' in f or 'two extra attack' in f for f in feature_names):
+                attacks = 3
             # Most martial classes level 5: 2 attacks
-            if any('extra attack' in f for f in feature_names):
-                return 2
-
+            elif any('extra attack' in f for f in feature_names):
+                attacks = 2
             # Fallback based on class and level if CharacterFeature records are missing
-            if hasattr(self.character, 'character_class') and self.character.character_class:
+            elif hasattr(self.character, 'character_class') and self.character.character_class:
                 class_name = self.character.character_class.name.lower().split('(')[0].strip()
                 lvl = self.character.level
                 if class_name == 'fighter':
                     if lvl >= 20:
-                        return 4
-                    if lvl >= 11:
-                        return 3
-                    if lvl >= 5:
-                        return 2
+                        attacks = 4
+                    elif lvl >= 11:
+                        attacks = 3
+                    elif lvl >= 5:
+                        attacks = 2
                 elif class_name in ['barbarian', 'paladin', 'ranger', 'monk']:
                     if lvl >= 5:
-                        return 2
-
-            return 1
+                        attacks = 2
         
         elif self.participant_type == 'enemy':
             enemy = self.resolve_enemy()
             if enemy:
                 if hasattr(enemy, 'multiattack'):
-                    return enemy.multiattack.action_count
-                for ability in enemy.abilities.all():
-                    if 'multiattack' in ability.name.lower():
-                        desc = ability.description.lower()
-                        number_words = {
-                            'two': 2, 'three': 3, 'four': 4, 'five': 5,
-                            '2': 2, '3': 3, '4': 4, '5': 5,
-                        }
-                        for word, count in number_words.items():
-                            if word in desc:
-                                return count
-                        return 2
-            return 1
-        return 1
+                    attacks = enemy.multiattack.action_count
+                else:
+                    for ability in enemy.abilities.all():
+                        if 'multiattack' in ability.name.lower():
+                            desc = ability.description.lower()
+                            number_words = {
+                                'two': 2, 'three': 3, 'four': 4, 'five': 5,
+                                '2': 2, '3': 3, '4': 4, '5': 5,
+                            }
+                            for word, count in number_words.items():
+                                if word in desc:
+                                    attacks = count
+                                    break
+                            else:
+                                attacks = 2
+                            break
+
+        # 5e Haste spell: grants +1 additional action/attack each turn
+        if hasattr(self, 'has_buff') and self.has_buff('haste'):
+            attacks += 1
+
+        return attacks
     
     def reset_reaction(self):
         """Reset reaction at start of round (reactions reset each round)"""

@@ -772,6 +772,12 @@ def apply_buff_to_target(caster, target, spell_name):
         target.feature_uses['mirror_image_count'] = rule.get('duplicates', 3)
         target.save(update_fields=['feature_uses'])
 
+    # Special handling for Haste spell extra action
+    if buff_name.lower() == 'haste':
+        target.attacks_remaining = (target.attacks_remaining or 0) + 1
+        target.action_used = False
+        target.save(update_fields=['attacks_remaining', 'action_used'])
+
     # If the buff also applies a condition (e.g. Invisibility -> invisible)
     cond_name = rule.get('condition')
     if cond_name:

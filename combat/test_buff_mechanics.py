@@ -150,6 +150,38 @@ class BuffMechanicsCombatTests(TestCase):
         self.assertEqual(self.fighter_p.calculate_effective_ac(), 18)
         self.assertEqual(calculate_effective_speed(self.fighter_p, 30), 60)
 
+    def test_haste_extra_action_economy(self):
+        """Haste grants an additional action each turn (+1 attack on their turn, Dash consumes 1 action)."""
+        self.fighter_p.reset_turn()
+        self.assertEqual(self.fighter_p.attacks_remaining, 1)
+
+        # Apply Haste
+        apply_buff_to_target(self.cleric_p, self.fighter_p, 'Haste')
+        self.assertTrue(self.fighter_p.has_buff('Haste'))
+
+        # Applying Haste adds +1 hasted attack
+        self.fighter_p.refresh_from_db()
+        self.assertEqual(self.fighter_p.attacks_remaining, 2)
+
+        # Resetting turn with Haste buff active calculates 1 base + 1 haste = 2 attacks
+        self.fighter_p.reset_turn()
+        self.assertEqual(self.fighter_p.attacks_remaining, 2)
+
+        # Dashing with Haste expends 1 action, leaving 1 weapon attack remaining
+        view = CombatSessionViewSet.as_view({'post': 'dash'})
+        request = self.factory.post(
+            f'/combat/sessions/{self.session.id}/dash/',
+            {'participant_id': self.fighter_p.id},
+            format='json'
+        )
+        force_authenticate(request, user=self.user)
+        response = view(request, pk=self.session.id)
+        self.assertEqual(response.status_code, 200)
+
+        self.fighter_p.refresh_from_db()
+        self.assertEqual(self.fighter_p.attacks_remaining, 1)
+        self.assertFalse(self.fighter_p.action_used)
+
     def test_concentration_break_removes_buffs(self):
         """When caster's concentration breaks, buffs cast by them on allies must be removed."""
         self.cleric_p.is_concentrating = True

@@ -1276,7 +1276,10 @@ class CombatActionMixin:
                 caster.save(update_fields=['bonus_action_used'])
             else:
                 caster.action_used = True
-                caster.attacks_remaining = 0
+                if hasattr(caster, 'has_buff') and caster.has_buff('haste') and caster.attacks_remaining > 1:
+                    caster.attacks_remaining = 1
+                else:
+                    caster.attacks_remaining = 0
                 caster.save(update_fields=['action_used', 'attacks_remaining'])
 
             # Description summary
@@ -1638,7 +1641,10 @@ class CombatActionMixin:
             caster.save(update_fields=['bonus_action_used'])
         else:
             caster.action_used = True
-            caster.attacks_remaining = 0
+            if hasattr(caster, 'has_buff') and caster.has_buff('haste') and caster.attacks_remaining > 1:
+                caster.attacks_remaining = 1
+            else:
+                caster.attacks_remaining = 0
             caster.save(update_fields=['action_used', 'attacks_remaining'])
 
         # Action description summary
@@ -2451,8 +2457,11 @@ class CombatActionMixin:
         if participant.action_used or participant.attacks_remaining <= 0:
             return Response({"error": f"{participant.get_name()} has already used their action this turn."}, status=status.HTTP_400_BAD_REQUEST)
         
-        participant.action_used = True
-        participant.attacks_remaining = 0
+        if hasattr(participant, 'has_buff') and participant.has_buff('haste') and participant.attacks_remaining > 1:
+            participant.attacks_remaining -= 1
+        else:
+            participant.action_used = True
+            participant.attacks_remaining = 0
         if not participant.feature_uses:
             participant.feature_uses = {}
         participant.feature_uses['dash_active'] = True
@@ -2496,8 +2505,11 @@ class CombatActionMixin:
         if participant.action_used or participant.attacks_remaining <= 0:
             return Response({"error": f"{participant.get_name()} has already used their action this turn."}, status=status.HTTP_400_BAD_REQUEST)
         
-        participant.action_used = True
-        participant.attacks_remaining = 0
+        if hasattr(participant, 'has_buff') and participant.has_buff('haste') and participant.attacks_remaining > 1:
+            participant.attacks_remaining -= 1
+        else:
+            participant.action_used = True
+            participant.attacks_remaining = 0
         if not participant.feature_uses:
             participant.feature_uses = {}
         participant.feature_uses['disengaged'] = True

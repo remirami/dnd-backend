@@ -1128,7 +1128,8 @@ Phase 5.9: Character Sheet Spell Slot Dashboard & Combat Action Dock Ergonomics 
     ├── ActionDock Grimoire Filter Toggle: Seamless switch between [⚔️ Combat Spells (N)] and [📜 All Spells (N)] with out-of-combat badges (⏳ 1 min, 🕯️ Non-Combat RP)
     ├── Strict Gauntlet Mode Pruning: Automatically locks Grimoire to combat-only spells with dedicated gold indicator badge in Gauntlet survival runs
     ├── SpellCastModal Tactical Buff Banners: Green tactical buff badges with 5e mechanical preview for Shield, Bless, Mage Armor, Shield of Faith, Haste, Blur, etc.
-    └── Automated Buff Mechanics Test Suite: Comprehensive test suite in combat/test_buff_mechanics.py verifying Shield (+5 AC), Bless (+1d4 attacks and saving throws), and Mage Armor (13 + Dex AC)
+    ├── Haste Extra Action Engine (5e RAW): Implemented additional hasted action per turn (+1 weapon attack, Dash, Disengage, Hide) with amber ActionDock pill and test coverage
+    └── Automated Buff Mechanics Test Suite: Comprehensive test suite in combat/test_buff_mechanics.py verifying Shield (+5 AC), Bless (+1d4 attacks and saving throws), Mage Armor (13 + Dex AC), and Haste (+2 AC, 2x speed, +1 extra action)
 
 
 Phase 6: 2.5D Isometric Combat Grid & Environmental Arena System (Pillar 11) [PLANNED]
