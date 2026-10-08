@@ -1108,7 +1108,7 @@ Phase 5.8: Canonical Monster Multiattack Routines & Spell Attack Cooldown Rotati
 ├── Cooldown & Tactical Anti-Spam: 2-round simulated internal cooldown for high-impact monster spells and special abilities
 └── Autonomous Monster Action Verification: Automated tests for multiattack, recharge, and distinct attack rotation
 
-Phase 5.9: Character Sheet Spell Slot Dashboard & Combat Action Dock Ergonomics [IN PROGRESS]
+Phase 5.9: Character Sheet Spell Slot Dashboard & Combat Action Dock Ergonomics [COMPLETED]
 ├── 5.9.1: Character Sheet Spell Slot Page & Grimoire Redesign [COMPLETED]
 │   ├── Dedicated Spell Slot Overview Matrix: High-level dashboard banner tracking slots per level (1st-9th) at a glance
 │   ├── Interactive Slot Dials / Pips: Visually prominent available vs. expended slot toggles with +/- quick adjusters
@@ -1116,13 +1116,19 @@ Phase 5.9: Character Sheet Spell Slot Dashboard & Combat Action Dock Ergonomics 
 │   ├── Quick Rest Recovery Triggers: Direct Short Rest / Long Rest slot recovery buttons integrated inside the spells tab
 │   ├── Spell Filtering & Organization: Filter by Prepared, Ritual, Casting Time (Action/Bonus Action/Reaction), and School
 │   └── Spellcasting Attribute Crest: Sticky header showing Spell Save DC, Spell Attack Bonus, and Prepared limit status
-└── 5.9.2: Combat View Bottom Toolbar & Action Dock Ergonomic Redesign
-    ├── Concise Ergonomic Button Layout: Compact height profile to minimize vertical occlusion of the battle grid
-    ├── Grouped Action Clusters: Clear visual clustering (Offensive: Strike/Arsenal/Spells | Utility: Feats/Consumables/Maneuvers | Turn: End Turn)
-    ├── Condensed Button Styling: Icon-first buttons with badge counters (e.g. ⚔️ Strike, 🗡️ Arsenal (3), 📖 Spells (4), ✨ Feats (2))
-    ├── Quick Keyboard Shortcuts: Tooltip hints and hotkeys (1-5 for drawers, Space for Strike, Enter for End Turn)
-    ├── Contextual Ready States: Dynamic visual dimming / glow badges showing available vs exhausted actions in each category
-    └── Mobile & Ultra-wide Viewport Scaling: Streamlined responsive wrapping preventing button overflow and vertical shifting
+├── 5.9.2: Combat View Bottom Toolbar & Action Dock Ergonomic Redesign [COMPLETED]
+│   ├── Concise Ergonomic Button Layout: Compact height profile to minimize vertical occlusion of the battle grid
+│   ├── Grouped Action Clusters: Clear visual clustering (Offensive: Strike/Arsenal/Spells | Utility: Feats/Consumables/Maneuvers | Turn: End Turn)
+│   ├── Condensed Button Styling: Icon-first buttons with badge counters (e.g. ⚔️ Strike, 🗡️ Arsenal (3), 📖 Spells (4), ✨ Feats (2))
+│   ├── Quick Keyboard Shortcuts: Tooltip hints and hotkeys (1-5 for drawers, Space for Strike, Enter for End Turn)
+│   ├── Contextual Ready States: Dynamic visual dimming / glow badges showing available vs exhausted actions in each category
+│   └── Mobile & Ultra-wide Viewport Scaling: Streamlined responsive wrapping preventing button overflow and vertical shifting
+└── 5.9.3: Tactical Combat Spell Filter, Gauntlet Pruning & Buff Engine Verification [COMPLETED]
+    ├── Combat vs. Utility Spell Classifier (spellClassification.ts): Classifies spells into combat-ready actions/reactions/buffs vs out-of-combat exploration/downtime spells
+    ├── ActionDock Grimoire Filter Toggle: Seamless switch between [⚔️ Combat Spells (N)] and [📜 All Spells (N)] with out-of-combat badges (⏳ 1 min, 🕯️ Non-Combat RP)
+    ├── Strict Gauntlet Mode Pruning: Automatically locks Grimoire to combat-only spells with dedicated gold indicator badge in Gauntlet survival runs
+    ├── SpellCastModal Tactical Buff Banners: Green tactical buff badges with 5e mechanical preview for Shield, Bless, Mage Armor, Shield of Faith, Haste, Blur, etc.
+    └── Automated Buff Mechanics Test Suite: Comprehensive test suite in combat/test_buff_mechanics.py verifying Shield (+5 AC), Bless (+1d4 attacks and saving throws), and Mage Armor (13 + Dex AC)
 
 
 Phase 6: 2.5D Isometric Combat Grid & Environmental Arena System (Pillar 11) [PLANNED]

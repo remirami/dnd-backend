@@ -3,7 +3,7 @@ from django.contrib.auth.models import User
 from rest_framework.test import APIRequestFactory, force_authenticate
 
 from bestiary.models import Condition, Enemy, EnemyStats
-from characters.models import Character, CharacterClass, CharacterRace, CharacterStats
+from characters.models import Character, CharacterClass, CharacterRace, CharacterStats, CharacterSpell
 from combat.models import CombatParticipant, CombatSession
 from combat.views.session_views import CombatSessionViewSet
 from combat.spell_rules import (
@@ -39,6 +39,12 @@ class BuffMechanicsCombatTests(TestCase):
         from characters.models import CharacterSpell
         CharacterSpell.objects.create(
             character=self.cleric_char, name='Shield of Faith', level=1, is_prepared=True
+        )
+        CharacterSpell.objects.create(
+            character=self.cleric_char, name='Bless', level=1, is_prepared=True
+        )
+        CharacterSpell.objects.create(
+            character=self.cleric_char, name='Shield', level=1, is_prepared=True
         )
         self.cleric_p = CombatParticipant.objects.create(
             combat_session=self.session,
@@ -234,3 +240,142 @@ class BuffMechanicsCombatTests(TestCase):
         adv, disadv, reasons = evaluate_attack_roll_conditions(self.skeleton_p, self.cleric_p)
         self.assertTrue(disadv)
         self.assertTrue(any('Blur' in r for r in reasons))
+
+    def test_bless_spell_cast_and_attack_modifier(self):
+        """Bless applied via cast_spell API should grant +1d4 to attack rolls."""
+        cast_view = CombatSessionViewSet.as_view({'post': 'cast_spell'})
+        cast_req = self.factory.post(
+            f'/combat/sessions/{self.session.id}/cast_spell/',
+            {
+                'caster_id': self.cleric_p.id,
+                'target_id': self.fighter_p.id,
+                'spell_name': 'Bless',
+                'spell_level': 1,
+                'requires_concentration': True,
+            },
+            format='json'
+        )
+        force_authenticate(cast_req, user=self.user)
+        cast_resp = cast_view(cast_req, pk=self.session.id)
+
+        self.assertEqual(cast_resp.status_code, 200)
+        self.assertEqual(cast_resp.data.get('buff_applied'), 'Bless')
+
+        self.fighter_p.refresh_from_db()
+        self.assertTrue(self.fighter_p.has_buff('bless'))
+
+        # Advance turn to fighter
+        self.session.current_turn_index = 1
+        self.session.save()
+        self.fighter_p.attacks_remaining = 1
+        self.fighter_p.action_used = False
+        self.fighter_p.save()
+
+        # Now have fighter attack skeleton
+        attack_view = CombatSessionViewSet.as_view({'post': 'attack'})
+        atk_req = self.factory.post(
+            f'/combat/sessions/{self.session.id}/attack/',
+            {
+                'attacker_id': self.fighter_p.id,
+                'target_id': self.skeleton_p.id,
+                'attack_name': 'Longsword',
+            },
+            format='json'
+        )
+        force_authenticate(atk_req, user=self.user)
+        atk_resp = attack_view(atk_req, pk=self.session.id)
+
+        self.assertEqual(atk_resp.status_code, 200)
+        adv_reasons = atk_resp.data.get('advantage_reasons', [])
+        # Should record "Bless (+X)" in the roll's modifier reasons
+        self.assertTrue(any('Bless' in r for r in adv_reasons), f"Bless not found in advantage_reasons: {adv_reasons}")
+
+        # Verify saving throw also receives Bless bonus (+1d4)
+        save_view = CombatSessionViewSet.as_view({'post': 'saving_throw'})
+        save_req = self.factory.post(
+            f'/combat/sessions/{self.session.id}/saving_throw/',
+            {
+                'participant_id': self.fighter_p.id,
+                'save_type': 'DEX',
+                'save_dc': 15,
+            },
+            format='json'
+        )
+        force_authenticate(save_req, user=self.user)
+        save_resp = save_view(save_req, pk=self.session.id)
+        self.assertEqual(save_resp.status_code, 200)
+        roll = save_resp.data.get('roll')
+        mod = self.fighter_p.get_ability_modifier('DEX')
+        save_total = save_resp.data.get('save_total')
+        bless_bonus = save_total - (roll + mod)
+        self.assertGreaterEqual(bless_bonus, 1)
+        self.assertLessEqual(bless_bonus, 4)
+
+    def test_shield_spell_via_api(self):
+        """Shield spell cast via API should grant +5 AC to caster."""
+        cast_view = CombatSessionViewSet.as_view({'post': 'cast_spell'})
+        cast_req = self.factory.post(
+            f'/combat/sessions/{self.session.id}/cast_spell/',
+            {
+                'caster_id': self.cleric_p.id,
+                'target_id': self.cleric_p.id,
+                'spell_name': 'Shield',
+                'spell_level': 1,
+                'requires_concentration': False,
+            },
+            format='json'
+        )
+        force_authenticate(cast_req, user=self.user)
+        cast_resp = cast_view(cast_req, pk=self.session.id)
+
+        self.assertEqual(cast_resp.status_code, 200)
+        self.cleric_p.refresh_from_db()
+        self.assertTrue(self.cleric_p.has_buff('shield'))
+        self.assertEqual(self.cleric_p.calculate_effective_ac(), 21)
+
+    def test_mage_armor_via_api(self):
+        """Mage Armor cast via API should set base unarmored AC to 13 + DEX mod."""
+        wizard_class = CharacterClass.objects.create(name='wizard', hit_dice='d6', primary_ability='INT')
+        wizard_char = Character.objects.create(
+            name='Raistlin', user=self.user, level=1, character_class=wizard_class, race=self.race
+        )
+        CharacterStats.objects.create(
+            character=wizard_char, hit_points=10, max_hit_points=10, armor_class=12, dexterity=14, intelligence=16,
+            spell_slots={'1': 2}, expended_spell_slots={'1': 0}
+        )
+        CharacterSpell.objects.create(
+            character=wizard_char, name='Mage Armor', level=1, is_prepared=True
+        )
+        wizard_session = CombatSession.objects.create(status='active', current_round=1, current_turn_index=0)
+        wizard_p = CombatParticipant.objects.create(
+            combat_session=wizard_session,
+            participant_type='character',
+            character=wizard_char,
+            current_hp=10,
+            max_hp=10,
+            armor_class=12,
+            initiative=11
+        )
+        self.assertEqual(wizard_p.calculate_effective_ac(), 12)
+
+        cast_view = CombatSessionViewSet.as_view({'post': 'cast_spell'})
+        cast_req = self.factory.post(
+            f'/combat/sessions/{wizard_session.id}/cast_spell/',
+            {
+                'caster_id': wizard_p.id,
+                'target_id': wizard_p.id,
+                'spell_name': 'Mage Armor',
+                'spell_level': 1,
+                'requires_concentration': False,
+            },
+            format='json'
+        )
+        force_authenticate(cast_req, user=self.user)
+        cast_resp = cast_view(cast_req, pk=wizard_session.id)
+
+        self.assertEqual(cast_resp.status_code, 200)
+        wizard_p.refresh_from_db()
+        self.assertTrue(wizard_p.has_buff('mage armor'))
+        # 13 base + 2 dex = 15 AC
+        self.assertEqual(wizard_p.calculate_effective_ac(), 15)
+
