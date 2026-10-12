@@ -239,6 +239,50 @@ def add_equipment_endpoints_to_viewset(cls):
             except Exception as e:
                 failed_items.append(f"{item_name}: {e!s}")
         
+        # Auto-equip armor, shield, and a primary weapon
+        try:
+            from characters.inventory_management import equip_item, recalculate_armor_class
+            char_items = CharacterItem.objects.filter(character=character).select_related('item')
+            armor_equipped = False
+            shield_equipped = False
+            weapon_equipped = False
+            clean_class = (character.character_class.name if character.character_class else '').lower()
+
+            for ci in char_items:
+                it = ci.item
+                it_name = it.name.lower()
+
+                if not armor_equipped and (hasattr(it, 'armor') or 'armor' in it_name or 'mail' in it_name or 'leather' in it_name):
+                    if 'shield' not in it_name:
+                        if clean_class == 'barbarian' and hasattr(character, 'stats') and character.stats:
+                            con_mod = (character.stats.constitution - 10) // 2
+                            dex_mod = (character.stats.dexterity - 10) // 2
+                            unarmored_ac = 10 + dex_mod + con_mod
+                            base_ac = getattr(getattr(it, 'armor', None), 'base_ac', 14 if 'scale' in it_name else 11)
+                            armor_type = getattr(getattr(it, 'armor', None), 'armor_type', 'medium' if 'scale' in it_name else 'light')
+                            armored_ac = base_ac + (min(dex_mod, 2) if armor_type == 'medium' else (0 if armor_type == 'heavy' else dex_mod))
+                            if unarmored_ac > armored_ac:
+                                continue
+                        success, _, _ = equip_item(character, it, slot='armor')
+                        if success:
+                            armor_equipped = True
+                            continue
+
+                if not shield_equipped and ('shield' in it_name):
+                    success, _, _ = equip_item(character, it, slot='off_hand')
+                    if success:
+                        shield_equipped = True
+                        continue
+
+                if not weapon_equipped and hasattr(it, 'weapon'):
+                    success, _, _ = equip_item(character, it, slot='main_hand')
+                    if success:
+                        weapon_equipped = True
+
+            recalculate_armor_class(character)
+        except Exception as e:
+            print(f"Error auto-equipping starting items: {e}")
+
         # Add starting gold
         import random
         gold_min = equipment_data['starting_gold']['min']

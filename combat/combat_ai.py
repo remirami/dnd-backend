@@ -1232,6 +1232,7 @@ def _execute_attack(session, attacker, target, attack, advantage=False):
             'attacker_id': attacker.id,
             'target': target.get_name(),
             'target_id': target.id,
+            'action': attack_name,
             'attack_name': attack_name,
             'roll': 0,
             'attack_bonus': attack_bonus,

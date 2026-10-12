@@ -88,26 +88,63 @@ class CombatParticipantSerializer(serializers.ModelSerializer):
 
         # Add equipped items info for characters
         if instance.character:
-            equipped_weapon = instance.get_equipped_weapon()
+            equipped_weapon = instance.get_equipped_weapon('main_hand') or instance.get_equipped_weapon('off_hand') or instance.get_equipped_weapon(None)
             equipped_armor = instance.get_equipped_armor()
             equipped_shield = instance.get_equipped_shield()
             effective_ac = instance.calculate_effective_ac()
             
+            shield_bonus = 2
+            if equipped_shield:
+                shield_bonus = getattr(equipped_shield, 'ac_bonus', None) or (equipped_shield.base_ac if equipped_shield.base_ac <= 5 else 2)
+
             data['equipped_items'] = {
                 'weapon': {
                     'name': equipped_weapon.name,
-                    'damage_dice': equipped_weapon.damage_dice,
+                    'damage_dice': getattr(equipped_weapon, 'damage_dice', ''),
                 } if equipped_weapon else None,
                 'armor': {
                     'name': equipped_armor.name,
-                    'base_ac': equipped_armor.base_ac,
+                    'base_ac': getattr(equipped_armor, 'base_ac', 10),
                 } if equipped_armor else None,
                 'shield': {
                     'name': equipped_shield.name,
-                    'ac_bonus': equipped_shield.base_ac,
+                    'ac_bonus': shield_bonus,
                 } if equipped_shield else None,
             }
             data['effective_ac'] = effective_ac
+
+            # Full equipped gear list matching character sheet equipment slots
+            equipped_gear = []
+            for ci in instance.character.character_items.all():
+                if ci.is_equipped and ci.equipment_slot and ci.equipment_slot != 'inventory':
+                    item_obj = ci.item
+                    is_shield = ci.equipment_slot in ('shield', 'off_hand') and (
+                        'shield' in item_obj.name.lower() or
+                        (hasattr(item_obj, 'armor') and getattr(item_obj.armor, 'armor_type', None) == 'shield')
+                    )
+                    gear_entry = {
+                        'id': ci.id,
+                        'name': item_obj.name,
+                        'slot': ci.equipment_slot,
+                        'is_shield': is_shield,
+                        'rarity': getattr(item_obj, 'rarity', 'common'),
+                        'description': item_obj.description or '',
+                        'is_attuned': ci.is_attuned,
+                    }
+                    if hasattr(item_obj, 'weapon'):
+                        w = item_obj.weapon
+                        gear_entry['weapon_type_display'] = getattr(w, 'weapon_type_display', '')
+                        gear_entry['damage_dice'] = w.damage_dice
+                        gear_entry['damage_type'] = getattr(w.damage_type, 'name', '') if getattr(w, 'damage_type', None) else ''
+                    elif hasattr(item_obj, 'armor'):
+                        a = item_obj.armor
+                        gear_entry['armor_type_display'] = getattr(a, 'armor_type_display', '') or a.armor_type
+                        if is_shield:
+                            gear_entry['ac_bonus'] = getattr(a, 'ac_bonus', None) or (a.base_ac if a.base_ac <= 5 else 2)
+                        else:
+                            gear_entry['base_ac'] = a.base_ac
+                    equipped_gear.append(gear_entry)
+            data['equipped_gear'] = equipped_gear
 
             # Class feature resources for characters
             feature_uses = instance.feature_uses or {}
