@@ -260,18 +260,13 @@ def calculate_tile_path(
 
 def get_participant_cover(session_id: int, pos_x: int, pos_y: int, altitude: int = 0, size_tiles: int = 1) -> dict[str, Any] | None:
     """
-    Check if a unit is within 5 ft (Chebyshev distance <= 5 ft) of any cover props
+    Check if a unit is taking cover behind low obstacles (half cover, +2 AC)
     on the active battlefield layout.
     
     5e Rules:
-    - Half cover (+2 AC, +2 DEX saves): Low barricades, crates, sarcophagi, rubble.
-    - Three-quarters cover (+5 AC, +5 DEX saves): Solid pillars, cliffs, portcullises, trees.
-    
-    NOTE: Proximity to a solid obstacle grants three-quarters cover (+5 AC) against attacks
-    coming from the obstacle direction. It NEVER makes a creature untargetable ('total cover')
-    unless line of sight is completely obstructed between attacker and target.
-    
-    If altitude > 5 ft (flying unit), ground half-cover obstacles do not provide cover.
+    - Low barricades, crates, sarcophagi, rubble provide half cover (+2 AC, +2 DEX saves).
+    - Solid impassable obstacles (pillars, cliffs, pylons) provide Total Cover (blocking line of sight)
+      rather than an ambient +5 AC aura to creatures standing nearby.
     """
     layout = get_battlefield_layout(session_id)
     features = layout.get("features", [])
@@ -290,34 +285,64 @@ def get_participant_cover(session_id: int, pos_x: int, pos_y: int, altitude: int
 
     for feat in features:
         feat_cover = feat.get("cover")
-        if not feat_cover or feat_cover == "none":
+        # Solid impassable obstacles do NOT grant passive AC aura to adjacent creatures
+        if not feat_cover or feat_cover == "none" or feat.get("blocks_movement"):
+            continue
+
+        if feat_cover != "half":
             continue
 
         f_col = feat.get("col", 0)
         f_row = feat.get("row", 0)
 
-        # Min Chebyshev distance from any square in creature's footprint to this feature
         dist_tiles = min(max(abs(fc - f_col), abs(fr - f_row)) for fc, fr in footprint)
         if dist_tiles <= 1:
-            # Low obstacles on ground don't grant cover to flying units above 5 ft
-            if altitude > 5 and feat_cover in ["half", "three_quarters", "three-quarters"]:
+            if altitude > 5:
                 continue
 
-            # Solid obstacles (pillars, cliffs) grant +5 AC (three-quarters cover) to creatures nearby
-            bonus = 2 if feat_cover == "half" else 5
-            cover_type = "half" if feat_cover == "half" else "three_quarters"
-            prop_name = feat.get("name", "Terrain Cover")
-
-            if best_cover is None or bonus > best_cover["bonus"]:
-                best_cover = {
-                    "type": cover_type,
-                    "bonus": bonus,
-                    "source": prop_name,
-                    "col": f_col,
-                    "row": f_row,
-                }
+            prop_name = feat.get("name", "Low Cover")
+            best_cover = {
+                "type": "half",
+                "bonus": 2,
+                "source": prop_name,
+                "col": f_col,
+                "row": f_row,
+            }
+            break
 
     return best_cover
+
+
+def get_line_tiles(start_col: int, start_row: int, target_col: int, target_row: int) -> list[tuple[int, int]]:
+    """Returns intermediate (col, row) tiles along the raycast strictly between start and target."""
+    tiles = []
+    dx = abs(target_col - start_col)
+    dy = abs(target_row - start_row)
+    x = start_col
+    y = start_row
+    n = 1 + dx + dy
+    x_inc = 1 if target_col > start_col else -1
+    y_inc = 1 if target_row > start_row else -1
+    error = dx - dy
+    dx *= 2
+    dy *= 2
+
+    for _ in range(n):
+        if (x, y) != (start_col, start_row) and (x, y) != (target_col, target_row):
+            tiles.append((x, y))
+
+        if error > 0:
+            x += x_inc
+            error -= dy
+        elif error < 0:
+            y += y_inc
+            error += dx
+        else:
+            x += x_inc
+            y += y_inc
+            error += dx - dy
+
+    return tiles
 
 
 def check_line_of_sight(session_id: int, from_x: int, from_y: int, to_x: int, to_y: int) -> bool:
@@ -335,32 +360,104 @@ def check_line_of_sight(session_id: int, from_x: int, from_y: int, to_x: int, to
     if max(abs(start_col - target_col), abs(start_row - target_row)) <= 1:
         return True
 
-    dx = abs(target_col - start_col)
-    dy = abs(target_row - start_row)
-    x = start_col
-    y = start_row
-    n = 1 + dx + dy
-    x_inc = 1 if target_col > start_col else -1
-    y_inc = 1 if target_row > start_row else -1
-    error = dx - dy
-    dx *= 2
-    dy *= 2
-
-    for _ in range(n):
-        if (x, y) != (start_col, start_row) and (x, y) != (target_col, target_row):
-            if is_tile_solid(session_id, x, y):
-                return False
-
-        if error > 0:
-            x += x_inc
-            error -= dy
-        elif error < 0:
-            y += y_inc
-            error += dx
-        else:
-            x += x_inc
-            y += y_inc
-            error += dx - dy
+    inter_tiles = get_line_tiles(start_col, start_row, target_col, target_row)
+    for ix, iy in inter_tiles:
+        if is_tile_solid(session_id, ix, iy):
+            return False
 
     return True
+
+
+def get_attack_cover(
+    session_id: int,
+    from_x: int,
+    from_y: int,
+    to_x: int,
+    to_y: int,
+    is_melee: bool = False,
+    target_size_tiles: int = 1,
+) -> dict[str, Any]:
+    """
+    Determines directional cover between an attacker and a target.
+    5e Rules:
+    - Melee attacks within reach (adjacent) suffer NO cover from terrain props.
+    - Ranged attacks & targeted spells suffer Total Cover (cannot be targeted)
+      if an impassable solid obstacle (pillar, pylon, cliff, tree) blocks line of sight.
+    - Ranged attacks & targeted spells suffer Half Cover (+2 AC) if a low obstacle
+      (barricade, crate, boulder) intervenes along the trajectory.
+    """
+    if is_melee:
+        return {"has_total_cover": False, "cover_bonus": 0, "cover_type": "none", "source": None}
+
+    start_col = max(0, min(COLS - 1, round((from_x or 0) / 5.0)))
+    start_row = max(0, min(ROWS - 1, round((from_y or 0) / 5.0)))
+    t_base_col = max(0, min(COLS - 1, round((to_x or 0) / 5.0)))
+    t_base_row = max(0, min(ROWS - 1, round((to_y or 0) / 5.0)))
+
+    # If adjacent, no intervening cover for ranged attacks either
+    if max(abs(start_col - t_base_col), abs(start_row - t_base_row)) <= 1 and target_size_tiles <= 1:
+        return {"has_total_cover": False, "cover_bonus": 0, "cover_type": "none", "source": None}
+
+    layout = get_battlefield_layout(session_id)
+    features = layout.get("features", [])
+
+    target_tiles = [
+        (t_base_col + ox, t_base_row + oy)
+        for ox in range(max(1, target_size_tiles))
+        for oy in range(max(1, target_size_tiles))
+    ]
+
+    blocked_by_solid: list[str] = []
+    intervening_half_covers: list[str] = []
+    clear_lines = 0
+
+    for tc, tr in target_tiles:
+        if (start_col, start_row) == (tc, tr):
+            clear_lines += 1
+            continue
+
+        ray_tiles = get_line_tiles(start_col, start_row, tc, tr)
+        line_blocked = False
+
+        for rx, ry in ray_tiles:
+            for feat in features:
+                if feat.get("col") == rx and feat.get("row") == ry:
+                    if feat.get("blocks_movement"):
+                        line_blocked = True
+                        blocked_by_solid.append(feat.get("name", "Solid Obstacle"))
+                        break
+                    elif feat.get("cover") == "half":
+                        intervening_half_covers.append(feat.get("name", "Low Obstacle"))
+            if line_blocked:
+                break
+
+        if not line_blocked:
+            clear_lines += 1
+
+    # If ALL lines of sight to target footprint are blocked by solid obstacles
+    if clear_lines == 0:
+        source = blocked_by_solid[0] if blocked_by_solid else "Solid Obstacle"
+        return {
+            "has_total_cover": True,
+            "cover_bonus": 0,
+            "cover_type": "total",
+            "source": source,
+        }
+
+    # If any intervening low obstacle was crossed, or partially obstructed multi-tile target
+    if intervening_half_covers or clear_lines < len(target_tiles):
+        source = intervening_half_covers[0] if intervening_half_covers else (blocked_by_solid[0] if blocked_by_solid else "Terrain Cover")
+        return {
+            "has_total_cover": False,
+            "cover_bonus": 2,
+            "cover_type": "half",
+            "source": source,
+        }
+
+    return {
+        "has_total_cover": False,
+        "cover_bonus": 0,
+        "cover_type": "none",
+        "source": None,
+    }
 

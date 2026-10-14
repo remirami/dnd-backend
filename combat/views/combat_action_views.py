@@ -460,50 +460,54 @@ class CombatActionMixin:
         target_cover_type = None
         target_cover_source = None
 
-        # 1. Check dynamic battlefield layout props within 5ft (e.g. Timber Barricade +2 AC, Pillars/Cliffs +5 AC)
-        target_cover_info = target.get_cover_details() if hasattr(target, 'get_cover_details') else None
-        if target_cover_info:
-            target_cover_type = target_cover_info.get('type')
-            cover_bonus = target_cover_info.get('bonus', 0)
-            target_cover_source = target_cover_info.get('source')
+        # Check cover before rolling
+        cover_bonus = 0
+        target_has_full_cover = False
+        target_cover_type = None
+        target_cover_source = None
 
-        # 2. Also check ParticipantPosition.current_cover if set by EnvironmentalEffect
-        try:
-            target_position = target.position
-            if target_position.current_cover:
-                env_cover = target_position.current_cover
-                env_bonus = calculate_cover_ac_bonus(env_cover)
-                if env_bonus > cover_bonus:
-                    cover_bonus = env_bonus
-                    target_cover_type = env_cover
-                    target_cover_source = "Environmental Cover"
-        except ParticipantPosition.DoesNotExist:
-            pass
-
-        # 3. Check line-of-sight obstruction for total cover (cannot be targeted)
-        # 5e Rules:
-        # - Melee attacks (adjacent/within reach) NEVER suffer total cover
-        # - Ranged attacks suffer total cover ONLY if ALL tiles of target footprint are completely blocked by solid obstacles
-        if not is_melee and has_coords:
-            from combat.battlefield import check_line_of_sight
+        # 1. Directional & line-of-sight cover calculation (5e rules)
+        # - Melee attacks within reach suffer NO cover from terrain props
+        # - Ranged attacks suffer Total Cover (cannot be targeted) if solid obstacles block line of sight
+        # - Ranged attacks suffer Half Cover (+2 AC) if low obstacles (barricades, crates) intervene
+        if has_coords:
+            from combat.battlefield import get_attack_cover
             t_tiles = target.get_size_dimensions()['tiles'] if hasattr(target, 'get_size_dimensions') else 1
-            can_see_any = False
-            for ox in range(t_tiles):
-                for oy in range(t_tiles):
-                    tc_x = target.position_x + ox * 5
-                    tc_y = target.position_y + oy * 5
-                    if check_line_of_sight(session.id or 0, attacker.position_x, attacker.position_y, tc_x, tc_y):
-                        can_see_any = True
-                        break
-                if can_see_any:
-                    break
-            if not can_see_any:
+            attack_cover = get_attack_cover(
+                session.id or 0,
+                attacker.position_x,
+                attacker.position_y,
+                target.position_x,
+                target.position_y,
+                is_melee=is_melee,
+                target_size_tiles=t_tiles,
+            )
+            if attack_cover.get('has_total_cover'):
                 target_has_full_cover = True
+                target_cover_source = attack_cover.get('source')
+            else:
+                cover_bonus = attack_cover.get('cover_bonus', 0)
+                target_cover_type = attack_cover.get('cover_type')
+                target_cover_source = attack_cover.get('source')
 
-        # Full cover prevents targeting
+        # 2. Also check ParticipantPosition.current_cover if set by EnvironmentalEffect (e.g. trench on tile)
+        if not target_has_full_cover:
+            try:
+                target_position = target.position
+                if target_position.current_cover:
+                    env_cover = target_position.current_cover
+                    env_bonus = calculate_cover_ac_bonus(env_cover)
+                    if env_bonus > cover_bonus:
+                        cover_bonus = env_bonus
+                        target_cover_type = env_cover
+                        target_cover_source = "Environmental Cover"
+            except ParticipantPosition.DoesNotExist:
+                pass
+
+        # Total cover prevents targeting directly
         if target_has_full_cover:
             return Response(
-                {"error": f"{target.get_name()} has full cover and cannot be targeted"},
+                {"error": f"{target.get_name()} has total cover behind {target_cover_source or 'an obstacle'} and cannot be targeted directly."},
                 status=status.HTTP_400_BAD_REQUEST
             )
 
@@ -1147,8 +1151,8 @@ class CombatActionMixin:
         elif clean_spell_name in SPELL_RANGE_FALLBACKS:
             raw_range = SPELL_RANGE_FALLBACKS[clean_spell_name]
 
-        if raw_range:
-            lower_range = raw_range.lower()
+        lower_range = raw_range.lower() if raw_range else ""
+        if lower_range:
             if lower_range == 'self' or (lower_range.startswith('self') and '(' not in lower_range):
                 for t in targets:
                     if t != caster:
@@ -1180,6 +1184,32 @@ class CombatActionMixin:
                                     {"error": f"{spell_name} has a range of {max_range} ft, but {t.get_name()} is {dist} ft away."},
                                     status=status.HTTP_400_BAD_REQUEST
                                 )
+
+        # 5e Line of Sight & Total Cover check for targeted spells
+        # (Spells requiring a target cannot target a creature behind Total Cover)
+        is_aoe_spell = any(s in lower_range for s in ['cone', 'cube', 'sphere', 'cylinder', 'line'])
+        if not is_aoe_spell and not is_healing:
+            from combat.battlefield import get_attack_cover
+            for t in set(targets):
+                if t.id == caster.id:
+                    continue
+                if caster.position_x is not None and t.position_x is not None:
+                    is_touch_spell = 'touch' in lower_range
+                    t_tiles = t.get_size_dimensions()['tiles'] if hasattr(t, 'get_size_dimensions') else 1
+                    t_cover = get_attack_cover(
+                        session.id or 0,
+                        caster.position_x,
+                        caster.position_y,
+                        t.position_x,
+                        t.position_y,
+                        is_melee=is_touch_spell,
+                        target_size_tiles=t_tiles,
+                    )
+                    if t_cover.get('has_total_cover'):
+                        return Response(
+                            {"error": f"{t.get_name()} has total cover behind {t_cover.get('source', 'an obstacle')} and cannot be targeted by {spell_name}."},
+                            status=status.HTTP_400_BAD_REQUEST
+                        )
 
         # Handle concentration
         if requires_concentration:

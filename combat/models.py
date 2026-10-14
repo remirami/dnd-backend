@@ -1267,9 +1267,9 @@ class CombatParticipant(models.Model):
 
     def get_cover_details(self):
         """
-        Determines if participant is within 5 ft of any cover obstacle or terrain prop
-        on the active battlefield layout, or in an environmental cover area.
-        Returns dict with cover info, or None.
+        Determines if participant is within low cover (half-cover, +2 AC)
+        or in an environmental cover area. Solid obstacles provide line-of-sight
+        blocking (Total Cover), not a passive AC bonus aura.
         """
         try:
             from combat.battlefield import get_participant_cover
@@ -1278,7 +1278,7 @@ class CombatParticipant(models.Model):
             size_tiles = self.get_size_dimensions()['tiles'] if hasattr(self, 'get_size_dimensions') else 1
             cover_info = get_participant_cover(sess_id, self.position_x, self.position_y, altitude=alt, size_tiles=size_tiles)
 
-            if cover_info:
+            if cover_info and cover_info.get('bonus', 0) > 0:
                 return cover_info
         except Exception:
             pass
@@ -1292,7 +1292,7 @@ class CombatParticipant(models.Model):
                 elif ctype in ['three_quarters', 'three-quarters']:
                     return {'type': 'three_quarters', 'bonus': 5, 'source': 'Environmental Cover'}
                 elif ctype in ['total', 'full']:
-                    return {'type': 'total', 'bonus': 5, 'source': 'Total Cover'}
+                    return {'type': 'total', 'bonus': 0, 'source': 'Total Cover'}
         except Exception:
             pass
 
@@ -1356,12 +1356,9 @@ class CombatParticipant(models.Model):
         if self.has_buff('barkskin'):
             base_ac = max(base_ac, 16)
         
-        # Add cover bonus (from parameter or dynamically computed from nearby props)
-        if cover_bonus == 0:
-            cover_info = self.get_cover_details()
-            if cover_info:
-                cover_bonus = cover_info.get('bonus', 0)
-        base_ac += cover_bonus
+        # Add directional/situational cover bonus if explicitly passed for an attack
+        if cover_bonus > 0:
+            base_ac += cover_bonus
         
         return base_ac
 
