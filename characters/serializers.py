@@ -183,6 +183,9 @@ class CharacterStatsSerializer(serializers.ModelSerializer):
     intelligence_modifier = serializers.ReadOnlyField()
     wisdom_modifier = serializers.ReadOnlyField()
     charisma_modifier = serializers.ReadOnlyField()
+    ki_points_max = serializers.ReadOnlyField()
+    ki_points_current = serializers.ReadOnlyField()
+    martial_arts_die = serializers.ReadOnlyField()
     
     class Meta:
         model = CharacterStats
@@ -682,9 +685,8 @@ class CharacterSerializer(serializers.ModelSerializer):
         new_level = instance.level
         
         # Check for ASI levels if level increased
-        # Check for ASI levels if level increased
         if new_level > old_level:
-            asi_levels = [4, 8, 12, 16, 19]
+            asi_levels = [4, 8, 12, 16, 19, 20]
             pending = instance.pending_asi_levels or []
             
             # Check all levels reached in this update
@@ -737,9 +739,23 @@ class CharacterSerializer(serializers.ModelSerializer):
                             }
                         )
 
-        
         return instance
-    
+
+    def to_representation(self, instance):
+        data = super().to_representation(instance)
+        # Ensure level 20 characters have an Epic Boon / Feat selection pending if not yet chosen
+        if instance.level >= 20:
+            pending = list(instance.pending_asi_levels or [])
+            if 20 not in pending:
+                has_lvl20_feat = instance.character_feats.filter(level_taken=20).exists()
+                has_epic_boon = instance.character_feats.filter(feat__category='epic_boon').exists()
+                if not has_lvl20_feat and not has_epic_boon:
+                    pending.append(20)
+                    instance.pending_asi_levels = pending
+                    instance.save(update_fields=['pending_asi_levels'])
+                    data['pending_asi_levels'] = pending
+        return data
+
     class Meta:
         model = Character
         fields = "__all__"

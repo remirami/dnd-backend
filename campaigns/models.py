@@ -580,8 +580,8 @@ class CharacterXP(models.Model):
                 stats.spell_attack_bonus = calculate_spell_attack_bonus(character, spellcasting_ability)
                 stats.save()
         
-        # Handle Ability Score Improvements (ASI) at levels 4, 8, 12, 16, 19
-        asi_levels = [4, 8, 12, 16, 19]
+        # Handle Ability Score Improvements (ASI) / Epic Boons at levels 4, 8, 12, 16, 19, 20
+        asi_levels = [4, 8, 12, 16, 19, 20]
         levels_with_asi = [lvl for lvl in range(old_level + 1, new_level + 1) if lvl in asi_levels]
         
         # Mark ASI as pending for player choice instead of auto-applying

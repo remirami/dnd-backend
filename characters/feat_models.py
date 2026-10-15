@@ -72,6 +72,19 @@ class Feat(models.Model):
         # Check level requirement
         if character.level < self.minimum_level:
             return False, f"Requires level {self.minimum_level}"
+
+        # Epic Boons are strictly restricted to 20th-level characters
+        category = getattr(self, 'category', 'other')
+        if category == 'epic_boon' or (self.name and self.name.startswith('Boon of')):
+            if character.level < 20:
+                return False, "Requires level 20 (Epic Boon)"
+
+        # Check if already acquired (unless repeatable like Skilled)
+        from campaigns.feat_data import get_feat_config
+        feat_config = get_feat_config(self.name)
+        if getattr(character, 'pk', None) and not feat_config.get('repeatable'):
+            if character.character_feats.filter(feat=self).exists():
+                return False, "Already acquired"
         
         # Check ability score requirements
         if stats.strength < self.strength_requirement:

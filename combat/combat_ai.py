@@ -13,6 +13,66 @@ from django.db import models
 
 from combat.utils import roll_d20
 
+def _attempt_ai_escape_grapple(session, participant, grappler):
+    """
+    5e Rules: A grappled creature can use its action to escape.
+    To do so, it must succeed on a Strength (Athletics) or Dexterity (Acrobatics) check
+    contested by the grappler's Strength (Athletics) check.
+    """
+    from combat.tactical_endpoints import get_skill_modifier
+
+    ai_roll, _ = roll_d20(lucky=getattr(participant, 'has_lucky_trait', lambda: False)())
+    ai_athletics = get_skill_modifier(participant, 'Athletics', 'STR')
+    ai_acrobatics = get_skill_modifier(participant, 'Acrobatics', 'DEX')
+    ai_modifier = max(ai_athletics, ai_acrobatics)
+    ai_skill_name = "Acrobatics" if ai_acrobatics > ai_athletics else "Athletics"
+    ai_total = ai_roll + ai_modifier
+
+    if grappler.is_incapacitated():
+        grappler_roll, grappler_athletics, grappler_total = 0, 0, 0
+    else:
+        grappler_roll, _ = roll_d20(lucky=getattr(grappler, 'has_lucky_trait', lambda: False)())
+        grappler_athletics = get_skill_modifier(grappler, 'Athletics', 'STR')
+        grappler_total = grappler_roll + grappler_athletics
+
+    success = ai_total > grappler_total
+
+    participant.action_used = True
+    participant.attacks_remaining = 0
+    participant.save(update_fields=['action_used', 'attacks_remaining'])
+
+    from combat.models import CombatAction
+
+    if success:
+        participant.release_grapple()
+        msg = f"🔓 {participant.get_name()} uses an action to escape {grappler.get_name()}'s grapple! ({ai_skill_name} {ai_total} vs Athletics {grappler_total})"
+    else:
+        msg = f"{participant.get_name()} attempts to escape {grappler.get_name()}'s grapple, but fails ({ai_skill_name} {ai_total} vs Athletics {grappler_total})."
+
+    try:
+        CombatAction.objects.create(
+            combat_session=session,
+            actor=participant,
+            target=grappler,
+            action_type='escape_grapple',
+            round_number=session.current_round,
+            turn_number=session.current_turn_index,
+            description=msg
+        )
+    except Exception:
+        pass
+
+    action_entry = {
+        'type': 'escape_grapple',
+        'success': success,
+        'message': msg,
+        'attacker': participant.get_name(),
+        'target': grappler.get_name(),
+        'participant_total': ai_total,
+        'grappler_total': grappler_total
+    }
+    return action_entry, success
+
 
 def resolve_enemy_turn(session, participant):
     """
@@ -64,6 +124,38 @@ def resolve_enemy_turn(session, participant):
         return actions
 
     enemy = _resolve_enemy(participant)
+
+    # 5e Grapple Check: If participant is grappled, handle escape or constrained combat
+    if participant.grappled_by or participant.grappled_by_id:
+        grappler = participant.grappled_by or session.participants.filter(id=participant.grappled_by_id).first()
+        if not grappler or grappler.current_hp <= 0 or not grappler.is_active or grappler.is_incapacitated():
+            participant.release_grapple()
+            grappler = None
+        elif participant.get_distance_to(grappler) > (grappler.get_reach() if hasattr(grappler, 'get_reach') else 5):
+            participant.release_grapple()
+            grappler = None
+
+        if grappler:
+            archetype = _determine_archetype(participant, enemy)
+            enemy_attacks = _get_enemy_attacks(participant, enemy)
+            has_melee_atk = any(_is_attack_melee(a) for a in enemy_attacks)
+            has_ranged_atk = any(_is_attack_ranged(a) for a in enemy_attacks)
+            preferred_mode = 'ranged' if (archetype in ['sniper', 'caster'] and has_ranged_atk) or not has_melee_atk else 'melee'
+
+            is_pinned = bool(participant.feature_uses and participant.feature_uses.get('pinned_by')) or participant.has_condition('Restrained')
+            should_escape = is_pinned or (archetype in ['sniper', 'caster']) or preferred_mode == 'ranged' or not has_melee_atk
+
+            if should_escape:
+                action_entry, success = _attempt_ai_escape_grapple(session, participant, grappler)
+                actions.append(action_entry)
+
+                if success:
+                    # AI successfully broke free! Action is used, but movement remains available to reposition
+                    participant.refresh_from_db()
+                    move_res = _execute_ai_movement(session, participant, grappler, attack=None, preferred_mode='ranged')
+                    if move_res:
+                        actions.append(move_res)
+                return actions
 
     # 1. Check for charged special action (e.g. Breath Weapon, AoE, or big spell)
     special_action = _get_ready_special_action(participant, enemy, session=session)
@@ -823,7 +915,9 @@ def _select_target(targets, attacker=None, enemy=None, preferred_mode='melee'):
 
     cur_x = (attacker.position_x or 0) if attacker else 0
     cur_y = (attacker.position_y or 0) if attacker else 0
-    speed = (attacker.speed or 30) if attacker else 30
+    speed = (attacker.speed if attacker and attacker.speed is not None else 30) if attacker else 30
+    if attacker and (attacker.grappled_by_id or attacker.grappled_by or attacker.has_condition('Grappled') or attacker.has_condition('Restrained')):
+        speed = 0
     movement_remaining = max(0, speed - ((attacker.movement_used or 0) if attacker else 0))
     reach = (attacker.get_reach() if hasattr(attacker, 'get_reach') else 5) if attacker else 5
     has_coords = attacker and (attacker.position_x != 0 or attacker.position_y != 0)
@@ -1529,7 +1623,14 @@ def _execute_ai_movement(session, participant, target, attack=None, preferred_mo
     Calculates whether the enemy needs to close distance (for melee)
     or reposition (for ranged) and updates participant coordinates on the 10x8 grid.
     """
-    speed = participant.speed or 30
+    # 5e Rule: Speed is 0 if grappled or restrained
+    if participant.grappled_by_id or participant.grappled_by or participant.has_condition('Grappled') or participant.has_condition('Restrained'):
+        return None
+
+    speed = participant.speed if participant.speed is not None else 30
+    if speed <= 0:
+        return None
+
     movement_used = participant.movement_used or 0
     movement_remaining = max(0, speed - movement_used)
 
@@ -1641,6 +1742,16 @@ def _execute_ai_movement(session, participant, target, attack=None, preferred_mo
         participant.position_y = best_tile[1]
         participant.movement_used = (participant.movement_used or 0) + best_step_cost
         participant.save(update_fields=['position_x', 'position_y', 'movement_used'])
+
+        # 5e Moving a Grappled Creature: Drag grappled targets along to the previous tile
+        if participant.is_grappling:
+            for victim in participant.grappling_targets.filter(is_active=True):
+                victim.position_x = old_x
+                victim.position_y = old_y
+                victim.save(update_fields=['position_x', 'position_y'])
+
+        if hasattr(session, 'clean_grapple_states'):
+            session.clean_grapple_states()
 
         move_desc = (
             f"{participant.get_name()} moved {best_step_cost} ft towards {target.get_name()}."

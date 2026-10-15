@@ -403,7 +403,67 @@ class CombatAPITests(TestCase):
         self.assertEqual(response.status_code, status.HTTP_200_OK)
         self.assertIn('casts', response.data['message'].lower())
         self.assertIn('save_roll', response.data)
-    
+
+    def test_cantrip_scaling_eldritch_blast(self):
+        """Test that Eldritch Blast cantrip scales with character level (5e rules)"""
+        from characters.models import CharacterSpell
+        
+        # Level 20 Warlock character
+        warlock = Character.objects.create(
+            name='Level 20 Warlock',
+            level=20,
+            character_class=self.character_class,
+            race=self.race
+        )
+        CharacterSpell.objects.create(
+            character=warlock,
+            name='Eldritch Blast',
+            level=0,
+            school='evocation',
+            is_prepared=True
+        )
+
+        p_warlock = CombatParticipant.objects.create(
+            combat_session=self.combat_session,
+            participant_type='character',
+            character=warlock,
+            initiative=20,
+            current_hp=100,
+            max_hp=100,
+            armor_class=15
+        )
+        p_target = CombatParticipant.objects.create(
+            combat_session=self.combat_session,
+            participant_type='enemy',
+            encounter_enemy=self.encounter_enemy,
+            initiative=5,
+            current_hp=200,
+            max_hp=200,
+            armor_class=10
+        )
+
+        self.combat_session.status = 'active'
+        self.combat_session.current_round = 1
+        self.combat_session.current_turn_index = 0
+        self.combat_session.save()
+
+        # Cast without damage_string: backend should resolve 4d10 for lvl 20
+        response = self.client.post(
+            f'/api/combat/sessions/{self.combat_session.id}/cast_spell/',
+            {
+                'caster_id': p_warlock.id,
+                'target_id': p_target.id,
+                'spell_name': 'Eldritch Blast',
+                'spell_level': 0,
+            },
+            format='json'
+        )
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        # 4d10 produces damage between 4 and 40 (or 80 on critical)
+        self.assertGreaterEqual(response.data['damage'], 4)
+        self.assertLessEqual(response.data['damage'], 80)
+        self.assertIn('eldritch blast', response.data['message'].lower())
+
     def test_saving_throw(self):
         """Test making a saving throw"""
         participant = CombatParticipant.objects.create(
@@ -891,5 +951,470 @@ class AoESpellCombatTests(TestCase):
         self.assertIsNotNone(eff)
         self.assertEqual(eff.terrain_type, 'thick_vegetation')
         self.assertEqual(eff.cover_area_radius, 10)
+
+
+class CantripScalingTests(TestCase):
+    """Test comprehensive 5e cantrip scaling based on character level and CR"""
+
+    def setUp(self):
+        self.client = APIClient()
+        self.session = CombatSession.objects.create(status='active', current_round=1, current_turn_index=0)
+        self.warlock_class = CharacterClass.objects.create(name='warlock', hit_dice='d8', primary_ability='CHA')
+        self.tiefling = CharacterRace.objects.create(name='tiefling', speed=30)
+        
+        # Level 20 Warlock
+        self.char_lvl20 = Character.objects.create(name='Epic Warlock', level=20, character_class=self.warlock_class, race=self.tiefling)
+        self.stats_lvl20 = CharacterStats.objects.create(
+            character=self.char_lvl20,
+            charisma=20,
+            spell_save_dc=19,
+            spell_attack_bonus=11,
+            hit_points=150,
+            max_hit_points=150,
+            armor_class=15,
+            spell_slots={'5': 4},
+            expended_spell_slots={}
+        )
+        self.caster_lvl20 = CombatParticipant.objects.create(
+            combat_session=self.session,
+            participant_type='character',
+            character=self.char_lvl20,
+            name='Epic Warlock',
+            initiative=20,
+            current_hp=150,
+            max_hp=150,
+            armor_class=15,
+            attacks_remaining=1,
+            action_used=False,
+            position_x=10,
+            position_y=15
+        )
+
+        # Level 5 Wizard
+        self.wizard_class = CharacterClass.objects.create(name='wizard', hit_dice='d6', primary_ability='INT')
+        self.char_lvl5 = Character.objects.create(name='Adept Mage', level=5, character_class=self.wizard_class, race=self.tiefling)
+        self.stats_lvl5 = CharacterStats.objects.create(
+            character=self.char_lvl5,
+            intelligence=18,
+            spell_save_dc=15,
+            spell_attack_bonus=7,
+            hit_points=32,
+            max_hit_points=32,
+            armor_class=12,
+            spell_slots={'1': 4, '2': 3, '3': 2},
+            expended_spell_slots={}
+        )
+        self.caster_lvl5 = CombatParticipant.objects.create(
+            combat_session=self.session,
+            participant_type='character',
+            character=self.char_lvl5,
+            name='Adept Mage',
+            initiative=18,
+            current_hp=32,
+            max_hp=32,
+            armor_class=12,
+            attacks_remaining=1,
+            action_used=False,
+            position_x=10,
+            position_y=15
+        )
+
+        # Target 1: Uninjured Orc (Full HP)
+        self.orc_full = CombatParticipant.objects.create(
+            combat_session=self.session,
+            participant_type='enemy',
+            name='Orc Warrior',
+            initiative=10,
+            current_hp=45,
+            max_hp=45,
+            armor_class=13,
+            position_x=10,
+            position_y=10
+        )
+
+        # Target 2: Injured Orc (Damaged)
+        self.orc_injured = CombatParticipant.objects.create(
+            combat_session=self.session,
+            participant_type='enemy',
+            name='Injured Orc',
+            initiative=9,
+            current_hp=20,
+            max_hp=45,
+            armor_class=13,
+            position_x=15,
+            position_y=10
+        )
+
+    def test_cantrip_formula_scaling_levels(self):
+        """Test scale_cantrip_damage unit scaling across all tiers (1, 5, 11, 17)"""
+        from combat.spell_rules import scale_cantrip_damage
+
+        # Level 1-4: 1x dice
+        self.assertEqual(scale_cantrip_damage('1d10', 1), '1d10')
+        self.assertEqual(scale_cantrip_damage('1d8', 4), '1d8')
+
+        # Level 5-10: 2x dice
+        self.assertEqual(scale_cantrip_damage('1d10', 5), '2d10')
+        self.assertEqual(scale_cantrip_damage('1d8', 10), '2d8')
+        self.assertEqual(scale_cantrip_damage('1d6', 5), '2d6')
+        self.assertEqual(scale_cantrip_damage('1d12', 8), '2d12')
+        self.assertEqual(scale_cantrip_damage('1d4', 6), '2d4')
+
+        # Level 11-16: 3x dice
+        self.assertEqual(scale_cantrip_damage('1d10', 11), '3d10')
+        self.assertEqual(scale_cantrip_damage('1d8', 14), '3d8')
+        self.assertEqual(scale_cantrip_damage('1d6', 16), '3d6')
+
+        # Level 17-20: 4x dice
+        self.assertEqual(scale_cantrip_damage('1d10', 17), '4d10')
+        self.assertEqual(scale_cantrip_damage('1d10', 20), '4d10')
+        self.assertEqual(scale_cantrip_damage('1d8', 20), '4d8')
+        self.assertEqual(scale_cantrip_damage('1d6', 20), '4d6')
+        self.assertEqual(scale_cantrip_damage('1d12', 20), '4d12')
+        self.assertEqual(scale_cantrip_damage('1d4', 20), '4d4')
+
+    def test_cast_spell_eldritch_blast_scaling_lvl20(self):
+        """Level 20 warlock casting Eldritch Blast receives 4d10 force damage roll"""
+        from characters.models import CharacterSpell
+        CharacterSpell.objects.create(character=self.char_lvl20, name='Eldritch Blast', level=0, is_prepared=True)
+
+        response = self.client.post(
+            f'/api/combat/sessions/{self.session.id}/cast_spell/',
+            {
+                'caster_id': self.caster_lvl20.id,
+                'target_id': self.orc_full.id,
+                'spell_name': 'Eldritch Blast',
+                'spell_level': 0,
+            },
+            format='json'
+        )
+        self.assertEqual(response.status_code, status.HTTP_200_OK, response.data)
+        data = response.data
+        self.assertIn('4d10', data.get('damage_string', ''))
+
+    def test_cast_spell_fire_bolt_scaling_lvl5(self):
+        """Level 5 mage casting Fire Bolt receives 2d10 fire damage roll"""
+        from characters.models import CharacterSpell
+        CharacterSpell.objects.create(character=self.char_lvl5, name='Fire Bolt', level=0, is_prepared=True)
+        self.session.current_turn_index = 1
+        self.session.save()
+
+        response = self.client.post(
+            f'/api/combat/sessions/{self.session.id}/cast_spell/',
+            {
+                'caster_id': self.caster_lvl5.id,
+                'target_id': self.orc_full.id,
+                'spell_name': 'Fire Bolt',
+                'spell_level': 0,
+            },
+            format='json'
+        )
+        self.assertEqual(response.status_code, status.HTTP_200_OK, response.data)
+        data = response.data
+        self.assertIn('2d10', data.get('damage_string', ''))
+
+    def test_toll_the_dead_uninjured_vs_injured_scaling(self):
+        """Toll the Dead deals d8 to uninjured targets and d12 to injured targets, both scaled by level"""
+        from characters.models import CharacterSpell
+        CharacterSpell.objects.create(character=self.char_lvl20, name='Toll the Dead', level=0, is_prepared=True)
+
+        # Cast on uninjured target -> 4d8 necrotic
+        resp_uninjured = self.client.post(
+            f'/api/combat/sessions/{self.session.id}/cast_spell/',
+            {
+                'caster_id': self.caster_lvl20.id,
+                'target_id': self.orc_full.id,
+                'spell_name': 'Toll the Dead',
+                'spell_level': 0,
+            },
+            format='json'
+        )
+        self.assertEqual(resp_uninjured.status_code, status.HTTP_200_OK)
+        self.assertIn('4d8', resp_uninjured.data.get('damage_string', ''))
+
+        # Reset caster actions
+        self.caster_lvl20.action_used = False
+        self.caster_lvl20.attacks_remaining = 1
+        self.caster_lvl20.save()
+
+        # Cast on injured target -> 4d12 necrotic
+        resp_injured = self.client.post(
+            f'/api/combat/sessions/{self.session.id}/cast_spell/',
+            {
+                'caster_id': self.caster_lvl20.id,
+                'target_id': self.orc_injured.id,
+                'spell_name': 'Toll the Dead',
+                'spell_level': 0,
+            },
+            format='json'
+        )
+        self.assertEqual(resp_injured.status_code, status.HTTP_200_OK)
+        self.assertIn('4d12', resp_injured.data.get('damage_string', ''))
+
+    def test_other_cantrips_scaling(self):
+        """Test Ray of Frost (4d8), Acid Splash (4d6), and Poison Spray (4d12) scaling at level 20"""
+        from characters.models import CharacterSpell
+        for spell_name in ['Ray of Frost', 'Acid Splash', 'Poison Spray']:
+            CharacterSpell.objects.create(character=self.char_lvl20, name=spell_name, level=0, is_prepared=True)
+
+        # Ray of Frost -> 4d8
+        resp = self.client.post(
+            f'/api/combat/sessions/{self.session.id}/cast_spell/',
+            {
+                'caster_id': self.caster_lvl20.id,
+                'target_id': self.orc_full.id,
+                'spell_name': 'Ray of Frost',
+                'spell_level': 0,
+            },
+            format='json'
+        )
+        self.assertEqual(resp.status_code, status.HTTP_200_OK)
+        self.assertIn('4d8', resp.data.get('damage_string', ''))
+
+        self.caster_lvl20.action_used = False
+        self.caster_lvl20.attacks_remaining = 1
+        self.caster_lvl20.save()
+
+        # Poison Spray -> 4d12
+        resp = self.client.post(
+            f'/api/combat/sessions/{self.session.id}/cast_spell/',
+            {
+                'caster_id': self.caster_lvl20.id,
+                'target_id': self.orc_full.id,
+                'spell_name': 'Poison Spray',
+                'spell_level': 0,
+            },
+            format='json'
+        )
+        self.assertEqual(resp.status_code, status.HTTP_200_OK)
+        self.assertIn('4d12', resp.data.get('damage_string', ''))
+
+
+class SpellUpcastingTests(TestCase):
+    """
+    D&D 5e Upcasting Tests ('At Higher Levels'):
+    Verifies that leveled spells scale appropriately when cast with higher-level spell slots.
+    """
+    def setUp(self):
+        from django.contrib.auth.models import User
+        from characters.models import Character, CharacterClass, CharacterRace, CharacterStats
+        from combat.models import CombatSession, CombatParticipant
+        from encounters.models import Encounter
+
+        self.client = APIClient()
+        self.user = User.objects.create_user(username='upcast_tester', password='password123')
+        self.client.force_authenticate(user=self.user)
+
+        self.encounter = Encounter.objects.create(name='Upcast Encounter', description='Upcast tests')
+        self.session = CombatSession.objects.create(
+            encounter=self.encounter,
+            status='active',
+            current_round=1,
+            current_turn_index=0
+        )
+
+        char_race = CharacterRace.objects.create(name='Tiefling')
+        warlock_class = CharacterClass.objects.create(name='Warlock')
+
+        self.character = Character.objects.create(
+            user=self.user,
+            name='Upcast Caster',
+            level=9,
+            race=char_race,
+            character_class=warlock_class
+        )
+        self.stats = CharacterStats.objects.create(
+            character=self.character,
+            strength=10,
+            dexterity=14,
+            constitution=14,
+            intelligence=12,
+            wisdom=10,
+            charisma=18,
+            spell_save_dc=16,
+            spell_attack_bonus=8,
+            hit_points=60,
+            max_hit_points=60,
+            armor_class=14,
+            spell_slots={'1': 4, '2': 3, '3': 3, '4': 3, '5': 2},
+            expended_spell_slots={}
+        )
+
+        self.caster = CombatParticipant.objects.create(
+            combat_session=self.session,
+            participant_type='character',
+            character=self.character,
+            name='Upcast Caster',
+            initiative=20,
+            current_hp=60,
+            max_hp=60,
+            armor_class=14,
+            attacks_remaining=1,
+            action_used=False,
+            position_x=10,
+            position_y=10
+        )
+
+        self.target = CombatParticipant.objects.create(
+            combat_session=self.session,
+            participant_type='enemy',
+            name='Target Dummy',
+            initiative=10,
+            current_hp=100,
+            max_hp=100,
+            armor_class=10,
+            position_x=15,
+            position_y=10
+        )
+
+        from characters.models import CharacterSpell
+        CharacterSpell.objects.create(character=self.character, name='Fireball', level=3, is_prepared=True)
+        CharacterSpell.objects.create(character=self.character, name='Magic Missile', level=1, is_prepared=True)
+        CharacterSpell.objects.create(character=self.character, name='Guiding Bolt', level=1, is_prepared=True)
+        CharacterSpell.objects.create(character=self.character, name='Armor of Agathys', level=1, is_prepared=True)
+        CharacterSpell.objects.create(character=self.character, name='Aid', level=2, is_prepared=True)
+
+    def test_scale_upcast_spell_damage_formulas(self):
+        """Test unit formula scaling for standard, stepped, and multi-die spells"""
+        from combat.spell_rules import scale_upcast_spell_damage
+
+        # Fireball (base 3): 8d6 -> 9d6 @ lvl 4, 10d6 @ lvl 5
+        self.assertEqual(scale_upcast_spell_damage('fireball', '8d6 fire', 3, 3), '8d6 fire')
+        self.assertEqual(scale_upcast_spell_damage('fireball', '8d6 fire', 3, 4), '9d6 fire')
+        self.assertEqual(scale_upcast_spell_damage('fireball', '8d6 fire', 3, 5), '10d6 fire')
+
+        # Guiding Bolt (base 1): 4d6 -> 5d6 @ lvl 2, 6d6 @ lvl 3
+        self.assertEqual(scale_upcast_spell_damage('guiding bolt', '4d6 radiant', 1, 1), '4d6 radiant')
+        self.assertEqual(scale_upcast_spell_damage('guiding bolt', '4d6 radiant', 1, 2), '5d6 radiant')
+        self.assertEqual(scale_upcast_spell_damage('guiding bolt', '4d6 radiant', 1, 3), '6d6 radiant')
+
+        # Cure Wounds (base 1): 1d8 -> 2d8 @ lvl 2
+        self.assertEqual(scale_upcast_spell_damage('cure wounds', '1d8', 1, 2), '2d8')
+
+        # Scorching Ray (base 2): 6d6 (3 rays) -> 8d6 (4 rays) @ lvl 3, 10d6 (5 rays) @ lvl 4
+        self.assertEqual(scale_upcast_spell_damage('scorching ray', '6d6 fire', 2, 2), '6d6 fire')
+        self.assertEqual(scale_upcast_spell_damage('scorching ray', '6d6 fire', 2, 3), '8d6 fire')
+        self.assertEqual(scale_upcast_spell_damage('scorching ray', '6d6 fire', 2, 4), '10d6 fire')
+
+        # Sleep (base 1): 5d8 -> 7d8 @ lvl 2, 9d8 @ lvl 3
+        self.assertEqual(scale_upcast_spell_damage('sleep', '5d8', 1, 2), '7d8')
+        self.assertEqual(scale_upcast_spell_damage('sleep', '5d8', 1, 3), '9d8')
+
+        # Spiritual Weapon (base 2): +1d8 per 2 slot levels above 2nd
+        self.assertEqual(scale_upcast_spell_damage('spiritual weapon', '1d8 force', 2, 2), '1d8 force')
+        self.assertEqual(scale_upcast_spell_damage('spiritual weapon', '1d8 force', 2, 3), '1d8 force')
+        self.assertEqual(scale_upcast_spell_damage('spiritual weapon', '1d8 force', 2, 4), '2d8 force')
+        self.assertEqual(scale_upcast_spell_damage('spiritual weapon', '1d8 force', 2, 5), '2d8 force')
+        self.assertEqual(scale_upcast_spell_damage('spiritual weapon', '1d8 force', 2, 6), '3d8 force')
+
+        # Disintegrate (base 6): 10d6+40 -> 13d6+40 @ lvl 7
+        self.assertEqual(scale_upcast_spell_damage('disintegrate', '10d6+40 force', 6, 7), '13d6+40 force')
+
+    def test_get_spell_base_level(self):
+        """Test base level lookup for cantrips and leveled spells"""
+        from combat.spell_rules import get_spell_base_level
+
+        self.assertEqual(get_spell_base_level('fire bolt'), 0)
+        self.assertEqual(get_spell_base_level('eldritch blast'), 0)
+        self.assertEqual(get_spell_base_level('magic missile'), 1)
+        self.assertEqual(get_spell_base_level('guiding bolt'), 1)
+        self.assertEqual(get_spell_base_level('armor of agathys'), 1)
+        self.assertEqual(get_spell_base_level('scorching ray'), 2)
+        self.assertEqual(get_spell_base_level('shatter'), 2)
+        self.assertEqual(get_spell_base_level('aid'), 2)
+        self.assertEqual(get_spell_base_level('fireball'), 3)
+        self.assertEqual(get_spell_base_level('lightning bolt'), 3)
+        self.assertEqual(get_spell_base_level('ice storm'), 4)
+        self.assertEqual(get_spell_base_level('cone of cold'), 5)
+        self.assertEqual(get_spell_base_level('disintegrate'), 6)
+
+    def test_cast_spell_fireball_upcast_to_level_4(self):
+        """Casting Fireball at level 4 deals 9d6 fire damage (base 8d6 + 1d6)"""
+        response = self.client.post(
+            f'/api/combat/sessions/{self.session.id}/cast_spell/',
+            {
+                'caster_id': self.caster.id,
+                'target_id': self.target.id,
+                'spell_name': 'Fireball',
+                'spell_level': 4,
+            },
+            format='json'
+        )
+        self.assertEqual(response.status_code, status.HTTP_200_OK, response.data)
+        data = response.data
+        self.assertIn('9d6', data.get('damage_string', ''))
+
+    def test_cast_spell_magic_missile_upcast_to_level_2(self):
+        """Casting Magic Missile at level 2 fires 4 darts (3 base + 1 upcast)"""
+        response = self.client.post(
+            f'/api/combat/sessions/{self.session.id}/cast_spell/',
+            {
+                'caster_id': self.caster.id,
+                'target_id': self.target.id,
+                'spell_name': 'Magic Missile',
+                'spell_level': 2,
+            },
+            format='json'
+        )
+        self.assertEqual(response.status_code, status.HTTP_200_OK, response.data)
+        data = response.data
+        target_results = data.get('target_results', [])
+        self.assertTrue(len(target_results) > 0)
+        self.assertEqual(target_results[0].get('darts_count'), 4)
+
+    def test_cast_spell_guiding_bolt_upcast_to_level_2(self):
+        """Casting Guiding Bolt at level 2 deals 5d6 radiant damage (base 4d6 + 1d6)"""
+        response = self.client.post(
+            f'/api/combat/sessions/{self.session.id}/cast_spell/',
+            {
+                'caster_id': self.caster.id,
+                'target_id': self.target.id,
+                'spell_name': 'Guiding Bolt',
+                'spell_level': 2,
+            },
+            format='json'
+        )
+        self.assertEqual(response.status_code, status.HTTP_200_OK, response.data)
+        data = response.data
+        self.assertIn('5d6', data.get('damage_string', ''))
+
+    def test_cast_spell_armor_of_agathys_upcast_to_level_3(self):
+        """Casting Armor of Agathys at level 3 grants 15 temp HP and 15 cold retaliation"""
+        response = self.client.post(
+            f'/api/combat/sessions/{self.session.id}/cast_spell/',
+            {
+                'caster_id': self.caster.id,
+                'target_id': self.caster.id,
+                'spell_name': 'Armor of Agathys',
+                'spell_level': 3,
+            },
+            format='json'
+        )
+        self.assertEqual(response.status_code, status.HTTP_200_OK, response.data)
+        self.caster.refresh_from_db()
+        self.assertEqual(self.caster.feature_uses.get('temp_hp'), 15)
+        self.assertEqual(self.caster.feature_uses.get('armor_of_agathys_damage'), 15)
+
+    def test_cast_spell_aid_upcast_to_level_3(self):
+        """Casting Aid at level 3 boosts target max & current HP by 10 (5 base + 5 upcast)"""
+        initial_max_hp = self.target.max_hp
+        initial_cur_hp = self.target.current_hp
+
+        response = self.client.post(
+            f'/api/combat/sessions/{self.session.id}/cast_spell/',
+            {
+                'caster_id': self.caster.id,
+                'target_id': self.target.id,
+                'spell_name': 'Aid',
+                'spell_level': 3,
+            },
+            format='json'
+        )
+        self.assertEqual(response.status_code, status.HTTP_200_OK, response.data)
+        self.target.refresh_from_db()
+        self.assertEqual(self.target.max_hp, initial_max_hp + 10)
+        self.assertEqual(self.target.current_hp, initial_cur_hp + 10)
+
+
 
 

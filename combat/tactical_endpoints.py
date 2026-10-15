@@ -198,6 +198,28 @@ def cast_aoe_spell_endpoint(self, request, pk=None):
     })
 
 
+def get_skill_modifier(participant, skill_name, default_ability):
+    """Calculate skill modifier for character or monster."""
+    ability_mod = participant.get_ability_modifier(default_ability)
+    if participant.character:
+        prof_bonus = participant.character.proficiency_bonus
+        profs = participant.character.proficiencies.filter(skill_name__iexact=skill_name)
+        if profs.exists():
+            prof = profs.first()
+            if getattr(prof, 'expertise', False):
+                return ability_mod + (prof_bonus * 2)
+            return ability_mod + prof_bonus
+        return ability_mod
+    elif participant.encounter_enemy and participant.encounter_enemy.enemy:
+        enemy = participant.encounter_enemy.enemy
+        stats = getattr(enemy, 'stats', None)
+        if stats:
+            skill_val = getattr(stats, skill_name.lower(), None)
+            if skill_val is not None:
+                return skill_val
+    return ability_mod
+
+
 def grapple_endpoint(self, request, pk=None):
     """
     Initiate a grapple.
@@ -236,10 +258,16 @@ def grapple_endpoint(self, request, pk=None):
             status=http_status.HTTP_404_NOT_FOUND
         )
     
-    # Check if grappler has action available
-    if grappler.action_used:
+    # Check if grappler has action / attack available
+    if grappler.action_used and grappler.attacks_remaining <= 0:
         return Response(
             {"error": "Grappler has already used their action this turn"},
+            status=http_status.HTTP_400_BAD_REQUEST
+        )
+
+    if grappler.is_incapacitated():
+        return Response(
+            {"error": f"{grappler.get_name()} is {grappler.get_incapacitating_condition()} and cannot grapple."},
             status=http_status.HTTP_400_BAD_REQUEST
         )
     
@@ -266,36 +294,85 @@ def grapple_endpoint(self, request, pk=None):
             {"error": f"{target.get_name()} ({target.get_size_dimensions()['name']}) is too large for {grappler.get_name()} to grapple (maximum one size larger)."},
             status=http_status.HTTP_400_BAD_REQUEST
         )
+
+    # Check melee reach if coordinates are present
+    has_coords = (grappler.position_x != 0 or grappler.position_y != 0 or target.position_x != 0 or target.position_y != 0)
+    if has_coords:
+        reach = grappler.get_reach() if hasattr(grappler, 'get_reach') else 5
+        dist = grappler.get_distance_to(target)
+        if dist > reach:
+            return Response(
+                {"error": f"{target.get_name()} is out of melee reach ({dist} ft away, maximum reach is {reach} ft). Move closer first!"},
+                status=http_status.HTTP_400_BAD_REQUEST
+            )
     
     # Contested check: Grappler's Athletics vs Target's Athletics or Acrobatics
     grappler_roll, _ = roll_d20(lucky=getattr(grappler, 'has_lucky_trait', lambda: False)())
-    grappler_athletics = grappler.get_ability_modifier('STR')  # Simplified
+    grappler_athletics = get_skill_modifier(grappler, 'Athletics', 'STR')
     grappler_total = grappler_roll + grappler_athletics
     
-    target_roll, _ = roll_d20(lucky=getattr(target, 'has_lucky_trait', lambda: False)())
-    # Target can use either Athletics (STR) or Acrobatics (DEX)
-    target_athletics = target.get_ability_modifier('STR')
-    target_acrobatics = target.get_ability_modifier('DEX')
-    target_modifier = max(target_athletics, target_acrobatics)
-    target_total = target_roll + target_modifier
+    if target.is_incapacitated():
+        target_roll, target_modifier, target_total = 0, 0, 0
+    else:
+        target_roll, _ = roll_d20(lucky=getattr(target, 'has_lucky_trait', lambda: False)())
+        target_athletics = get_skill_modifier(target, 'Athletics', 'STR')
+        target_acrobatics = get_skill_modifier(target, 'Acrobatics', 'DEX')
+        target_modifier = max(target_athletics, target_acrobatics)
+        target_total = target_roll + target_modifier
     
     success = grappler_total > target_total
     
+    from bestiary.models import Condition
+    from combat.models import CombatAction
+    from combat.serializers import CombatSessionSerializer
+
     if success:
-        # Apply grapple
+        # Apply grapple state
         grappler.is_grappling = True
-        grappler.action_used = True
-        grappler.save()
-        
         target.grappled_by = grappler
+
+        grappled_cond, _ = Condition.objects.get_or_create(name='Grappled')
+        target.conditions.add(grappled_cond)
+
+        # Consume action / attack
+        if grappler.attacks_remaining > 1:
+            grappler.attacks_remaining -= 1
+        else:
+            grappler.action_used = True
+            grappler.attacks_remaining = 0
+        grappler.save()
+
+        # If airborne without hover, falls to ground
+        if target.altitude > 0 and not getattr(target, 'has_hover', False):
+            target.altitude = 0
+            target.is_flying = False
+            prone_cond, _ = Condition.objects.get_or_create(name='Prone')
+            target.conditions.add(prone_cond)
+
         target.save()
         
-        message = f"{grappler.get_name()} successfully grapples {target.get_name()}! {target.get_name()}'s speed is now 0."
+        message = f"🤼 {grappler.get_name()} successfully grapples {target.get_name()}! (Athletics {grappler_total} vs {target_total}). {target.get_name()}'s speed is now 0."
     else:
-        grappler.action_used = True
+        if grappler.attacks_remaining > 1:
+            grappler.attacks_remaining -= 1
+        else:
+            grappler.action_used = True
+            grappler.attacks_remaining = 0
         grappler.save()
-        message = f"{grappler.get_name()} fails to grapple {target.get_name()}."
+        message = f"{grappler.get_name()} fails to grapple {target.get_name()} (Athletics {grappler_total} vs {target_total})."
     
+    CombatAction.objects.create(
+        combat_session=session,
+        actor=grappler,
+        target=target,
+        action_type='grapple',
+        round_number=session.current_round,
+        turn_number=session.current_turn_index,
+        description=message
+    )
+
+    fresh_session = self.get_queryset().get(pk=session.pk)
+
     return Response({
         'success': success,
         'message': message,
@@ -305,7 +382,8 @@ def grapple_endpoint(self, request, pk=None):
         'target_roll': target_roll,
         'target_modifier': target_modifier,
         'target_total': target_total,
-        'target_speed': 0 if success else target.character.stats.speed if target.character else 30
+        'target_speed': 0 if success else target.speed,
+        'session': CombatSessionSerializer(fresh_session).data
     })
 
 
@@ -349,36 +427,66 @@ def escape_grapple_endpoint(self, request, pk=None):
             {"error": f"{participant.get_name()} is not grappled"},
             status=http_status.HTTP_400_BAD_REQUEST
         )
+
+    if participant.action_used:
+        return Response(
+            {"error": f"{participant.get_name()} has already used their action this turn."},
+            status=http_status.HTTP_400_BAD_REQUEST
+        )
     
     grappler = participant.grappled_by
+    if not grappler:
+        return Response({"error": "You are not currently grappled."}, status=http_status.HTTP_400_BAD_REQUEST)
+
+    reach = grappler.get_reach() if hasattr(grappler, 'get_reach') else 5
+    dist = participant.get_distance_to(grappler)
+    if dist > reach:
+        participant.release_grapple()
+        return Response({
+            "error": f"You are no longer within reach of {grappler.get_name()} ({dist} ft away). The grapple has already ended."
+        }, status=http_status.HTTP_400_BAD_REQUEST)
     
     # Contested check: Grappled's Athletics or Acrobatics vs Grappler's Athletics
     participant_roll, _ = roll_d20(lucky=getattr(participant, 'has_lucky_trait', lambda: False)())
-    participant_athletics = participant.get_ability_modifier('STR')
-    participant_acrobatics = participant.get_ability_modifier('DEX')
+    participant_athletics = get_skill_modifier(participant, 'Athletics', 'STR')
+    participant_acrobatics = get_skill_modifier(participant, 'Acrobatics', 'DEX')
     participant_modifier = max(participant_athletics, participant_acrobatics)
     participant_total = participant_roll + participant_modifier
     
-    grappler_roll, _ = roll_d20(lucky=getattr(grappler, 'has_lucky_trait', lambda: False)())
-    grappler_athletics = grappler.get_ability_modifier('STR')
-    grappler_total = grappler_roll + grappler_athletics
+    if grappler.is_incapacitated():
+        grappler_roll, grappler_athletics, grappler_total = 0, 0, 0
+    else:
+        grappler_roll, _ = roll_d20(lucky=getattr(grappler, 'has_lucky_trait', lambda: False)())
+        grappler_athletics = get_skill_modifier(grappler, 'Athletics', 'STR')
+        grappler_total = grappler_roll + grappler_athletics
     
     success = participant_total > grappler_total
-    
+
+    participant.action_used = True
+    participant.attacks_remaining = 0
+    participant.save(update_fields=['action_used', 'attacks_remaining'])
+
+    from combat.models import CombatAction
+    from combat.serializers import CombatSessionSerializer
+
     if success:
-        # Escape successful
-        participant.grappled_by = None
-        participant.action_used = True
-        participant.save()
-        
-        grappler.is_grappling = False
-        grappler.save()
-        
-        message = f"{participant.get_name()} escapes the grapple!"
+        # Escape successful - release grapple & conditions
+        participant.release_grapple()
+        message = f"🔓 {participant.get_name()} escapes the grapple from {grappler.get_name()}! ({participant_total} vs {grappler_total})"
     else:
-        participant.action_used = True
-        participant.save()
-        message = f"{participant.get_name()} fails to escape the grapple."
+        message = f"{participant.get_name()} fails to escape {grappler.get_name()}'s grapple ({participant_total} vs {grappler_total})."
+
+    CombatAction.objects.create(
+        combat_session=session,
+        actor=participant,
+        target=grappler,
+        action_type='escape_grapple',
+        round_number=session.current_round,
+        turn_number=session.current_turn_index,
+        description=message
+    )
+
+    fresh_session = self.get_queryset().get(pk=session.pk)
     
     return Response({
         'success': success,
@@ -388,7 +496,178 @@ def escape_grapple_endpoint(self, request, pk=None):
         'participant_total': participant_total,
         'grappler_roll': grappler_roll,
         'grappler_modifier': grappler_athletics,
-        'grappler_total': grappler_total
+        'grappler_total': grappler_total,
+        'session': CombatSessionSerializer(fresh_session).data
+    })
+
+
+def release_grapple_endpoint(self, request, pk=None):
+    """
+    Release a grapple as a free action.
+    POST /api/combat/sessions/{id}/release_grapple/
+    Request body: { "grappler_id": 1 }
+    """
+    session = self.get_object()
+    if session.status != 'active':
+        return Response({"error": "Combat is not active"}, status=http_status.HTTP_400_BAD_REQUEST)
+
+    grappler_id = request.data.get('grappler_id')
+    if not grappler_id:
+        return Response({"error": "grappler_id is required"}, status=http_status.HTTP_400_BAD_REQUEST)
+
+    try:
+        grappler = session.participants.get(id=grappler_id)
+    except:
+        return Response({"error": "Participant not found"}, status=http_status.HTTP_404_NOT_FOUND)
+
+    if not grappler.is_grappling:
+        return Response({"error": f"{grappler.get_name()} is not currently grappling anyone."}, status=http_status.HTTP_400_BAD_REQUEST)
+
+    victim = grappler.grappling_targets.first()
+    victim_name = victim.get_name() if victim else "the target"
+    grappler.release_grapple()
+
+    from combat.models import CombatAction
+    from combat.serializers import CombatSessionSerializer
+    desc = f"🫱 {grappler.get_name()} releases {victim_name} from the grapple."
+    CombatAction.objects.create(
+        combat_session=session,
+        actor=grappler,
+        target=victim,
+        action_type='release_grapple',
+        round_number=session.current_round,
+        turn_number=session.current_turn_index,
+        description=desc
+    )
+
+    fresh_session = self.get_queryset().get(pk=session.pk)
+    return Response({
+        'success': True,
+        'message': desc,
+        'session': CombatSessionSerializer(fresh_session).data
+    })
+
+
+def pin_endpoint(self, request, pk=None):
+    """
+    Pin a grappled creature using the 5e Grappler feat.
+    POST /api/combat/sessions/{id}/pin/
+    Request body: { "grappler_id": 1, "target_id": 2 }
+    """
+    session = self.get_object()
+    if session.status != 'active':
+        return Response({"error": "Combat is not active"}, status=http_status.HTTP_400_BAD_REQUEST)
+
+    grappler_id = request.data.get('grappler_id')
+    if not grappler_id:
+        return Response({"error": "grappler_id is required"}, status=http_status.HTTP_400_BAD_REQUEST)
+
+    try:
+        grappler = session.participants.get(id=grappler_id)
+    except:
+        return Response({"error": "Participant not found"}, status=http_status.HTTP_404_NOT_FOUND)
+
+    if not grappler.has_grappler_feat():
+        return Response({
+            "error": f"{grappler.get_name()} does not have the Grappler feat. Pinning requires the Grappler feat."
+        }, status=http_status.HTTP_400_BAD_REQUEST)
+
+    if not grappler.is_grappling:
+        return Response({
+            "error": f"{grappler.get_name()} must be actively grappling a creature to pin it."
+        }, status=http_status.HTTP_400_BAD_REQUEST)
+
+    if grappler.action_used and grappler.attacks_remaining <= 0:
+        return Response({
+            "error": f"{grappler.get_name()} has already used their action this turn."
+        }, status=http_status.HTTP_400_BAD_REQUEST)
+
+    target_id = request.data.get('target_id')
+    if target_id:
+        target = session.participants.filter(id=target_id).first()
+    else:
+        target = grappler.grappling_targets.first()
+
+    if not target or target.grappled_by_id != grappler.id:
+        return Response({"error": "Target must be a creature currently grappled by you."}, status=http_status.HTTP_400_BAD_REQUEST)
+
+    # 5e Reach check: Pinning requires the target to be within melee reach
+    dist = grappler.get_distance_to(target)
+    reach = grappler.get_reach() if hasattr(grappler, 'get_reach') else 5
+    if dist > reach:
+        grappler.release_grapple()
+        return Response({
+            "error": f"{target.get_name()} is out of melee reach ({dist} ft away, max reach is {reach} ft). The grapple has ended."
+        }, status=http_status.HTTP_400_BAD_REQUEST)
+
+    # Check if already pinned
+    if grappler.feature_uses and grappler.feature_uses.get('is_pinning'):
+        return Response({"error": f"{target.get_name()} is already pinned!"}, status=http_status.HTTP_400_BAD_REQUEST)
+
+    # Contested grapple check: Grappler's Athletics vs Target's Athletics or Acrobatics
+    grappler_roll, _ = roll_d20(lucky=getattr(grappler, 'has_lucky_trait', lambda: False)())
+    grappler_athletics = get_skill_modifier(grappler, 'Athletics', 'STR')
+    grappler_total = grappler_roll + grappler_athletics
+
+    if target.is_incapacitated():
+        target_roll, target_modifier, target_total = 0, 0, 0
+    else:
+        target_roll, _ = roll_d20(lucky=getattr(target, 'has_lucky_trait', lambda: False)())
+        target_athletics = get_skill_modifier(target, 'Athletics', 'STR')
+        target_acrobatics = get_skill_modifier(target, 'Acrobatics', 'DEX')
+        target_modifier = max(target_athletics, target_acrobatics)
+        target_total = target_roll + target_modifier
+
+    # Action cost
+    grappler.action_used = True
+    grappler.attacks_remaining = 0
+
+    from bestiary.models import Condition
+    from combat.models import CombatAction
+    from combat.serializers import CombatSessionSerializer
+
+    success = grappler_total > target_total
+    if success:
+        restrained_cond, _ = Condition.objects.get_or_create(name='Restrained')
+        grappler.conditions.add(restrained_cond)
+        target.conditions.add(restrained_cond)
+
+        if not isinstance(grappler.feature_uses, dict):
+            grappler.feature_uses = {}
+        if not isinstance(target.feature_uses, dict):
+            target.feature_uses = {}
+
+        grappler.feature_uses['is_pinning'] = target.id
+        target.feature_uses['pinned_by'] = grappler.id
+        grappler.save(update_fields=['action_used', 'attacks_remaining', 'feature_uses'])
+        target.save(update_fields=['feature_uses'])
+
+        desc = f"📌 Grappler Feat Pin! {grappler.get_name()} pins {target.get_name()} (Athletics {grappler_total} vs {target_total})! Both {grappler.get_name()} and {target.get_name()} are now RESTRAINED until the grapple ends."
+    else:
+        grappler.save(update_fields=['action_used', 'attacks_remaining'])
+        desc = f"📌 {grappler.get_name()} attempts to pin {target.get_name()}, but fails! (Athletics {grappler_total} vs {target_total}). Grapple remains active."
+
+    CombatAction.objects.create(
+        combat_session=session,
+        actor=grappler,
+        target=target,
+        action_type='pin',
+        round_number=session.current_round,
+        turn_number=session.current_turn_index,
+        description=desc
+    )
+
+    fresh_session = self.get_queryset().get(pk=session.pk)
+    return Response({
+        'success': success,
+        'message': desc,
+        'grappler_roll': grappler_roll,
+        'grappler_modifier': grappler_athletics,
+        'grappler_total': grappler_total,
+        'target_roll': target_roll,
+        'target_modifier': target_modifier,
+        'target_total': target_total,
+        'session': CombatSessionSerializer(fresh_session).data
     })
 
 

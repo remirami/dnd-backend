@@ -11,6 +11,7 @@ from rest_framework import status
 from rest_framework.decorators import action
 from rest_framework.response import Response
 
+from bestiary.models import Condition
 from combat.condition_effects import auto_apply_condition_from_spell, is_condition_immune
 from combat.environmental_effects import (
     calculate_cover_ac_bonus,
@@ -142,8 +143,11 @@ class CombatActionMixin:
         
         matched_action = None
         if attacker.character:
-            # 1. Match weapon by attack_name first if provided
-            if attack_name:
+            # 1. Check if explicitly an Unarmed Strike / Martial Arts Strike
+            is_unarmed_attack = bool(attack_name and any(u in attack_name.lower() for u in ['unarmed', 'martial arts']))
+            if is_unarmed_attack:
+                equipped_weapon = None
+            elif attack_name:
                 matched_ci = attacker.character.character_items.filter(
                     item__name__iexact=attack_name,
                     item__weapon__isnull=False
@@ -161,11 +165,12 @@ class CombatActionMixin:
                     if not equipped_weapon:
                         equipped_weapon = Weapon.objects.filter(name__icontains=attack_name).first()
 
-            # 2. Fall back to equipped weapon in slot
-            if not equipped_weapon:
-                equipped_weapon = attacker.get_equipped_weapon(weapon_slot)
-            if not equipped_weapon and weapon_slot == 'main_hand':
-                equipped_weapon = attacker.get_equipped_weapon('two_handed') or attacker.get_equipped_weapon('off_hand')
+            # 2. Fall back to equipped weapon in slot if not an explicit unarmed attack
+            if not is_unarmed_attack:
+                if not equipped_weapon:
+                    equipped_weapon = attacker.get_equipped_weapon(weapon_slot)
+                if not equipped_weapon and weapon_slot == 'main_hand':
+                    equipped_weapon = attacker.get_equipped_weapon('two_handed') or attacker.get_equipped_weapon('off_hand')
 
             if equipped_weapon:
                 attack_name = attack_name or equipped_weapon.name
@@ -177,9 +182,12 @@ class CombatActionMixin:
                     'ranged' in str(getattr(equipped_weapon, 'weapon_type', '')).lower() or
                     ((getattr(equipped_weapon, 'range_normal', 0) or 0) > 5 and not getattr(equipped_weapon, 'thrown', False))
                 )
+                str_mod = attacker.get_ability_modifier('STR')
+                dex_mod = attacker.get_ability_modifier('DEX')
                 if getattr(equipped_weapon, 'finesse', False):
-                    str_mod = attacker.get_ability_modifier('STR')
-                    dex_mod = attacker.get_ability_modifier('DEX')
+                    use_ability = 'DEX' if dex_mod > str_mod else 'STR'
+                elif attacker.is_monk():
+                    # Monks can use DEX for monk weapons if DEX > STR
                     use_ability = 'DEX' if dex_mod > str_mod else 'STR'
                 elif is_weapon_ranged:
                     use_ability = 'DEX'
@@ -187,8 +195,14 @@ class CombatActionMixin:
                     use_ability = 'STR'
             else:
                 attack_name = attack_name or 'Unarmed Strike'
-                damage_string = "1d4"
-                use_ability = 'STR'
+                if attacker.is_monk():
+                    damage_string = attacker.get_martial_arts_die()
+                    str_mod = attacker.get_ability_modifier('STR')
+                    dex_mod = attacker.get_ability_modifier('DEX')
+                    use_ability = 'DEX' if dex_mod > str_mod else 'STR'
+                else:
+                    damage_string = "1"
+                    use_ability = 'STR'
 
             ability_mod = attacker.get_ability_modifier(use_ability)
             damage_ability_mod = ability_mod
@@ -550,6 +564,12 @@ class CombatActionMixin:
             advantage = True
             adv_reasons.append("Target is Reckless")
 
+        # 5e Grappler Feat: Advantage on attack rolls against a creature you are grappling
+        if attacker.has_grappler_feat() and target.grappled_by_id == attacker.id:
+            advantage = True
+            if "Grappler Feat (Attacking grappled target)" not in adv_reasons:
+                adv_reasons.append("Grappler Feat (Attacking grappled target)")
+
         # Check Pack Tactics
         if attacker.has_trait('pack_tactics') or (resolved_enemy and hasattr(resolved_enemy, 'traits') and resolved_enemy.traits.filter(name__icontains='pack tactics').exists()):
             allies = session.participants.filter(
@@ -692,6 +712,24 @@ class CombatActionMixin:
             bless_val = random.randint(1, 4)
             other_modifiers += bless_val
             adv_reasons.append(f"Bless (+{bless_val})")
+
+        # Paladin Sacred Weapon: add Charisma modifier to attack rolls
+        if attacker.feature_uses and attacker.feature_uses.get('sacred_weapon_active'):
+            sw_bonus = attacker.feature_uses.get('sacred_weapon_bonus', 0)
+            other_modifiers += sw_bonus
+            adv_reasons.append(f"Sacred Weapon (+{sw_bonus})")
+
+        # Bardic Inspiration on attack: if actor has bardic inspiration die and chooses to use it
+        use_bi = request.data.get('use_bardic_inspiration')
+        if attacker.feature_uses and attacker.feature_uses.get('has_bardic_inspiration'):
+            die_str = attacker.feature_uses.get('has_bardic_inspiration', 'd6')
+            die_sides = int(die_str.replace('d', '')) if 'd' in str(die_str) else 6
+            if use_bi:
+                bi_roll = random.randint(1, die_sides)
+                other_modifiers += bi_roll
+                adv_reasons.append(f"Bardic Inspiration (+{bi_roll})")
+                attacker.feature_uses.pop('has_bardic_inspiration', None)
+                attacker.save(update_fields=['feature_uses'])
         
         attack_total, attack_breakdown = calculate_attack_roll(
             roll, ability_mod, proficiency_bonus, proficiency, other_modifiers
@@ -755,6 +793,8 @@ class CombatActionMixin:
         damage_breakdown = ""
         concentration_broken = False
         attack_damage_type = None
+        smite_total = 0
+        sa_total = 0
 
         if hit:
             # Determine damage type
@@ -800,8 +840,75 @@ class CombatActionMixin:
                 damage_amount, damage_breakdown = calculate_damage(
                     damage_string, damage_modifier, critical
                 )
-                if rage_bonus > 0:
-                    damage_breakdown += f" (+{rage_bonus} Rage)"
+            # Paladin: Divine Smite
+            smite_slot = request.data.get('smite_slot_level') or (1 if request.data.get('use_divine_smite') else None)
+            if smite_slot and is_melee and attacker.character and attacker.is_paladin():
+                try:
+                    smite_slot = int(smite_slot)
+                    stats = getattr(attacker.character, 'stats', None)
+                    if stats:
+                        slots = stats.spell_slots or {}
+                        expended = stats.expended_spell_slots or {}
+                        s_key = str(smite_slot)
+                        max_s = int(slots.get(s_key, 0))
+                        used_s = int(expended.get(s_key, 0))
+                        if max_s > used_s:
+                            expended[s_key] = used_s + 1
+                            stats.expended_spell_slots = expended
+                            stats.save(update_fields=['expended_spell_slots'])
+                            # 2d8 for 1st level, +1d8 per slot level above 1st (max 5d8), +1d8 vs undead/fiend (max 6d8)
+                            dice_count = min(5, 1 + smite_slot)
+                            if target.is_undead() or target.is_fiend():
+                                dice_count = min(6, dice_count + 1)
+                            if critical:
+                                dice_count *= 2
+                            smite_rolls = [random.randint(1, 8) for _ in range(dice_count)]
+                            smite_total = sum(smite_rolls)
+                            damage_amount += smite_total
+                            damage_breakdown += f" | ⚡ Divine Smite ({dice_count}d8): +{smite_total} Radiant ({', '.join(map(str, smite_rolls))})"
+                except Exception:
+                    pass
+
+            # Rogue: Sneak Attack
+            wants_sa = request.data.get('use_sneak_attack', True)
+            if wants_sa and attacker.is_rogue() and not attacker.feature_uses.get('sneak_attack_used_this_turn'):
+                is_finesse = getattr(equipped_weapon, 'finesse', False)
+                if not is_finesse and equipped_weapon and hasattr(equipped_weapon, 'properties'):
+                    try:
+                        is_finesse = equipped_weapon.properties.filter(name__icontains='finesse').exists()
+                    except Exception:
+                        pass
+                is_finesse_or_ranged = (not is_melee) or is_finesse or (equipped_weapon and 'ranged' in str(getattr(equipped_weapon, 'weapon_type', '')).lower())
+                if not is_finesse_or_ranged and not equipped_weapon:
+                    is_finesse_or_ranged = True
+                
+                has_sneak_condition = False
+                if final_advantage and not final_disadvantage:
+                    has_sneak_condition = True
+                elif not (disadvantage or final_disadvantage):
+                    allies = session.participants.filter(
+                        participant_type=attacker.participant_type,
+                        is_active=True,
+                        current_hp__gt=0
+                    ).exclude(id=attacker.id)
+                    for ally in allies:
+                        if not ally.is_incapacitated() and target.get_distance_to(ally) <= 5:
+                            has_sneak_condition = True
+                            break
+                
+                if is_finesse_or_ranged and has_sneak_condition:
+                    rogue_lvl = attacker.character.level or 1
+                    sa_dice = max(1, (rogue_lvl + 1) // 2)
+                    if critical:
+                        sa_dice *= 2
+                    sa_rolls = [random.randint(1, 6) for _ in range(sa_dice)]
+                    sa_total = sum(sa_rolls)
+                    damage_amount += sa_total
+                    damage_breakdown += f" | 🗡️ Sneak Attack ({sa_dice}d6): +{sa_total} ({', '.join(map(str, sa_rolls))})"
+                    if not isinstance(attacker.feature_uses, dict):
+                        attacker.feature_uses = {}
+                    attacker.feature_uses['sneak_attack_used_this_turn'] = True
+                    attacker.save(update_fields=['feature_uses'])
 
             _new_hp, concentration_broken = target.take_damage(damage_amount, damage_type=attack_damage_type, is_critical=critical)
             attack_resistance_info = getattr(target, 'last_resistance_info', None)
@@ -880,8 +987,15 @@ class CombatActionMixin:
         fresh_session = self.get_queryset().get(pk=session.pk)
         session_data = self.get_serializer(fresh_session).data if hasattr(self, 'get_serializer') else CombatSessionSerializer(fresh_session).data
 
+        extra_info = []
+        if smite_total:
+            extra_info.append(f"Divine Smite (+{smite_total} Radiant)")
+        if sa_total:
+            extra_info.append(f"Sneak Attack (+{sa_total})")
+        msg_suffix = f" ({', '.join(extra_info)})" if extra_info else ""
+
         return Response({
-            "message": f"{attacker.get_name()} attacks {target.get_name()}",
+            "message": f"{attacker.get_name()} attacks {target.get_name()}{msg_suffix}",
             "attack_roll": roll,
             "attack_total": attack_total,
             "target_ac": target_ac,
@@ -975,9 +1089,10 @@ class CombatActionMixin:
                 status=status.HTTP_400_BAD_REQUEST
             )
         
+        dm_override = data.get('dm_override', False)
         # Check if it's caster's turn
         current = session.get_current_participant()
-        if current != caster:
+        if not dm_override and current != caster:
             return Response(
                 {"error": f"It is not {caster.get_name()}'s turn"},
                 status=status.HTTP_400_BAD_REQUEST
@@ -1109,7 +1224,7 @@ class CombatActionMixin:
                 targets = targets[:total_missile_darts]
 
         # Validate spell range (Self, Touch, X feet)
-        SPELL_RANGE_FALLBACKS = {
+        SPELL_RANGE_DEFINITIONS = {
             'cure wounds': 'Touch',
             'inflict wounds': 'Touch',
             'shocking grasp': 'Touch',
@@ -1124,6 +1239,12 @@ class CombatActionMixin:
             'misty step': 'Self',
             'thunderwave': 'Self (15-foot cube)',
             'burning hands': 'Self (15-foot cone)',
+            'color spray': 'Self (15-foot cone)',
+            'cone of cold': 'Self (60-foot cone)',
+            'lightning bolt': 'Self (100-foot line)',
+            'gust of wind': 'Self (60-foot line)',
+            'fear': 'Self (30-foot cone)',
+            'prismatic spray': 'Self (60-foot cone)',
             'blur': 'Self',
             'mirror image': 'Self',
             'expeditious retreat': 'Self',
@@ -1143,21 +1264,51 @@ class CombatActionMixin:
             'scorching ray': '120 feet',
             'grease': '60 feet',
             'fog cloud': '120 feet',
+            'shatter': '60 feet (10-foot radius)',
+            'acid splash': '60 feet',
         }
 
-        raw_range = None
-        if spell_obj and spell_obj.range:
-            raw_range = spell_obj.range.strip()
-        elif clean_spell_name in SPELL_RANGE_FALLBACKS:
-            raw_range = SPELL_RANGE_FALLBACKS[clean_spell_name]
+        from combat.aoe_utils import AOE_SPELL_TEMPLATES
+        from combat.spell_rules import SPELL_RULES
 
-        lower_range = raw_range.lower() if raw_range else ""
+        raw_range = None
+        if clean_spell_name in SPELL_RANGE_DEFINITIONS:
+            raw_range = SPELL_RANGE_DEFINITIONS[clean_spell_name]
+        elif clean_spell_name in SPELL_RULES and SPELL_RULES[clean_spell_name].get('range'):
+            raw_range = SPELL_RULES[clean_spell_name]['range']
+        elif spell_obj and spell_obj.range:
+            raw_range = spell_obj.range.strip()
+
+        # Check AoE template definitions (e.g. Thunderwave, Burning Hands) if range is just 'Self'
+        aoe_template = AOE_SPELL_TEMPLATES.get(clean_spell_name) or AOE_SPELL_TEMPLATES.get(clean_spell_name.replace(' ', '_'))
+        if aoe_template and (not raw_range or raw_range.lower() == 'self'):
+            raw_range = f"Self ({aoe_template['size']}-foot {aoe_template['shape']})"
+
+        lower_range = raw_range.lower() if raw_range else ''
+        is_aoe_spell = any(s in lower_range for s in ['cone', 'cube', 'sphere', 'cylinder', 'line']) or bool(aoe_template)
         if lower_range:
-            if lower_range == 'self' or (lower_range.startswith('self') and '(' not in lower_range):
+            if lower_range == 'self' or (lower_range.startswith('self') and not is_aoe_spell):
                 for t in targets:
                     if t != caster:
                         return Response(
                             {"error": f"{spell_name} has a range of Self and can only target yourself."},
+                            status=status.HTTP_400_BAD_REQUEST
+                        )
+            elif is_aoe_spell and lower_range.startswith('self'):
+                # For Self-area spells (e.g. Self (15-foot cube), Self (15-foot cone)),
+                # the effect originates from caster; targets in the blast area can be up to area_size + 15 ft away.
+                area_match = re.search(r'(\d+)', lower_range)
+                max_reach = (int(area_match.group(1)) + 15) if area_match else 30
+                for t in targets:
+                    if t == caster:
+                        continue
+                    has_coords = (caster.position_x != 0 or caster.position_y != 0 or t.position_x != 0 or t.position_y != 0)
+                    if not has_coords:
+                        continue
+                    dist = caster.get_distance_to(t)
+                    if dist > max_reach:
+                        return Response(
+                            {"error": f"{spell_name} affects an area originating from you up to {max_reach} ft away, but {t.get_name()} is {dist} ft away."},
                             status=status.HTTP_400_BAD_REQUEST
                         )
             else:
@@ -1179,7 +1330,8 @@ class CombatActionMixin:
                         range_match = re.search(r'(\d+)', lower_range)
                         if range_match:
                             max_range = int(range_match.group(1))
-                            if dist > max_range:
+                            allowed_dist = (max_range + 20) if is_aoe_spell else max_range
+                            if dist > allowed_dist:
                                 return Response(
                                     {"error": f"{spell_name} has a range of {max_range} ft, but {t.get_name()} is {dist} ft away."},
                                     status=status.HTTP_400_BAD_REQUEST
@@ -1187,7 +1339,6 @@ class CombatActionMixin:
 
         # 5e Line of Sight & Total Cover check for targeted spells
         # (Spells requiring a target cannot target a creature behind Total Cover)
-        is_aoe_spell = any(s in lower_range for s in ['cone', 'cube', 'sphere', 'cylinder', 'line'])
         if not is_aoe_spell and not is_healing:
             from combat.battlefield import get_attack_cover
             for t in set(targets):
@@ -1367,6 +1518,74 @@ class CombatActionMixin:
         if is_healing or clean_spell_name in healing_spell_names:
             is_healing = True
 
+        # For offensive AoE spells (e.g. Thunderwave, Burning Hands, Cone of Cold),
+        # exclude caster from being targeted or damaged by their own blast
+        if is_aoe_spell and not is_healing:
+            targets = [t for t in targets if t.id != caster.id]
+
+        # Resolve fallbacks for save_type, damage_string, and damage_type from spell rules if not provided
+        rule_def = SPELL_RULES.get(clean_spell_name) or {}
+
+        # 5e Cantrip scaling based on character level / CR & Leveled Spell Upcasting
+        from combat.spell_rules import is_cantrip, scale_cantrip_damage, scale_upcast_spell_damage, get_spell_base_level
+        caster_lvl = 1
+        if caster.character:
+            caster_lvl = caster.character.level or 1
+        elif caster.encounter_enemy:
+            cr_val = getattr(caster.encounter_enemy.enemy, 'challenge_rating', None) or 1
+            try:
+                caster_lvl = int(float(cr_val))
+            except (ValueError, TypeError):
+                caster_lvl = 1
+        elif hasattr(caster, 'character_level') and caster.character_level:
+            caster_lvl = caster.character_level
+        elif hasattr(caster, 'level') and caster.level:
+            caster_lvl = caster.level
+
+        is_a_cantrip = (spell_level == 0) or is_cantrip(clean_spell_name) or (spell_obj and spell_obj.level == 0)
+        base_lvl = get_spell_base_level(clean_spell_name, spell_obj=spell_obj, aoe_template=aoe_template)
+
+        if not damage_string:
+            if aoe_template and aoe_template.get('base_damage'):
+                base_formula = aoe_template['base_damage']
+                if is_a_cantrip:
+                    damage_string = scale_cantrip_damage(base_formula, caster_lvl)
+                else:
+                    damage_string = scale_upcast_spell_damage(clean_spell_name, base_formula, base_lvl, spell_level)
+            elif rule_def.get('damage'):
+                base_formula = rule_def['damage'].split()[0]
+                if is_a_cantrip:
+                    damage_string = scale_cantrip_damage(base_formula, caster_lvl)
+                else:
+                    damage_string = scale_upcast_spell_damage(clean_spell_name, base_formula, base_lvl, spell_level)
+            elif rule_def.get('healing'):
+                base_formula = rule_def['healing'].split()[0]
+                damage_string = scale_upcast_spell_damage(clean_spell_name, base_formula, base_lvl, spell_level)
+            elif spell_obj and spell_obj.damage_progression.first():
+                base_formula = spell_obj.damage_progression.first().damage_dice
+                if is_a_cantrip:
+                    damage_string = scale_cantrip_damage(base_formula, caster_lvl)
+                else:
+                    damage_string = scale_upcast_spell_damage(clean_spell_name, base_formula, base_lvl, spell_level)
+        elif is_a_cantrip and caster_lvl >= 5:
+            # If an unscaled 1-die cantrip formula (e.g. "1d10") was passed, scale it to match character level
+            damage_string = scale_cantrip_damage(damage_string, caster_lvl)
+        elif not is_a_cantrip and spell_level:
+            if int(spell_level) > base_lvl:
+                damage_string = scale_upcast_spell_damage(clean_spell_name, damage_string, base_lvl, spell_level)
+        if not save_type:
+            if aoe_template and aoe_template.get('save_type'):
+                save_type = aoe_template['save_type'].upper()
+            elif rule_def.get('save_type'):
+                save_type = rule_def['save_type'].upper()
+        if not spell_damage_type:
+            if aoe_template and aoe_template.get('damage_type'):
+                spell_damage_type = aoe_template['damage_type']
+            elif rule_def.get('damage_type'):
+                spell_damage_type = rule_def['damage_type']
+        if save_type and not save_dc:
+            save_dc = caster.get_spell_save_dc() or 13
+
         # Roll base damage/healing once (5e rules: AoE rolls damage once and applies to all affected)
         base_damage = 0
         if damage_string:
@@ -1385,6 +1604,16 @@ class CombatActionMixin:
             t_cond = None
             concentration_broken = False
 
+            # Dedicated 5e Toll the Dead calculation (1d8 necrotic if uninjured, 1d12 necrotic if injured)
+            if clean_spell_name == 'toll the dead':
+                dice_die = '1d12' if (t.current_hp is not None and t.max_hp is not None and t.current_hp < t.max_hp) else '1d8'
+                t_formula = scale_cantrip_damage(dice_die, caster_lvl)
+                current_base_damage, _ = calculate_damage(t_formula, 0, False)
+                if t == primary_target or not damage_string:
+                    damage_string = t_formula
+            else:
+                current_base_damage = base_damage
+
             rider_str = ""
             if is_healing:
                 from combat.spell_rules import can_heal_target
@@ -1393,7 +1622,7 @@ class CombatActionMixin:
                     c_type = getattr(getattr(t.encounter_enemy, 'enemy', None), 'creature_type', 'undead') if t.encounter_enemy else 'undead'
                     rider_str += f" [No effect on {c_type}]"
                 else:
-                    t_healing = max(1, base_damage)
+                    t_healing = max(1, current_base_damage)
                     t.heal(t_healing)
             elif save_type and save_dc:
                 if is_auto_fail_save(t, save_type):
@@ -1425,11 +1654,11 @@ class CombatActionMixin:
                         if used_lr:
                             rider_str += " [Legendary Resistance Used!]"
 
-                if base_damage > 0:
+                if current_base_damage > 0:
                     if t_save_success:
-                        t_damage = (base_damage // 2) if half_on_save else 0
+                        t_damage = (current_base_damage // 2) if half_on_save else 0
                     else:
-                        t_damage = base_damage
+                        t_damage = current_base_damage
                     if t_damage > 0:
                         _new_hp, concentration_broken = t.take_damage(t_damage, damage_type=spell_damage_type, is_critical=False)
                         if getattr(t, 'last_relentless_endurance_triggered', False):
@@ -1437,8 +1666,8 @@ class CombatActionMixin:
                         if getattr(t, 'last_undead_fortitude_triggered', False):
                             f_info = getattr(t, 'undead_fortitude_details', {}) or {}
                             rider_str += f" [Undead Fortitude: Remained at 1 HP (DC {f_info.get('dc', 0)})]"
-            elif base_damage > 0:
-                t_damage = base_damage
+            elif current_base_damage > 0:
+                t_damage = current_base_damage
                 _new_hp, concentration_broken = t.take_damage(t_damage, damage_type=spell_damage_type, is_critical=False)
                 if getattr(t, 'last_relentless_endurance_triggered', False):
                     rider_str += " [Relentless Endurance: Kept at 1 HP]"
@@ -1455,13 +1684,37 @@ class CombatActionMixin:
                 dist = math.hypot(dx, dy)
                 if dist == 0:
                     dx, dy, dist = 1, 0, 1
-                # 10 feet push (2 grid cells)
-                step_x = round((dx / dist) * 10 / 5) * 5
-                step_y = round((dy / dist) * 10 / 5) * 5
-                # Clamp strictly to battlefield grid boundaries [0, 45] feet (10x10 grid: 0 to 45 ft)
-                # Never wrap around or push off the edge!
+                dir_x = 1 if dx > 0 else (-1 if dx < 0 else 0)
+                dir_y = 1 if dy > 0 else (-1 if dy < 0 else 0)
+                # D&D 5E: pushed 10 feet away (2 squares)
+                if abs(dx) > abs(dy) * 1.5:
+                    step_x = dir_x * 10
+                    step_y = 0
+                elif abs(dy) > abs(dx) * 1.5:
+                    step_x = 0
+                    step_y = dir_y * 10
+                else:
+                    step_x = dir_x * 10
+                    step_y = dir_y * 10
+                # Clamp strictly to battlefield grid boundaries [0, 45] ft cols, [0, 35] ft rows
                 new_x = max(0, min(45, (t.position_x or 0) + step_x))
-                new_y = max(0, min(45, (t.position_y or 0) + step_y))
+                new_y = max(0, min(35, (t.position_y or 0) + step_y))
+                # Check if destination tile is already occupied by another active participant
+                occ = session.participants.filter(
+                    position_x=new_x, position_y=new_y, is_active=True, current_hp__gt=0
+                ).exclude(id=t.id).first()
+                if occ:
+                    # If blocked at 10 ft, attempt 5 ft push
+                    half_x = max(0, min(45, (t.position_x or 0) + (step_x // 2)))
+                    half_y = max(0, min(35, (t.position_y or 0) + (step_y // 2)))
+                    occ_half = session.participants.filter(
+                        position_x=half_x, position_y=half_y, is_active=True, current_hp__gt=0
+                    ).exclude(id=t.id).first()
+                    if not occ_half:
+                        new_x, new_y = half_x, half_y
+                    else:
+                        new_x, new_y = t.position_x, t.position_y
+
                 if new_x != t.position_x or new_y != t.position_y:
                     t.position_x = new_x
                     t.position_y = new_y
@@ -1495,7 +1748,7 @@ class CombatActionMixin:
             from combat.spell_rules import is_buff_spell, apply_buff_to_target
             buff_applied = None
             if is_buff_spell(spell_name):
-                buff_applied = apply_buff_to_target(caster, t, spell_name)
+                buff_applied = apply_buff_to_target(caster, t, spell_name, spell_level=spell_level)
 
             t_resistance_info = getattr(t, 'last_resistance_info', None)
             t_cond_immune = getattr(t, 'last_condition_immune', None)
@@ -1504,6 +1757,9 @@ class CombatActionMixin:
                 "target_id": t.id,
                 "target_name": t.get_name(),
                 "target_hp": t.current_hp,
+                "position_x": t.position_x,
+                "position_y": t.position_y,
+                "pushed": bool(pushed_str),
                 "save_roll": t_save_roll,
                 "save_total": t_save_total,
                 "save_success": t_save_success,
@@ -1715,6 +1971,7 @@ class CombatActionMixin:
             "message": desc,
             "spell_name": spell_name,
             "spell_level": spell_level,
+            "damage_string": damage_string,
             "is_bonus_action": is_bonus_action,
             "target": primary_target.get_name() if primary_target else None,
             "target_id": primary_target.id if primary_target else None,
@@ -1962,12 +2219,11 @@ class CombatActionMixin:
             except CombatParticipant.DoesNotExist:
                 target = actor
         
-        if target.participant_type == 'enemy':
-            return Response({"error": "Cannot use beneficial features on a hostile enemy."}, status=status.HTTP_400_BAD_REQUEST)
-        
         clean_name = feature_name.strip().lower()
         
         if 'lay on hands' in clean_name:
+            if target.participant_type == 'enemy':
+                return Response({"error": "Cannot use beneficial features on a hostile enemy."}, status=status.HTTP_400_BAD_REQUEST)
             if actor.action_used or actor.attacks_remaining <= 0:
                 return Response({"error": f"{actor.get_name()} has already used their action this turn."}, status=status.HTTP_400_BAD_REQUEST)
             
@@ -2263,6 +2519,733 @@ class CombatActionMixin:
                 "action": CombatActionSerializer(combat_action).data
             })
 
+        elif 'turn undead' in clean_name:
+            char_lvl = (actor.character.level or 1) if actor.character else 1
+            if not actor.is_cleric() and not any('turn undead' in f.name.lower() for f in (actor.character.features.all() if actor.character else [])):
+                return Response({"error": "Turn Undead requires Cleric level 2+."}, status=status.HTTP_400_BAD_REQUEST)
+            if char_lvl < 2 and not any('turn undead' in f.name.lower() for f in (actor.character.features.all() if actor.character else [])):
+                return Response({"error": "Turn Undead requires Cleric level 2+."}, status=status.HTTP_400_BAD_REQUEST)
+            
+            if actor.action_used or actor.attacks_remaining <= 0:
+                return Response({"error": f"{actor.get_name()} has already used their action this turn."}, status=status.HTTP_400_BAD_REQUEST)
+            
+            remaining_cd = actor.get_channel_divinity_uses_remaining()
+            if remaining_cd <= 0:
+                return Response({"error": "No Channel Divinity uses remaining (regains after short or long rest)."}, status=status.HTTP_400_BAD_REQUEST)
+            
+            spell_dc = actor.get_spell_save_dc('WIS')
+            has_actor_pos = (actor.position_x is not None and actor.position_y is not None and (actor.position_x != 0 or actor.position_y != 0))
+            
+            enemies = session.participants.filter(
+                participant_type='enemy',
+                is_active=True,
+                current_hp__gt=0
+            )
+            undead_in_range = []
+            for e in enemies:
+                if not e.is_undead():
+                    continue
+                if has_actor_pos and e.position_x is not None and e.position_y is not None:
+                    dist = actor.get_distance_to(e)
+                    if dist <= 30:
+                        undead_in_range.append(e)
+                else:
+                    undead_in_range.append(e)
+            
+            destroy_threshold = None
+            if char_lvl >= 17:
+                destroy_threshold = 4.0
+            elif char_lvl >= 14:
+                destroy_threshold = 3.0
+            elif char_lvl >= 11:
+                destroy_threshold = 2.0
+            elif char_lvl >= 8:
+                destroy_threshold = 1.0
+            elif char_lvl >= 5:
+                destroy_threshold = 0.5
+            
+            results = []
+            turned_count = 0
+            destroyed_count = 0
+            saved_count = 0
+            frightened_cond, _ = Condition.objects.get_or_create(name='frightened')
+            
+            for u in undead_in_range:
+                wis_mod = u.get_ability_modifier('WIS')
+                r, _ = roll_d20()
+                save_total = r + wis_mod
+                cr_val = u.get_challenge_rating_value()
+                
+                if save_total < spell_dc:
+                    if destroy_threshold is not None and cr_val <= destroy_threshold:
+                        u.current_hp = 0
+                        u.is_active = False
+                        u.save(update_fields=['current_hp', 'is_active'])
+                        destroyed_count += 1
+                        results.append(f"💀 {u.get_name()} (CR {cr_val}) failed save ({r}+{wis_mod}={save_total} vs DC {spell_dc}) and is OBLITERATED by Destroy Undead!")
+                    else:
+                        u.conditions.add(frightened_cond)
+                        if not isinstance(u.feature_uses, dict):
+                            u.feature_uses = {}
+                        u.feature_uses['is_turned'] = True
+                        u.feature_uses['turned_by'] = actor.id
+                        u.save(update_fields=['feature_uses'])
+                        turned_count += 1
+                        results.append(f"⚡ {u.get_name()} failed save ({r}+{wis_mod}={save_total} vs DC {spell_dc}) and is TURNED (Frightened for 1 min or until damaged)!")
+                else:
+                    saved_count += 1
+                    results.append(f"🛡️ {u.get_name()} succeeded save ({r}+{wis_mod}={save_total} vs DC {spell_dc}) and resists.")
+            
+            actor.feature_uses['channel_divinity_uses_remaining'] = remaining_cd - 1
+            actor.action_used = True
+            actor.attacks_remaining = 0
+            actor.save(update_fields=['feature_uses', 'action_used', 'attacks_remaining'])
+            
+            summary_header = f"✨ {actor.get_name()} presents their holy symbol and invokes Channel Divinity: Turn Undead (DC {spell_dc})! "
+            if not undead_in_range:
+                desc = summary_header + "No undead within 30 feet to censure."
+            else:
+                desc = summary_header + f"{destroyed_count} destroyed, {turned_count} turned, {saved_count} resisted.\n" + "\n".join(results)
+            
+            combat_action = CombatAction.objects.create(
+                combat_session=session,
+                actor=actor,
+                target=actor,
+                action_type='feature',
+                attack_name='Channel Divinity: Turn Undead',
+                hit=True,
+                round_number=session.current_round,
+                turn_number=session.current_turn_index,
+                description=desc
+            )
+            return Response({
+                "message": desc,
+                "destroyed_count": destroyed_count,
+                "turned_count": turned_count,
+                "saved_count": saved_count,
+                "results": results,
+                "remaining_uses": actor.feature_uses['channel_divinity_uses_remaining'],
+                "action": CombatActionSerializer(combat_action).data
+            })
+
+        elif 'preserve life' in clean_name:
+            char_lvl = (actor.character.level or 1) if actor.character else 1
+            if actor.action_used or actor.attacks_remaining <= 0:
+                return Response({"error": f"{actor.get_name()} has already used their action this turn."}, status=status.HTTP_400_BAD_REQUEST)
+            
+            remaining_cd = actor.get_channel_divinity_uses_remaining()
+            if remaining_cd <= 0:
+                return Response({"error": "No Channel Divinity uses remaining."}, status=status.HTTP_400_BAD_REQUEST)
+            
+            pool = 5 * char_lvl
+            target_id = request.data.get('target_id') or actor.id
+            amount = int(request.data.get('amount') or pool)
+            amount = max(1, min(amount, pool))
+            
+            target_participant = session.participants.filter(id=target_id).first() or actor
+            if target_participant.participant_type == 'enemy':
+                return Response({"error": "Cannot heal a hostile enemy."}, status=status.HTTP_400_BAD_REQUEST)
+            
+            half_max = target_participant.max_hp // 2
+            if target_participant.current_hp >= half_max:
+                return Response({"error": f"Preserve Life cannot heal a creature above half their maximum HP ({half_max} HP)."}, status=status.HTTP_400_BAD_REQUEST)
+            
+            healable = half_max - target_participant.current_hp
+            actual_heal = min(amount, healable)
+            target_participant.heal(actual_heal)
+            
+            actor.feature_uses['channel_divinity_uses_remaining'] = remaining_cd - 1
+            actor.action_used = True
+            actor.attacks_remaining = 0
+            actor.save(update_fields=['feature_uses', 'action_used', 'attacks_remaining'])
+            
+            desc = f"✨ {actor.get_name()} invokes Channel Divinity: Preserve Life upon {target_participant.get_name()}, restoring {actual_heal} HP (now {target_participant.current_hp}/{target_participant.max_hp} HP)."
+            combat_action = CombatAction.objects.create(
+                combat_session=session,
+                actor=actor,
+                target=target_participant,
+                action_type='feature',
+                attack_name='Channel Divinity: Preserve Life',
+                damage_amount=actual_heal,
+                hit=True,
+                round_number=session.current_round,
+                turn_number=session.current_turn_index,
+                description=desc
+            )
+            return Response({
+                "message": desc,
+                "healed_amount": actual_heal,
+                "target_hp": target_participant.current_hp,
+                "remaining_uses": actor.feature_uses['channel_divinity_uses_remaining'],
+                "action": CombatActionSerializer(combat_action).data
+            })
+
+        elif 'sacred weapon' in clean_name:
+            if actor.action_used or actor.attacks_remaining <= 0:
+                return Response({"error": f"{actor.get_name()} has already used their action this turn."}, status=status.HTTP_400_BAD_REQUEST)
+            
+            remaining_cd = actor.get_channel_divinity_uses_remaining()
+            if remaining_cd <= 0:
+                return Response({"error": "No Channel Divinity uses remaining."}, status=status.HTTP_400_BAD_REQUEST)
+            
+            cha_mod = max(1, actor.get_ability_modifier('CHA'))
+            actor.feature_uses['sacred_weapon_active'] = True
+            actor.feature_uses['sacred_weapon_bonus'] = cha_mod
+            actor.feature_uses['channel_divinity_uses_remaining'] = remaining_cd - 1
+            actor.action_used = True
+            actor.attacks_remaining = 0
+            actor.save(update_fields=['feature_uses', 'action_used', 'attacks_remaining'])
+            
+            desc = f"⚔️ {actor.get_name()} imbues their weapon with holy light using Sacred Weapon! Gained +{cha_mod} to attack rolls for 1 minute."
+            combat_action = CombatAction.objects.create(
+                combat_session=session,
+                actor=actor,
+                target=actor,
+                action_type='feature',
+                attack_name='Channel Divinity: Sacred Weapon',
+                hit=True,
+                round_number=session.current_round,
+                turn_number=session.current_turn_index,
+                description=desc
+            )
+            return Response({
+                "message": desc,
+                "sacred_weapon_active": True,
+                "attack_bonus": cha_mod,
+                "remaining_uses": actor.feature_uses['channel_divinity_uses_remaining'],
+                "action": CombatActionSerializer(combat_action).data
+            })
+
+        elif 'turn the unholy' in clean_name:
+            char_lvl = (actor.character.level or 1) if actor.character else 1
+            if actor.action_used or actor.attacks_remaining <= 0:
+                return Response({"error": f"{actor.get_name()} has already used their action this turn."}, status=status.HTTP_400_BAD_REQUEST)
+            
+            remaining_cd = actor.get_channel_divinity_uses_remaining()
+            if remaining_cd <= 0:
+                return Response({"error": "No Channel Divinity uses remaining."}, status=status.HTTP_400_BAD_REQUEST)
+            
+            spell_dc = actor.get_spell_save_dc('CHA')
+            has_actor_pos = (actor.position_x is not None and actor.position_y is not None and (actor.position_x != 0 or actor.position_y != 0))
+            
+            enemies = session.participants.filter(
+                participant_type='enemy',
+                is_active=True,
+                current_hp__gt=0
+            )
+            targets_in_range = []
+            for e in enemies:
+                if not (e.is_undead() or e.is_fiend()):
+                    continue
+                if has_actor_pos and e.position_x is not None and e.position_y is not None:
+                    dist = actor.get_distance_to(e)
+                    if dist <= 30:
+                        targets_in_range.append(e)
+                else:
+                    targets_in_range.append(e)
+            
+            results = []
+            turned_count = 0
+            saved_count = 0
+            frightened_cond, _ = Condition.objects.get_or_create(name='frightened')
+            
+            for t in targets_in_range:
+                wis_mod = t.get_ability_modifier('WIS')
+                r, _ = roll_d20()
+                save_total = r + wis_mod
+                
+                if save_total < spell_dc:
+                    t.conditions.add(frightened_cond)
+                    if not isinstance(t.feature_uses, dict):
+                        t.feature_uses = {}
+                    t.feature_uses['is_turned'] = True
+                    t.feature_uses['turned_by'] = actor.id
+                    t.save(update_fields=['feature_uses'])
+                    turned_count += 1
+                    results.append(f"⚡ {t.get_name()} failed save ({r}+{wis_mod}={save_total} vs DC {spell_dc}) and is TURNED!")
+                else:
+                    saved_count += 1
+                    results.append(f"🛡️ {t.get_name()} succeeded save ({r}+{wis_mod}={save_total} vs DC {spell_dc}) and resists.")
+            
+            actor.feature_uses['channel_divinity_uses_remaining'] = remaining_cd - 1
+            actor.action_used = True
+            actor.attacks_remaining = 0
+            actor.save(update_fields=['feature_uses', 'action_used', 'attacks_remaining'])
+            
+            desc = f"✨ {actor.get_name()} invokes Turn the Unholy (DC {spell_dc})! {turned_count} turned, {saved_count} resisted.\n" + "\n".join(results)
+            combat_action = CombatAction.objects.create(
+                combat_session=session,
+                actor=actor,
+                target=actor,
+                action_type='feature',
+                attack_name='Channel Divinity: Turn the Unholy',
+                hit=True,
+                round_number=session.current_round,
+                turn_number=session.current_turn_index,
+                description=desc
+            )
+            return Response({
+                "message": desc,
+                "turned_count": turned_count,
+                "saved_count": saved_count,
+                "remaining_uses": actor.feature_uses['channel_divinity_uses_remaining'],
+                "action": CombatActionSerializer(combat_action).data
+            })
+
+        elif 'bardic inspiration' in clean_name:
+            if actor.bonus_action_used:
+                return Response({"error": f"{actor.get_name()} has already used their bonus action this turn."}, status=status.HTTP_400_BAD_REQUEST)
+            
+            remaining_bi = actor.get_bardic_inspiration_uses_remaining()
+            if remaining_bi <= 0:
+                return Response({"error": "No Bardic Inspiration uses remaining (regains after long rest, or short rest at level 5+)."}, status=status.HTTP_400_BAD_REQUEST)
+            
+            if not target_id or int(target_id) == actor.id:
+                return Response({"error": "Bardic Inspiration must target an ally other than yourself."}, status=status.HTTP_400_BAD_REQUEST)
+            
+            try:
+                target_ally = session.participants.get(id=target_id)
+            except CombatParticipant.DoesNotExist:
+                return Response({"error": "Target ally not found."}, status=status.HTTP_404_NOT_FOUND)
+            
+            if target_ally.participant_type == 'enemy':
+                return Response({"error": "Cannot inspire a hostile enemy."}, status=status.HTTP_400_BAD_REQUEST)
+            
+            die_size = actor.get_bardic_inspiration_die_size()
+            if not isinstance(target_ally.feature_uses, dict):
+                target_ally.feature_uses = {}
+            target_ally.feature_uses['has_bardic_inspiration'] = die_size
+            target_ally.save(update_fields=['feature_uses'])
+            
+            actor.feature_uses['bardic_inspiration_uses_remaining'] = remaining_bi - 1
+            actor.bonus_action_used = True
+            actor.save(update_fields=['feature_uses', 'bonus_action_used'])
+            
+            desc = f"🎵 {actor.get_name()} inspires {target_ally.get_name()} with words of encouragement! {target_ally.get_name()} gains a {die_size} Bardic Inspiration die."
+            combat_action = CombatAction.objects.create(
+                combat_session=session,
+                actor=actor,
+                target=target_ally,
+                action_type='feature',
+                attack_name='Bardic Inspiration',
+                hit=True,
+                round_number=session.current_round,
+                turn_number=session.current_turn_index,
+                description=desc
+            )
+            return Response({
+                "message": desc,
+                "die_size": die_size,
+                "target_id": target_ally.id,
+                "remaining_uses": actor.feature_uses['bardic_inspiration_uses_remaining'],
+                "action": CombatActionSerializer(combat_action).data
+            })
+
+        elif 'flurry of blows' in clean_name:
+            if actor.bonus_action_used:
+                return Response({"error": f"{actor.get_name()} has already used their bonus action this turn."}, status=status.HTTP_400_BAD_REQUEST)
+            ki = actor.get_ki_pool_remaining()
+            if ki < 1:
+                return Response({"error": "Not enough Ki points (requires 1 Ki)."}, status=status.HTTP_400_BAD_REQUEST)
+            
+            actor.feature_uses['ki_pool_remaining'] = ki - 1
+            actor.bonus_action_used = True
+            actor.attacks_remaining += 2
+            actor.save(update_fields=['feature_uses', 'bonus_action_used', 'attacks_remaining'])
+            
+            desc = f"🥋 {actor.get_name()} spends 1 Ki point to unleash a Flurry of Blows! Gained 2 bonus unarmed strikes this turn."
+            combat_action = CombatAction.objects.create(
+                combat_session=session,
+                actor=actor,
+                target=actor,
+                action_type='feature',
+                attack_name='Ki: Flurry of Blows',
+                hit=True,
+                round_number=session.current_round,
+                turn_number=session.current_turn_index,
+                description=desc
+            )
+            return Response({
+                "message": desc,
+                "attacks_remaining": actor.attacks_remaining,
+                "remaining_ki": actor.feature_uses['ki_pool_remaining'],
+                "action": CombatActionSerializer(combat_action).data
+            })
+
+        elif 'martial arts' in clean_name or 'bonus unarmed strike' in clean_name:
+            if actor.bonus_action_used:
+                return Response({"error": f"{actor.get_name()} has already used their bonus action this turn."}, status=status.HTTP_400_BAD_REQUEST)
+            actor.bonus_action_used = True
+            actor.attacks_remaining += 1
+            actor.save(update_fields=['bonus_action_used', 'attacks_remaining'])
+            
+            desc = f"🥋 {actor.get_name()} uses Martial Arts to make a bonus unarmed strike this turn!"
+            combat_action = CombatAction.objects.create(
+                combat_session=session,
+                actor=actor,
+                target=actor,
+                action_type='feature',
+                attack_name='Martial Arts: Bonus Strike',
+                hit=True,
+                round_number=session.current_round,
+                turn_number=session.current_turn_index,
+                description=desc
+            )
+            return Response({
+                "message": desc,
+                "attacks_remaining": actor.attacks_remaining,
+                "action": CombatActionSerializer(combat_action).data
+            })
+
+        elif 'patient defense' in clean_name:
+            if actor.bonus_action_used:
+                return Response({"error": f"{actor.get_name()} has already used their bonus action this turn."}, status=status.HTTP_400_BAD_REQUEST)
+            ki = actor.get_ki_pool_remaining()
+            if ki < 1:
+                return Response({"error": "Not enough Ki points (requires 1 Ki)."}, status=status.HTTP_400_BAD_REQUEST)
+            
+            actor.feature_uses['ki_pool_remaining'] = ki - 1
+            actor.feature_uses['dodge_active'] = True
+            actor.bonus_action_used = True
+            actor.save(update_fields=['feature_uses', 'bonus_action_used'])
+            
+            desc = f"🥋 {actor.get_name()} spends 1 Ki point for Patient Defense, taking the Dodge action as a bonus action! Attacks against them have disadvantage."
+            combat_action = CombatAction.objects.create(
+                combat_session=session,
+                actor=actor,
+                target=actor,
+                action_type='feature',
+                attack_name='Ki: Patient Defense',
+                hit=True,
+                round_number=session.current_round,
+                turn_number=session.current_turn_index,
+                description=desc
+            )
+            return Response({
+                "message": desc,
+                "dodge_active": True,
+                "remaining_ki": actor.feature_uses['ki_pool_remaining'],
+                "action": CombatActionSerializer(combat_action).data
+            })
+
+        elif 'step of the wind' in clean_name:
+            if actor.bonus_action_used:
+                return Response({"error": f"{actor.get_name()} has already used their bonus action this turn."}, status=status.HTTP_400_BAD_REQUEST)
+            ki = actor.get_ki_pool_remaining()
+            if ki < 1:
+                return Response({"error": "Not enough Ki points (requires 1 Ki)."}, status=status.HTTP_400_BAD_REQUEST)
+            
+            subaction = request.data.get('subaction', 'disengage').lower()
+            actor.feature_uses['ki_pool_remaining'] = ki - 1
+            actor.bonus_action_used = True
+            if subaction == 'dash':
+                actor.movement_used = max(0, actor.movement_used - actor.speed)
+                desc = f"🥋 {actor.get_name()} spends 1 Ki point for Step of the Wind: Dash! Movement increased and jump distance doubled."
+            else:
+                actor.feature_uses['disengaged'] = True
+                desc = f"🥋 {actor.get_name()} spends 1 Ki point for Step of the Wind: Disengage! Movement will not provoke opportunity attacks."
+            
+            actor.save(update_fields=['feature_uses', 'bonus_action_used', 'movement_used'])
+            combat_action = CombatAction.objects.create(
+                combat_session=session,
+                actor=actor,
+                target=actor,
+                action_type='feature',
+                attack_name=f'Ki: Step of the Wind ({subaction.capitalize()})',
+                hit=True,
+                round_number=session.current_round,
+                turn_number=session.current_turn_index,
+                description=desc
+            )
+            return Response({
+                "message": desc,
+                "subaction": subaction,
+                "remaining_ki": actor.feature_uses['ki_pool_remaining'],
+                "action": CombatActionSerializer(combat_action).data
+            })
+
+        elif 'stunning strike' in clean_name:
+            char_lvl = (actor.character.level or 1) if actor.character else 1
+            if char_lvl < 5 and not any('stunning strike' in f.name.lower() for f in (actor.character.features.all() if actor.character else [])):
+                return Response({"error": "Stunning Strike requires Monk level 5+."}, status=status.HTTP_400_BAD_REQUEST)
+            ki = actor.get_ki_pool_remaining()
+            if ki < 1:
+                return Response({"error": "Not enough Ki points (requires 1 Ki)."}, status=status.HTTP_400_BAD_REQUEST)
+            
+            if not target_id or int(target_id) == actor.id:
+                return Response({"error": "Stunning Strike requires a target creature."}, status=status.HTTP_400_BAD_REQUEST)
+            try:
+                target_creature = session.participants.get(id=target_id)
+            except CombatParticipant.DoesNotExist:
+                return Response({"error": "Target creature not found."}, status=status.HTTP_404_NOT_FOUND)
+            
+            ki_dc = actor.get_spell_save_dc('WIS')
+            con_mod = target_creature.get_ability_modifier('CON')
+            r, _ = roll_d20()
+            total_save = r + con_mod
+            
+            actor.feature_uses['ki_pool_remaining'] = ki - 1
+            actor.save(update_fields=['feature_uses'])
+            
+            stunned_cond, _ = Condition.objects.get_or_create(name='stunned')
+            if total_save < ki_dc:
+                target_creature.conditions.add(stunned_cond)
+                desc = f"⚡ {actor.get_name()} channels Ki into a Stunning Strike! {target_creature.get_name()} failed CON save ({r}+{con_mod}={total_save} vs DC {ki_dc}) and is STUNNED until end of next turn!"
+                stun_success = True
+            else:
+                desc = f"🛡️ {actor.get_name()} attempts Stunning Strike, but {target_creature.get_name()} resisted with CON save ({r}+{con_mod}={total_save} vs DC {ki_dc})."
+                stun_success = False
+            
+            combat_action = CombatAction.objects.create(
+                combat_session=session,
+                actor=actor,
+                target=target_creature,
+                action_type='feature',
+                attack_name='Stunning Strike',
+                hit=stun_success,
+                round_number=session.current_round,
+                turn_number=session.current_turn_index,
+                description=desc
+            )
+            return Response({
+                "message": desc,
+                "stun_success": stun_success,
+                "roll": r,
+                "save_total": total_save,
+                "dc": ki_dc,
+                "remaining_ki": actor.feature_uses['ki_pool_remaining'],
+                "action": CombatActionSerializer(combat_action).data
+            })
+
+        elif 'wild shape' in clean_name:
+            char_lvl = (actor.character.level or 1) if actor.character else 1
+            if char_lvl < 2 and not any('wild shape' in f.name.lower() for f in (actor.character.features.all() if actor.character else [])):
+                return Response({"error": "Wild Shape requires Druid level 2+."}, status=status.HTTP_400_BAD_REQUEST)
+            
+            is_end = ('end' in clean_name) or bool(request.data.get('end_wild_shape', False))
+            is_active = bool(actor.feature_uses.get('wild_shaped', False))
+            
+            if is_end:
+                if not is_active:
+                    return Response({"error": f"{actor.get_name()} is not currently Wild Shaped."}, status=status.HTTP_400_BAD_REQUEST)
+                orig_hp = actor.feature_uses.get('pre_wild_shape_hp', actor.max_hp)
+                orig_max_hp = actor.feature_uses.get('pre_wild_shape_max_hp', actor.max_hp)
+                orig_ac = actor.feature_uses.get('pre_wild_shape_ac', actor.armor_class)
+                beast_name = actor.feature_uses.get('wild_shape_beast', 'Beast')
+                
+                actor.current_hp = orig_hp
+                actor.max_hp = orig_max_hp
+                actor.armor_class = orig_ac
+                actor.feature_uses['wild_shaped'] = False
+                actor.feature_uses['wild_shape_beast'] = None
+                actor.save(update_fields=['current_hp', 'max_hp', 'armor_class', 'feature_uses'])
+                
+                desc = f"🌿 {actor.get_name()} sheds their {beast_name} form and reverts to normal humanoid shape ({orig_hp}/{orig_max_hp} HP, AC {orig_ac})."
+                combat_action = CombatAction.objects.create(
+                    combat_session=session,
+                    actor=actor,
+                    target=actor,
+                    action_type='feature',
+                    attack_name='End Wild Shape',
+                    hit=True,
+                    round_number=session.current_round,
+                    turn_number=session.current_turn_index,
+                    description=desc
+                )
+                return Response({
+                    "message": desc,
+                    "wild_shaped": False,
+                    "remaining_uses": actor.get_wild_shape_uses_remaining(),
+                    "action": CombatActionSerializer(combat_action).data
+                })
+            else:
+                if is_active:
+                    return Response({"error": f"{actor.get_name()} is already Wild Shaped as a {actor.feature_uses.get('wild_shape_beast')}."}, status=status.HTTP_400_BAD_REQUEST)
+                rem_uses = actor.get_wild_shape_uses_remaining()
+                if rem_uses <= 0:
+                    return Response({"error": "No Wild Shape uses remaining (regains after short or long rest)."}, status=status.HTTP_400_BAD_REQUEST)
+                
+                beast_choice = request.data.get('beast_name', 'Wolf').strip()
+                beast_stats = {
+                    'wolf': {'name': 'Wolf', 'hp': 11, 'ac': 13, 'speed': 40},
+                    'brown bear': {'name': 'Brown Bear', 'hp': 34, 'ac': 11, 'speed': 40},
+                    'dire wolf': {'name': 'Dire Wolf', 'hp': 37, 'ac': 14, 'speed': 50},
+                    'panther': {'name': 'Panther', 'hp': 13, 'ac': 12, 'speed': 50},
+                }
+                b = beast_stats.get(beast_choice.lower(), beast_stats['wolf'])
+                
+                actor.feature_uses['pre_wild_shape_hp'] = actor.current_hp
+                actor.feature_uses['pre_wild_shape_max_hp'] = actor.max_hp
+                actor.feature_uses['pre_wild_shape_ac'] = actor.armor_class
+                actor.feature_uses['wild_shaped'] = True
+                actor.feature_uses['wild_shape_beast'] = b['name']
+                actor.feature_uses['wild_shape_uses_remaining'] = rem_uses - 1
+                
+                actor.current_hp = b['hp']
+                actor.max_hp = b['hp']
+                actor.armor_class = b['ac']
+                actor.action_used = True
+                actor.attacks_remaining = 0
+                actor.save(update_fields=['current_hp', 'max_hp', 'armor_class', 'feature_uses', 'action_used', 'attacks_remaining'])
+                
+                desc = f"🐾 {actor.get_name()} magically transforms into a {b['name']}! (Gained {b['hp']} Beast HP, AC {b['ac']})"
+                combat_action = CombatAction.objects.create(
+                    combat_session=session,
+                    actor=actor,
+                    target=actor,
+                    action_type='feature',
+                    attack_name=f"Wild Shape: {b['name']}",
+                    hit=True,
+                    round_number=session.current_round,
+                    turn_number=session.current_turn_index,
+                    description=desc
+                )
+                return Response({
+                    "message": desc,
+                    "wild_shaped": True,
+                    "beast": b,
+                    "remaining_uses": actor.feature_uses['wild_shape_uses_remaining'],
+                    "action": CombatActionSerializer(combat_action).data
+                })
+
+        elif 'indomitable' in clean_name:
+            char_lvl = (actor.character.level or 1) if actor.character else 1
+            if char_lvl < 9 and not any('indomitable' in f.name.lower() for f in (actor.character.features.all() if actor.character else [])):
+                return Response({"error": "Indomitable requires Fighter level 9+."}, status=status.HTTP_400_BAD_REQUEST)
+            max_uses = 1 if char_lvl < 13 else (2 if char_lvl < 17 else 3)
+            used_count = actor.feature_uses.get('indomitable_used_count', 0)
+            if used_count >= max_uses:
+                return Response({"error": f"No Indomitable uses remaining ({used_count}/{max_uses} used, regains on long rest)."}, status=status.HTTP_400_BAD_REQUEST)
+            
+            save_type = request.data.get('save_type', 'CON').upper()
+            r, _ = roll_d20()
+            save_mod = actor.get_ability_modifier(save_type)
+            prof_bonus = actor.character.proficiency_bonus if actor.character else 2
+            prof = False
+            if actor.character and hasattr(actor.character, 'saving_throw_proficiencies') and actor.character.saving_throw_proficiencies:
+                prof = save_type.lower() in [s.lower() for s in actor.character.saving_throw_proficiencies]
+            new_total, breakdown = calculate_saving_throw(r, save_mod, prof_bonus, prof)
+            
+            actor.feature_uses['indomitable_used_count'] = used_count + 1
+            actor.save(update_fields=['feature_uses'])
+            
+            desc = f"🛡️ {actor.get_name()} draws upon Indomitable to reroll their {save_type} save! New result: {r} + {save_mod} = {new_total} ({max_uses - (used_count + 1)} uses left)."
+            combat_action = CombatAction.objects.create(
+                combat_session=session,
+                actor=actor,
+                target=actor,
+                action_type='feature',
+                attack_name='Indomitable (Save Reroll)',
+                hit=True,
+                round_number=session.current_round,
+                turn_number=session.current_turn_index,
+                description=desc
+            )
+            return Response({
+                "message": desc,
+                "new_roll": r,
+                "save_total": new_total,
+                "remaining_uses": max_uses - (used_count + 1),
+                "action": CombatActionSerializer(combat_action).data
+            })
+
+        elif 'arcane recovery' in clean_name:
+            if not actor.has_arcane_recovery():
+                return Response({"error": "Arcane Recovery is a Wizard class feature."}, status=status.HTTP_400_BAD_REQUEST)
+            if actor.action_used or actor.attacks_remaining <= 0:
+                return Response({"error": f"{actor.get_name()} has already used their action this turn."}, status=status.HTTP_400_BAD_REQUEST)
+            if actor.is_arcane_recovery_used():
+                return Response({"error": "Arcane Recovery can only be used once per day (already expended)."}, status=status.HTTP_400_BAD_REQUEST)
+
+            stats = getattr(actor.character, 'stats', None)
+            if not stats or not stats.spell_slots:
+                return Response({"error": f"{actor.get_name()} has no spell slots to recover."}, status=status.HTTP_400_BAD_REQUEST)
+
+            expended = dict(stats.expended_spell_slots or {})
+            max_recoverable_levels = actor.get_arcane_recovery_max_levels()
+            recovered_slots = request.data.get('recovered_slots')
+            recovered_details = []
+
+            if recovered_slots and isinstance(recovered_slots, dict):
+                # User specified exact slots to recover (e.g. {"1": 2} or {"2": 1})
+                total_levels = 0
+                for lvl_str, count in recovered_slots.items():
+                    try:
+                        lvl = int(lvl_str)
+                        cnt = int(count)
+                    except (ValueError, TypeError):
+                        continue
+                    if cnt <= 0:
+                        continue
+                    if lvl >= 6:
+                        return Response({"error": "Arcane Recovery cannot recover spell slots of 6th level or higher."}, status=status.HTTP_400_BAD_REQUEST)
+                    if lvl < 1:
+                        return Response({"error": "Invalid spell slot level."}, status=status.HTTP_400_BAD_REQUEST)
+                    exp_count = int(expended.get(str(lvl), 0))
+                    if cnt > exp_count:
+                        return Response({"error": f"Cannot recover {cnt} level {lvl} slots (only {exp_count} currently expended)."}, status=status.HTTP_400_BAD_REQUEST)
+                    total_levels += lvl * cnt
+
+                if total_levels == 0:
+                    return Response({"error": "No spell slots chosen for recovery."}, status=status.HTTP_400_BAD_REQUEST)
+                if total_levels > max_recoverable_levels:
+                    return Response({"error": f"Combined spell slot levels ({total_levels}) exceed Arcane Recovery limit ({max_recoverable_levels} levels)."}, status=status.HTTP_400_BAD_REQUEST)
+
+                for lvl_str, count in recovered_slots.items():
+                    cnt = int(count)
+                    if cnt > 0:
+                        lvl = int(lvl_str)
+                        expended[str(lvl)] = max(0, int(expended.get(str(lvl), 0)) - cnt)
+                        recovered_details.append(f"{cnt}x Level {lvl}")
+            else:
+                # Auto-recovery: prioritize highest eligible slots (1..5)
+                remaining_levels = max_recoverable_levels
+                max_slot_key = max([int(k) for k in stats.spell_slots.keys()] or [1])
+                for lvl in range(min(5, max_slot_key), 0, -1):
+                    lvl_str = str(lvl)
+                    exp_count = int(expended.get(lvl_str, 0))
+                    recovered_for_lvl = 0
+                    while exp_count > 0 and remaining_levels >= lvl:
+                        exp_count -= 1
+                        remaining_levels -= lvl
+                        recovered_for_lvl += 1
+                    if recovered_for_lvl > 0:
+                        expended[lvl_str] = exp_count
+                        recovered_details.append(f"{recovered_for_lvl}x Level {lvl}")
+
+                if not recovered_details:
+                    return Response({"error": "All spell slots (levels 1-5) are already at full capacity."}, status=status.HTTP_400_BAD_REQUEST)
+
+            stats.expended_spell_slots = expended
+            stats.save(update_fields=['expended_spell_slots'])
+
+            if not isinstance(actor.feature_uses, dict):
+                actor.feature_uses = {}
+            actor.feature_uses['arcane_recovery_used'] = True
+            actor.action_used = True
+            actor.attacks_remaining = 0
+            actor.save(update_fields=['feature_uses', 'action_used', 'attacks_remaining'])
+
+            details_str = ", ".join(recovered_details)
+            desc = f"🔮 {actor.get_name()} channels Arcane Recovery, drawing upon magical study to restore {details_str} spell slot(s)! (Expended for today)"
+            combat_action = CombatAction.objects.create(
+                combat_session=session,
+                actor=actor,
+                target=actor,
+                action_type='feature',
+                attack_name='Arcane Recovery',
+                hit=True,
+                round_number=session.current_round,
+                turn_number=session.current_turn_index,
+                description=desc
+            )
+            return Response({
+                "message": desc,
+                "recovered": details_str,
+                "expended_spell_slots": stats.expended_spell_slots,
+                "action": CombatActionSerializer(combat_action).data
+            })
+
         else:
             return Response({"error": f"Feature '{feature_name}' not yet supported for active combat trigger."}, status=status.HTTP_400_BAD_REQUEST)
 
@@ -2294,6 +3277,10 @@ class CombatActionMixin:
         
         if participant.is_incapacitated():
             return Response({"error": f"{participant.get_name()} is {participant.get_incapacitating_condition()} and cannot move."}, status=status.HTTP_400_BAD_REQUEST)
+
+        if participant.grappled_by_id:
+            grappler_name = participant.grappled_by.get_name() if participant.grappled_by else "another creature"
+            return Response({"error": f"{participant.get_name()} is grappled by {grappler_name} and cannot move (speed 0)."}, status=status.HTTP_400_BAD_REQUEST)
 
         try:
             target_x = int(target_x)
@@ -2367,6 +3354,11 @@ class CombatActionMixin:
             for enemy in enemies:
                 if not enemy.can_use_reaction() or enemy.is_incapacitated():
                     continue
+
+                # 5e Rules: A creature grappled by the mover is being dragged along and does not get an Opportunity Attack against the grappler
+                if participant.is_grappling and (enemy.grappled_by_id == participant.id or enemy in participant.grappling_targets.all()):
+                    continue
+
                 enemy_x = enemy.position_x
                 enemy_y = enemy.position_y
                 provoked = False
@@ -2438,6 +3430,35 @@ class CombatActionMixin:
             participant.movement_used += dist_moved
             participant.save(update_fields=['position_x', 'position_y', 'movement_used'])
             desc = f"{participant.get_name()} moved {dist_moved} ft to ({target_x} ft, {target_y} ft)."
+
+            # 5e Grapple: Drag the grappled victim along with the grappler
+            if participant.is_grappling:
+                for victim in participant.grappling_targets.filter(is_active=True):
+                    candidate_tiles = []
+                    if len(move_path) >= 2:
+                        candidate_tiles.append(move_path[-2])
+                    for dx in [0, -5, 5]:
+                        for dy in [0, -5, 5]:
+                            if dx == 0 and dy == 0:
+                                continue
+                            candidate_tiles.append((target_x + dx, target_y + dy))
+
+                    dragged_pos = None
+                    for cx, cy in candidate_tiles:
+                        if 0 <= cx <= 45 and 0 <= cy <= 35:
+                            if not is_tile_solid(session.id or 0, cx // 5, cy // 5):
+                                occ = session.participants.filter(
+                                    position_x=cx, position_y=cy, is_active=True, current_hp__gt=0
+                                ).exclude(id__in=[participant.id, victim.id]).exists()
+                                if not occ:
+                                    dragged_pos = (cx, cy)
+                                    break
+
+                    if dragged_pos:
+                        victim.position_x = dragged_pos[0]
+                        victim.position_y = dragged_pos[1]
+                        victim.save(update_fields=['position_x', 'position_y'])
+                        desc += f" Dragging {victim.get_name()} to ({dragged_pos[0]} ft, {dragged_pos[1]} ft)."
         else:
             participant.movement_used += 5
             participant.save(update_fields=['movement_used', 'current_hp', 'is_active'])

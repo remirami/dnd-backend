@@ -74,6 +74,14 @@ class CombatParticipantSerializer(serializers.ModelSerializer):
         data['fly_speed'] = instance.get_fly_speed()
         data['has_hover'] = instance.has_hover()
         data['can_fly'] = instance.can_fly()
+
+        # Grapple & Grappler feat mechanics
+        data['is_grappling'] = bool(instance.is_grappling)
+        data['grappled_by_id'] = instance.grappled_by_id
+        data['grappled_by_name'] = instance.grappled_by.get_name() if instance.grappled_by else None
+        data['grappling_target_id'] = instance.grappling_targets.filter(is_active=True).values_list('id', flat=True).first() if instance.is_grappling else None
+        data['has_grappler_feat'] = instance.has_grappler_feat()
+        data['is_pinned'] = bool(instance.feature_uses and instance.feature_uses.get('pinned_by_grappler'))
         if instance.character:
             data['race_name'] = instance.character.race.name.lower() if instance.character.race else ''
             data['has_lucky_trait'] = instance.has_lucky_trait()
@@ -153,14 +161,14 @@ class CombatParticipantSerializer(serializers.ModelSerializer):
             char_features = instance.character.features.all()
             
             # Paladin features
-            is_paladin = class_name == 'paladin' or any('lay on hands' in f.name.lower() for f in char_features)
+            is_paladin = instance.is_paladin()
             data['is_paladin'] = is_paladin
             if is_paladin:
                 data['lay_on_hands_pool'] = instance.get_lay_on_hands_pool()
                 data['max_lay_on_hands_pool'] = (instance.character.level or 1) * 5
 
             # Barbarian features (Rage, Reckless Attack)
-            is_barbarian = class_name == 'barbarian' or any('rage' in f.name.lower() for f in char_features)
+            is_barbarian = instance.is_barbarian()
             data['is_barbarian'] = is_barbarian
             if is_barbarian:
                 data['is_raging'] = instance.is_raging()
@@ -185,7 +193,7 @@ class CombatParticipantSerializer(serializers.ModelSerializer):
                     data['action_surge_used'] = False
                     data['action_surge_available'] = None
 
-            # Rogue features (Cunning Action, Sneak Attack)
+            # Rogue features (Cunning Action, Sneak Attack, Uncanny Dodge)
             is_rogue = class_name == 'rogue' or any('sneak attack' in f.name.lower() for f in char_features)
             data['is_rogue'] = is_rogue
             if is_rogue:
@@ -193,6 +201,81 @@ class CombatParticipantSerializer(serializers.ModelSerializer):
                 has_cunning_action = rogue_level >= 2 or any('cunning action' in f.name.lower() for f in char_features)
                 data['has_cunning_action'] = has_cunning_action
                 data['cunning_action_available'] = has_cunning_action
+                data['has_sneak_attack'] = True
+                sa_dice_count = max(1, (rogue_level + 1) // 2)
+                data['sneak_attack_dice'] = f"{sa_dice_count}d6"
+                data['sneak_attack_used_this_turn'] = bool(feature_uses.get('sneak_attack_used_this_turn', False))
+                data['has_uncanny_dodge'] = rogue_level >= 5
+
+            # Paladin features (Lay on Hands, Divine Smite, Channel Divinity)
+            is_paladin = instance.is_paladin()
+            data['is_paladin'] = is_paladin
+            if is_paladin:
+                paladin_level = instance.character.level or 1
+                data['lay_on_hands_pool'] = instance.get_lay_on_hands_pool()
+                data['max_lay_on_hands_pool'] = paladin_level * 5
+                data['has_divine_smite'] = paladin_level >= 2
+                data['channel_divinity_remaining'] = instance.get_channel_divinity_uses_remaining()
+                data['channel_divinity_max'] = instance.get_channel_divinity_max_uses()
+
+            # Cleric features (Channel Divinity: Turn Undead, Preserve Life, Destroy Undead)
+            is_cleric = instance.is_cleric()
+            data['is_cleric'] = is_cleric
+            if is_cleric:
+                cleric_level = instance.character.level or 1
+                data['channel_divinity_remaining'] = instance.get_channel_divinity_uses_remaining()
+                data['channel_divinity_max'] = instance.get_channel_divinity_max_uses()
+                data['can_turn_undead'] = cleric_level >= 2
+                if cleric_level >= 17:
+                    data['destroy_undead_cr'] = 4.0
+                elif cleric_level >= 14:
+                    data['destroy_undead_cr'] = 3.0
+                elif cleric_level >= 11:
+                    data['destroy_undead_cr'] = 2.0
+                elif cleric_level >= 8:
+                    data['destroy_undead_cr'] = 1.0
+                elif cleric_level >= 5:
+                    data['destroy_undead_cr'] = 0.5
+                else:
+                    data['destroy_undead_cr'] = None
+
+            # Monk features (Ki: Flurry of Blows, Patient Defense, Step of the Wind, Stunning Strike)
+            is_monk = instance.is_monk()
+            data['is_monk'] = is_monk
+            if is_monk:
+                monk_level = instance.character.level or 1
+                data['ki_pool_remaining'] = instance.get_ki_pool_remaining()
+                data['ki_pool_max'] = instance.get_ki_pool_max()
+                data['martial_arts_die'] = instance.get_martial_arts_die()
+                data['can_flurry_of_blows'] = monk_level >= 2
+                data['can_patient_defense'] = monk_level >= 2
+                data['can_step_of_the_wind'] = monk_level >= 2
+                data['can_stunning_strike'] = monk_level >= 5
+
+            # Bard features (Bardic Inspiration)
+            is_bard = instance.is_bard()
+            data['is_bard'] = is_bard
+            if is_bard:
+                data['bardic_inspiration_remaining'] = instance.get_bardic_inspiration_uses_remaining()
+                data['bardic_inspiration_max'] = instance.get_bardic_inspiration_max_uses()
+                data['bardic_inspiration_die'] = instance.get_bardic_inspiration_die_size()
+
+            # Druid features (Wild Shape)
+            is_druid = instance.is_druid()
+            data['is_druid'] = is_druid
+            if is_druid:
+                data['wild_shape_remaining'] = instance.get_wild_shape_uses_remaining()
+                data['wild_shape_max'] = instance.get_wild_shape_max_uses()
+                data['is_wild_shaped'] = bool(feature_uses.get('wild_shaped', False))
+                data['wild_shape_beast'] = feature_uses.get('wild_shape_beast', None)
+
+            # Wizard features (Arcane Recovery)
+            is_wizard = instance.is_wizard()
+            data['is_wizard'] = is_wizard
+            if is_wizard:
+                data['has_arcane_recovery'] = instance.has_arcane_recovery()
+                data['arcane_recovery_used'] = instance.is_arcane_recovery_used()
+                data['arcane_recovery_max_levels'] = instance.get_arcane_recovery_max_levels()
 
         
         # Add enemy stat block for enemy participants
@@ -521,6 +604,10 @@ class AttackRequestSerializer(serializers.Serializer):
     other_modifiers = serializers.IntegerField(default=0)
     is_ranged = serializers.BooleanField(required=False, default=None, allow_null=True)
     weapon_slot = serializers.CharField(required=False, default='main_hand', allow_blank=True)
+    smite_slot_level = serializers.IntegerField(required=False, allow_null=True)
+    use_divine_smite = serializers.BooleanField(required=False, default=False)
+    use_sneak_attack = serializers.BooleanField(required=False, default=True)
+    use_bardic_inspiration = serializers.BooleanField(required=False, default=False)
 
 
 class SpellRequestSerializer(serializers.Serializer):

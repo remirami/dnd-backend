@@ -127,8 +127,30 @@ class CombatSession(models.Model):
         # Remove expired conditions
         self.remove_expired_conditions()
         
+        # 5e Grapple reach check: Release any grapples if separated beyond reach
+        self.clean_grapple_states()
+        
         self.save()
         return current_participant
+    
+    def clean_grapple_states(self):
+        """
+        5e Rule (PHB p. 195): The condition ends if an effect removes the grappled creature
+        from the reach of the grappler or grappling effect.
+        Verify that all actively grappled creatures are within melee reach of their grappler.
+        """
+        for p in self.participants.filter(is_active=True):
+            if p.grappled_by:
+                reach = p.grappled_by.get_reach() if hasattr(p.grappled_by, 'get_reach') else 5
+                dist = p.get_distance_to(p.grappled_by)
+                if dist > reach:
+                    p.release_grapple()
+            elif p.is_grappling:
+                reach = p.get_reach() if hasattr(p, 'get_reach') else 5
+                for victim in list(p.grappling_targets.all()):
+                    if p.get_distance_to(victim) > reach:
+                        p.release_grapple()
+
     
     def remove_expired_conditions(self):
         """Remove conditions that have expired"""
@@ -762,6 +784,57 @@ class CombatParticipant(models.Model):
             ).exists()
         return False
 
+    def has_grappler_feat(self) -> bool:
+        """Check if participant has the 5e Grappler feat."""
+        if self.feature_uses and (self.feature_uses.get('has_grappler') or self.feature_uses.get('grappler_feat')):
+            return True
+        if self.character:
+            return self.character.character_feats.filter(feat__name__iexact='Grappler').exists()
+        enemy = self.resolve_enemy()
+        if enemy:
+            return enemy.traits.filter(name__icontains='grappler').exists()
+        return False
+
+    def release_grapple(self):
+        """Release grapple on this participant or by this participant, clearing conditions."""
+        grappled_cond = Condition.objects.filter(name__iexact='Grappled').first()
+        restrained_cond = Condition.objects.filter(name__iexact='Restrained').first()
+
+        # If this participant is grappled by someone
+        if self.grappled_by:
+            grappler = self.grappled_by
+            self.grappled_by = None
+            if grappled_cond:
+                self.conditions.remove(grappled_cond)
+            if self.feature_uses and self.feature_uses.pop('pinned_by', None):
+                if restrained_cond:
+                    self.conditions.remove(restrained_cond)
+            self.save(update_fields=['grappled_by', 'feature_uses'])
+
+            # Check if grappler still grapples anyone else
+            if not self.combat_session.participants.filter(grappled_by=grappler).exists():
+                grappler.is_grappling = False
+                if grappler.feature_uses and grappler.feature_uses.pop('is_pinning', None):
+                    if restrained_cond:
+                        grappler.conditions.remove(restrained_cond)
+                grappler.save(update_fields=['is_grappling', 'feature_uses'])
+
+        # If this participant is grappling others
+        for victim in self.grappling_targets.all():
+            victim.grappled_by = None
+            if grappled_cond:
+                victim.conditions.remove(grappled_cond)
+            if victim.feature_uses and victim.feature_uses.pop('pinned_by', None):
+                if restrained_cond:
+                    victim.conditions.remove(restrained_cond)
+            victim.save(update_fields=['grappled_by', 'feature_uses'])
+
+        self.is_grappling = False
+        if self.feature_uses and self.feature_uses.pop('is_pinning', None):
+            if restrained_cond:
+                self.conditions.remove(restrained_cond)
+        self.save(update_fields=['is_grappling', 'feature_uses'])
+
     def check_legendary_resistance(self, save_ability, save_dc, save_total):
         """
         Check if this enemy participant can use Legendary Resistance to turn a failed saving throw into a success.
@@ -830,7 +903,7 @@ class CombatParticipant(models.Model):
         else:
             conds = {c.lower() for c in self.conditions.values_list('name', flat=True)}
         
-        if any(c in zero_speed_conditions for c in conds):
+        if self.grappled_by or any(c in zero_speed_conditions for c in conds):
             return 0
 
         if self.character and hasattr(self.character, 'stats') and self.character.stats:
@@ -849,6 +922,16 @@ class CombatParticipant(models.Model):
                 base = int(base)
         except (ValueError, TypeError):
             base = 30
+
+        # 5e Moving a Grappled Creature: Speed is halved unless target is 2+ sizes smaller
+        if self.is_grappling:
+            victim = self.grappling_targets.filter(is_active=True).first()
+            if victim:
+                size_rank = {'T': 0, 'S': 1, 'M': 2, 'L': 3, 'H': 4, 'G': 5}
+                g_rank = size_rank.get(self.get_size(), 2)
+                v_rank = size_rank.get(victim.get_size(), 2)
+                if v_rank > g_rank - 2:
+                    base = base // 2
 
         speed_penalty = (self.feature_uses or {}).get('speed_penalty', 0)
         return max(0, base - speed_penalty)
@@ -1527,7 +1610,33 @@ class CombatParticipant(models.Model):
                         remove_caster_concentration_buffs(self)
                     except Exception:
                         pass
+                # Falling unconscious breaks any active grapple
+                if self.is_grappling or self.grappled_by:
+                    try:
+                        self.release_grapple()
+                    except Exception:
+                        pass
         
+        # Check if target was turned by Turn Undead - taking damage ends the turned effect per 5e rules
+        if actual_damage > 0 and self.feature_uses and self.feature_uses.get('is_turned'):
+            self.feature_uses['is_turned'] = False
+            frightened_cond = self.conditions.filter(name__iexact='frightened').first()
+            if frightened_cond:
+                self.conditions.remove(frightened_cond)
+
+        # 5e Wild Shape: Revert to normal form when beast HP drops to 0
+        if self.feature_uses and self.feature_uses.get('wild_shaped') and potential_hp <= 0:
+            excess = abs(potential_hp)
+            orig_hp = self.feature_uses.get('pre_wild_shape_hp', self.max_hp)
+            orig_max_hp = self.feature_uses.get('pre_wild_shape_max_hp', self.max_hp)
+            orig_ac = self.feature_uses.get('pre_wild_shape_ac', self.armor_class)
+            self.feature_uses['wild_shaped'] = False
+            self.feature_uses['wild_shape_beast'] = None
+            self.max_hp = orig_max_hp
+            self.armor_class = orig_ac
+            self.current_hp = max(0, orig_hp - excess)
+            self.is_active = (self.current_hp > 0)
+
         # Check concentration if taking damage while concentrating
         concentration_broken_check = False
         if check_concentration and self.is_concentrating and actual_damage > 0:
@@ -1550,11 +1659,7 @@ class CombatParticipant(models.Model):
 
     def get_max_rage_uses(self):
         """Get maximum Rage uses per long rest based on Barbarian level"""
-        if not self.character:
-            return 0
-        class_name = getattr(self.character.character_class, 'name', '').lower()
-        has_rage = self.character.features.filter(name__icontains='Rage').exists()
-        if not has_rage and class_name != 'barbarian':
+        if not self.character or not self.is_barbarian():
             return 0
         lvl = self.character.level or 1
         if lvl >= 20:
@@ -1596,7 +1701,11 @@ class CombatParticipant(models.Model):
         if not self.character:
             return False
         class_name = getattr(self.character.character_class, 'name', '').lower()
-        return class_name == 'barbarian' or self.character.features.filter(name__icontains='rage').exists()
+        return class_name == 'barbarian' or self.character.features.filter(
+            models.Q(name__iexact='rage') |
+            models.Q(name__istartswith='rage ') |
+            models.Q(name__icontains='barbarian rage')
+        ).exists()
 
     def has_reckless_attack(self):
         """Check if participant has access to Reckless Attack"""
@@ -1645,6 +1754,270 @@ class CombatParticipant(models.Model):
             self.feature_uses = {}
         
         return self.feature_uses.get('lay_on_hands_pool', max_pool)
+
+    def is_cleric(self):
+        """Check if participant is a cleric or has cleric-specific features"""
+        if not self.character:
+            return False
+        class_name = getattr(self.character.character_class, 'name', '').lower()
+        return class_name == 'cleric' or self.character.features.filter(
+            models.Q(name__icontains='turn undead') |
+            models.Q(name__icontains='preserve life') |
+            models.Q(name__icontains='destroy undead')
+        ).exists()
+
+    def is_monk(self):
+        """Check if participant is a monk or has monk features"""
+        if not self.character:
+            return False
+        class_name = getattr(self.character.character_class, 'name', '').lower()
+        return class_name == 'monk' or self.character.features.filter(
+            models.Q(name__iexact='ki') |
+            models.Q(name__istartswith='ki ') |
+            models.Q(name__iendswith=' ki') |
+            models.Q(name__icontains='ki points') |
+            models.Q(name__icontains='ki-fueled') |
+            models.Q(name__icontains='flurry of blows') |
+            models.Q(name__icontains='martial arts') |
+            models.Q(name__icontains='stunning strike')
+        ).exists()
+
+    def is_bard(self):
+        """Check if participant is a bard or has bard features"""
+        if not self.character:
+            return False
+        class_name = getattr(self.character.character_class, 'name', '').lower()
+        return class_name == 'bard' or self.character.features.filter(name__icontains='bardic inspiration').exists()
+
+    def is_druid(self):
+        """Check if participant is a druid or has druid features"""
+        if not self.character:
+            return False
+        class_name = getattr(self.character.character_class, 'name', '').lower()
+        return class_name == 'druid' or self.character.features.filter(name__icontains='wild shape').exists()
+
+    def is_sorcerer(self):
+        """Check if participant is a sorcerer or has sorcerer features"""
+        if not self.character:
+            return False
+        class_name = getattr(self.character.character_class, 'name', '').lower()
+        return class_name == 'sorcerer' or self.character.features.filter(name__icontains='font of magic').exists()
+
+    def is_warlock(self):
+        """Check if participant is a warlock"""
+        if not self.character:
+            return False
+        class_name = getattr(self.character.character_class, 'name', '').lower()
+        return class_name == 'warlock'
+
+    def is_wizard(self):
+        """Check if participant is a wizard or has wizard-specific features"""
+        if not self.character:
+            return False
+        class_name = getattr(self.character.character_class, 'name', '').lower()
+        return class_name == 'wizard' or self.character.features.filter(name__icontains='arcane recovery').exists()
+
+    def has_arcane_recovery(self):
+        """Check if participant has the Arcane Recovery feature available"""
+        if not self.character:
+            return False
+        class_name = getattr(self.character.character_class, 'name', '').lower()
+        has_feat = self.character.features.filter(name__icontains='arcane recovery').exists()
+        return class_name == 'wizard' or has_feat
+
+    def get_arcane_recovery_max_levels(self):
+        """Get max combined slot levels that can be recovered (ceil(wizard_level / 2))"""
+        if not self.has_arcane_recovery():
+            return 0
+        lvl = self.character.level or 1
+        return (lvl + 1) // 2
+
+    def is_arcane_recovery_used(self):
+        """Check if Arcane Recovery has already been used in this combat/session"""
+        if not isinstance(self.feature_uses, dict):
+            return False
+        return bool(self.feature_uses.get('arcane_recovery_used', False))
+
+    def is_ranger(self):
+        """Check if participant is a ranger"""
+        if not self.character:
+            return False
+        class_name = getattr(self.character.character_class, 'name', '').lower()
+        return class_name == 'ranger'
+
+    def get_creature_type(self):
+        """Get creature type ('undead', 'fiend', 'humanoid', 'beast', etc.)"""
+        if self.encounter_enemy and self.encounter_enemy.enemy:
+            return (self.encounter_enemy.enemy.creature_type or '').lower()
+        if self.participant_type == 'enemy' and self.name:
+            from bestiary.models import Enemy
+            enemy = Enemy.objects.filter(name=self.name).first()
+            if enemy:
+                return (enemy.creature_type or '').lower()
+        if self.character:
+            return 'humanoid'
+        return ''
+
+    def is_undead(self):
+        """Check if participant is undead"""
+        return self.get_creature_type() == 'undead'
+
+    def is_fiend(self):
+        """Check if participant is a fiend"""
+        return self.get_creature_type() == 'fiend'
+
+    def get_challenge_rating_value(self):
+        """Get challenge rating as float value (e.g. 0.5 for 1/2)"""
+        cr_str = None
+        if self.encounter_enemy and self.encounter_enemy.enemy:
+            cr_str = self.encounter_enemy.enemy.challenge_rating
+        elif self.participant_type == 'enemy' and self.name:
+            from bestiary.models import Enemy
+            enemy = Enemy.objects.filter(name=self.name).first()
+            if enemy:
+                cr_str = enemy.challenge_rating
+        
+        if not cr_str:
+            return 0.0
+        
+        cr_str = str(cr_str).strip()
+        if '/' in cr_str:
+            parts = cr_str.split('/')
+            try:
+                return float(parts[0]) / float(parts[1])
+            except (ValueError, ZeroDivisionError):
+                return 0.0
+        try:
+            return float(cr_str)
+        except ValueError:
+            return 0.0
+
+    def get_spell_save_dc(self, ability=None):
+        """Calculate spell save DC: 8 + proficiency + ability modifier"""
+        if not self.character:
+            return 13
+        if hasattr(self.character, 'stats') and self.character.stats and self.character.stats.spell_save_dc:
+            return self.character.stats.spell_save_dc
+        
+        prof = self.character.proficiency_bonus
+        if not ability:
+            if self.is_cleric() or self.is_druid() or self.is_ranger() or self.is_monk():
+                ability = 'WIS'
+            elif self.is_paladin() or self.is_bard() or self.is_sorcerer() or self.is_warlock():
+                ability = 'CHA'
+            elif self.is_wizard():
+                ability = 'INT'
+            else:
+                ability = 'WIS'
+        mod = self.get_ability_modifier(ability)
+        return 8 + prof + mod
+
+    def get_channel_divinity_max_uses(self):
+        """
+        Get max Channel Divinity uses based on Cleric / Paladin level:
+        Cleric:
+          Level 2-5: 1 use
+          Level 6-17: 2 uses
+          Level 18-20: 3 uses
+        Paladin:
+          Level 3+: 1 use
+        """
+        if not self.character:
+            return 0
+        lvl = self.character.level or 1
+        if self.is_cleric():
+            if lvl >= 18:
+                return 3
+            elif lvl >= 6:
+                return 2
+            elif lvl >= 2:
+                return 1
+            return 0
+        elif self.is_paladin():
+            return 1 if lvl >= 3 else 0
+        return 0
+
+    def get_channel_divinity_uses_remaining(self):
+        """Get remaining Channel Divinity uses"""
+        max_uses = self.get_channel_divinity_max_uses()
+        if max_uses <= 0:
+            return 0
+        if not isinstance(self.feature_uses, dict):
+            self.feature_uses = {}
+        return self.feature_uses.get('channel_divinity_uses_remaining', max_uses)
+
+    def get_ki_pool_max(self):
+        """Get max Ki points for Monk (equal to monk level, level 2+)"""
+        if not self.character or not self.is_monk():
+            return 0
+        lvl = self.character.level or 1
+        return lvl if lvl >= 2 else 0
+
+    def get_ki_pool_remaining(self):
+        """Get remaining Ki points"""
+        max_ki = self.get_ki_pool_max()
+        if max_ki <= 0:
+            return 0
+        if not isinstance(self.feature_uses, dict):
+            self.feature_uses = {}
+        return self.feature_uses.get('ki_pool_remaining', max_ki)
+
+    def get_martial_arts_die(self):
+        """Get martial arts damage die based on Monk level"""
+        if not self.character or not self.is_monk():
+            return "1d4"
+        lvl = self.character.level or 1
+        if lvl >= 17:
+            return "1d10"
+        elif lvl >= 11:
+            return "1d8"
+        elif lvl >= 5:
+            return "1d6"
+        return "1d4"
+
+    def get_bardic_inspiration_max_uses(self):
+        """Get max Bardic Inspiration uses = max(1, Charisma modifier)"""
+        if not self.character or not self.is_bard():
+            return 0
+        return max(1, self.get_ability_modifier('CHA'))
+
+    def get_bardic_inspiration_die_size(self):
+        """Get Bardic Inspiration die size based on Bard level"""
+        if not self.character or not self.is_bard():
+            return 'd6'
+        lvl = self.character.level or 1
+        if lvl >= 15:
+            return 'd12'
+        elif lvl >= 10:
+            return 'd10'
+        elif lvl >= 5:
+            return 'd8'
+        return 'd6'
+
+    def get_bardic_inspiration_uses_remaining(self):
+        """Get remaining Bardic Inspiration uses"""
+        max_uses = self.get_bardic_inspiration_max_uses()
+        if max_uses <= 0:
+            return 0
+        if not isinstance(self.feature_uses, dict):
+            self.feature_uses = {}
+        return self.feature_uses.get('bardic_inspiration_uses_remaining', max_uses)
+
+    def get_wild_shape_max_uses(self):
+        """Druid Wild Shape: 2 uses per short/long rest at level 2+"""
+        if not self.character or not self.is_druid():
+            return 0
+        lvl = self.character.level or 1
+        return 2 if lvl >= 2 else 0
+
+    def get_wild_shape_uses_remaining(self):
+        """Get remaining Wild Shape uses"""
+        max_uses = self.get_wild_shape_max_uses()
+        if max_uses <= 0:
+            return 0
+        if not isinstance(self.feature_uses, dict):
+            self.feature_uses = {}
+        return self.feature_uses.get('wild_shape_uses_remaining', max_uses)
 
     def heal(self, amount, allow_revive=False):
         """
@@ -1981,6 +2354,7 @@ class CombatParticipant(models.Model):
             self.feature_uses['dodge_active'] = False
             self.feature_uses['hidden'] = False
             self.feature_uses['reckless_attack_active'] = False
+            self.feature_uses['sneak_attack_used_this_turn'] = False
             self.feature_uses['shield_spell_active'] = False
         if self.participant_type == 'enemy':
             recharged_items = self.check_recharges()
@@ -2180,7 +2554,8 @@ class CombatAction(models.Model):
         ordering = ['round_number', 'turn_number', 'created_at']
     
     def __str__(self):
-        return f"{self.actor.get_name()} - {self.get_action_type_display()} (Round {self.round_number})"
+        actor_name = self.actor.get_name() if self.actor else "System"
+        return f"{actor_name} - {self.get_action_type_display()} (Round {self.round_number})"
 
 
 class CombatLog(models.Model):
@@ -2220,7 +2595,8 @@ class CombatLog(models.Model):
         ordering = ['-created_at']
     
     def __str__(self):
-        return f"Combat Log: {self.combat_session.encounter.name} ({self.total_rounds} rounds)"
+        enc_name = self.combat_session.encounter.name if (self.combat_session and self.combat_session.encounter) else f"Combat #{self.combat_session_id}"
+        return f"Combat Log: {enc_name} ({self.total_rounds} rounds)"
     
     def calculate_statistics(self):
         """Calculate and update all statistics from combat actions"""
@@ -2268,15 +2644,15 @@ class CombatLog(models.Model):
             actions_by_type[action_type] = actions_by_type.get(action_type, 0) + 1
             
             # Track participant actions
-            actor_id = action.actor.id
-            if actor_id in participant_stats:
+            actor_id = action.actor.id if action.actor else None
+            if actor_id and actor_id in participant_stats:
                 participant_stats[actor_id]['actions_by_type'][action_type] = \
                     participant_stats[actor_id]['actions_by_type'].get(action_type, 0) + 1
             
             # Track damage
             if action.damage_amount:
                 # Damage dealt
-                if actor_id in participant_stats:
+                if actor_id and actor_id in participant_stats:
                     participant_stats[actor_id]['damage_dealt'] += action.damage_amount
                 
                 # Damage received
@@ -2298,7 +2674,7 @@ class CombatLog(models.Model):
                     participant_stats[action.target.id]['healing_received'] += healing_amount
             
             # Track attacks
-            if action.action_type == 'attack' and actor_id in participant_stats:
+            if action.action_type == 'attack' and actor_id and actor_id in participant_stats:
                 participant_stats[actor_id]['attacks_made'] += 1
                 if action.hit:
                     participant_stats[actor_id]['attacks_hit'] += 1
@@ -2308,7 +2684,7 @@ class CombatLog(models.Model):
                     participant_stats[actor_id]['attacks_missed'] += 1
             
             # Track spells
-            if action.action_type == 'spell' and actor_id in participant_stats:
+            if action.action_type == 'spell' and actor_id and actor_id in participant_stats:
                 participant_stats[actor_id]['spells_cast'] += 1
                 spell_name = action.attack_name
                 participant_stats[actor_id]['spells_by_name'][spell_name] = \

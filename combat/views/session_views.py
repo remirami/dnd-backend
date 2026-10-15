@@ -57,6 +57,13 @@ class CombatSessionViewSet(
             return CombatSessionListSerializer
         return CombatSessionSerializer
 
+    def get_fresh_serialized_session(self, session):
+        """Serialize a combat session after clearing prefetch cache and re-fetching from database to avoid stale participant lists."""
+        if hasattr(session, '_prefetched_objects_cache'):
+            session._prefetched_objects_cache.clear()
+        fresh = self.get_queryset().get(pk=session.pk)
+        return self.get_serializer(fresh).data
+
     def get_queryset(self):
         qs = CombatSession.objects.all().select_related('encounter')
         if self.request.user and self.request.user.is_authenticated:
@@ -237,14 +244,6 @@ class CombatSessionViewSet(
             )
         
         if participant_type == 'character':
-            # Enforce party participant limit
-            party_count = session.participants.filter(participant_type='character').count()
-            if party_count >= MAX_PARTY_PARTICIPANTS:
-                return Response(
-                    {"error": f"Party roster is full (maximum {MAX_PARTY_PARTICIPANTS} characters)"},
-                    status=status.HTTP_400_BAD_REQUEST
-                )
-            
             character_id = request.data.get('character_id')
             if not character_id:
                 return Response(
@@ -252,10 +251,21 @@ class CombatSessionViewSet(
                     status=status.HTTP_400_BAD_REQUEST
                 )
             
-            # Prevent duplicate character
-            if session.participants.filter(participant_type='character', character_id=character_id).exists():
+            # Idempotent: If character is already in combat session, return current participant and session
+            existing_p = session.participants.filter(participant_type='character', character_id=character_id).first()
+            if existing_p:
+                serializer = CombatParticipantSerializer(existing_p)
+                return Response({
+                    "message": f"{existing_p.get_name()} is already in combat",
+                    "participant": serializer.data,
+                    "session": self.get_fresh_serialized_session(session)
+                })
+            
+            # Enforce party participant limit
+            party_count = session.participants.filter(participant_type='character').count()
+            if party_count >= MAX_PARTY_PARTICIPANTS:
                 return Response(
-                    {"error": "Character is already in this combat session"},
+                    {"error": f"Party roster is full (maximum {MAX_PARTY_PARTICIPANTS} characters)"},
                     status=status.HTTP_400_BAD_REQUEST
                 )
             
@@ -288,7 +298,8 @@ class CombatSessionViewSet(
             serializer = CombatParticipantSerializer(participant)
             return Response({
                 "message": f"{character.name} added to combat",
-                "participant": serializer.data
+                "participant": serializer.data,
+                "session": self.get_fresh_serialized_session(session)
             })
         
         elif participant_type == 'enemy':
@@ -339,7 +350,8 @@ class CombatSessionViewSet(
                 serializer = CombatParticipantSerializer(participant)
                 return Response({
                     "message": f"{enemy_name} added to combat",
-                    "participant": serializer.data
+                    "participant": serializer.data,
+                    "session": self.get_fresh_serialized_session(session)
                 })
             
             elif encounter_enemy_id:
@@ -372,7 +384,8 @@ class CombatSessionViewSet(
                 serializer = CombatParticipantSerializer(participant)
                 return Response({
                     "message": f"{encounter_enemy.name} added to combat",
-                    "participant": serializer.data
+                    "participant": serializer.data,
+                    "session": self.get_fresh_serialized_session(session)
                 })
             else:
                 return Response(
@@ -395,23 +408,27 @@ class CombatSessionViewSet(
         
         participant = None
         if participant_id:
-            participant = session.participants.filter(pk=participant_id).first()
-        elif character_id:
+            try:
+                pid = int(participant_id)
+                if pid > 0:
+                    participant = session.participants.filter(pk=pid).first()
+            except (ValueError, TypeError):
+                pass
+        if not participant and character_id:
             participant = session.participants.filter(character_id=character_id).first()
         
         if not participant:
-            return Response(
-                {"error": "Participant not found in this combat session"},
-                status=status.HTTP_404_NOT_FOUND
-            )
+            return Response({
+                "message": "Participant not in combat session",
+                "session": self.get_fresh_serialized_session(session)
+            }, status=status.HTTP_200_OK)
         
         name = participant.get_name()
         participant.delete()
         
-        serializer = self.get_serializer(session)
         return Response({
             "message": f"{name} removed from combat",
-            "session": serializer.data
+            "session": self.get_fresh_serialized_session(session)
         })
     
     @action(detail=True, methods=['post'])

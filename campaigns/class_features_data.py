@@ -6,7 +6,20 @@ Features are organized by class and level.
 """
 
 # Class features by class name and level
-# Class features by class name and level
+# Warlock Mystic Arcanum Spell Lists
+WARLOCK_MYSTIC_ARCANUM_6 = [
+    'Circle of Death', 'Conjure Fey', 'Create Undead', 'Eyebite', 'Flesh to Stone', 'Mass Suggestion', 'True Seeing'
+]
+WARLOCK_MYSTIC_ARCANUM_7 = [
+    'Etherealness', 'Finger of Death', 'Forcecage', 'Plane Shift'
+]
+WARLOCK_MYSTIC_ARCANUM_8 = [
+    'Demiplane', 'Dominate Monster', 'Feeblemind', 'Glibness', 'Power Word Stun'
+]
+WARLOCK_MYSTIC_ARCANUM_9 = [
+    'Astral Projection', 'Foresight', 'Imprisonment', 'Power Word Kill', 'True Polymorph'
+]
+
 CLASS_FEATURES_2014 = {
 
     'fighter': {
@@ -1048,28 +1061,36 @@ CLASS_FEATURES_2014 = {
         11: [
             {
                 'name': 'Mystic Arcanum (6th level)',
-                'description': 'Your patron bestows upon you a magical secret called an arcanum. Choose one 6th-level spell from the warlock spell list as this arcanum. You can cast your arcanum spell once without expending a spell slot. You must finish a long rest before you can do so again.'
+                'description': 'Your patron bestows upon you a magical secret called an arcanum. Choose one 6th-level spell from the warlock spell list as this arcanum. You can cast your arcanum spell once without expending a spell slot. You must finish a long rest before you can do so again.',
+                'options': WARLOCK_MYSTIC_ARCANUM_6,
+                'choice_limit': 1
             }
         ],
         12: [],  # ASI only
         13: [
             {
                 'name': 'Mystic Arcanum (7th level)',
-                'description': 'You gain a 7th-level spell as your Mystic Arcanum.'
+                'description': 'You gain a 7th-level spell from the warlock spell list as your Mystic Arcanum. You can cast it once without expending a spell slot between long rests.',
+                'options': WARLOCK_MYSTIC_ARCANUM_7,
+                'choice_limit': 1
             }
         ],
         14: [],  # Otherworldly Patron feature
         15: [
             {
                 'name': 'Mystic Arcanum (8th level)',
-                'description': 'You gain an 8th-level spell as your Mystic Arcanum.'
+                'description': 'You gain an 8th-level spell from the warlock spell list as your Mystic Arcanum. You can cast it once without expending a spell slot between long rests.',
+                'options': WARLOCK_MYSTIC_ARCANUM_8,
+                'choice_limit': 1
             }
         ],
         16: [],  # ASI only
         17: [
             {
                 'name': 'Mystic Arcanum (9th level)',
-                'description': 'You gain a 9th-level spell as your Mystic Arcanum.'
+                'description': 'You gain a 9th-level spell from the warlock spell list as your Mystic Arcanum. You can cast it once without expending a spell slot between long rests.',
+                'options': WARLOCK_MYSTIC_ARCANUM_9,
+                'choice_limit': 1
             }
         ],
         18: [],  # Spell progression
@@ -2215,6 +2236,389 @@ SUBCLASS_FEATURES_2014 = {
             },
         ],
     },
+
+    'Circle of the Moon': {
+        2: [
+            {
+                'name': 'Combat Wild Shape',
+                'description': 'You gain the ability to use Wild Shape on your turn as a bonus action, rather than as an action. Additionally, while you are transformed by Wild Shape, you can use a bonus action to expend one spell slot to regain 1d8 hit points per level of the spell slot expended.'
+            },
+            {
+                'name': 'Circle Forms',
+                'description': 'The rites of your circle grant you the ability to transform into more dangerous animal forms. Starting at 2nd level, you can use your Wild Shape to transform into a beast with a challenge rating as high as 1 (ignoring the Max CR column of the Beast Shapes table, but adhering to the other limitations). Starting at 6th level, you can transform into a beast with a challenge rating as high as your druid level divided by 3, rounded down.'
+            },
+        ],
+        6: [
+            {
+                'name': 'Primal Strike',
+                'description': 'Starting at 6th level, your attacks in beast form count as magical for the purpose of overcoming resistance and immunity to nonmagical attacks and damage.'
+            },
+        ],
+        10: [
+            {
+                'name': 'Elemental Wild Shape',
+                'description': 'At 10th level, you can expend two uses of Wild Shape at the same time to transform into an air elemental, an earth elemental, a fire elemental, or a water elemental.'
+            },
+        ],
+        14: [
+            {
+                'name': 'Thousand Forms',
+                'description': 'By 14th level, you have learned to use magic to alter your physical form in more subtle ways. You can cast the alter self spell at will.'
+            },
+        ],
+    },
+
+    'Way of Shadow': {
+        3: [
+            {
+                'name': 'Shadow Arts',
+                'description': 'Starting when you choose this tradition at 3rd level, you can use your ki to duplicate the effects of certain spells. As an action, you can spend 2 ki points to cast darkness, darkvision, pass without trace, or silence, without providing material components. Additionally, you gain the minor illusion cantrip if you don\'t already know it.'
+            },
+        ],
+        6: [
+            {
+                'name': 'Shadow Step',
+                'description': 'At 6th level, you gain the ability to step from one shadow into another. When you are in dim light or darkness, as a bonus action you can teleport up to 60 feet to an unoccupied space you can see that is also in dim light or darkness. You then have advantage on the first melee attack you make before the end of the turn.'
+            },
+        ],
+        11: [
+            {
+                'name': 'Cloak of Shadows',
+                'description': 'By 11th level, you have learned not to become noticed in the shadows. When you are in an area of dim light or darkness, you can use your action to become invisible. You remain invisible until you make an attack, cast a spell, or are in an area of bright light.'
+            },
+        ],
+        17: [
+            {
+                'name': 'Opportunist',
+                'description': 'At 17th level, you can exploit a creature\'s momentary distraction when it is hit by an attack. Whenever a creature within 5 feet of you is hit by an attack made by someone other than you, you can use your reaction to make a melee attack against that creature.'
+            },
+        ],
+    },
+
+    'Way of the Four Elements': {
+        3: [
+            {
+                'name': 'Disciple of the Elements',
+                'description': 'You practice meditation and magical disciplines that harness the power of the four elements. When you choose this tradition at 3rd level, you learn Elemental Attunement and one elemental discipline of your choice from Fangs of the Fire Snake, Fist of Four Thunders, Fist of Unbroken Air, Sweeping Cinder Strike, or Water Whip. You can spend ki points to cast associated elemental spells and powers.'
+            },
+        ],
+        6: [
+            {
+                'name': 'Elemental Disciplines (6th Level)',
+                'description': 'At 6th level, you learn one additional elemental discipline of your choice, such as Clench of the North Wind (Hold Person) or Gong of the Summit (Shatter).'
+            },
+        ],
+        11: [
+            {
+                'name': 'Elemental Disciplines (11th Level)',
+                'description': 'At 11th level, you learn one additional elemental discipline of your choice, such as Flames of the Phoenix (Fireball), Mist Stance (Gaseous Form), or Ride the Wind (Fly).'
+            },
+        ],
+        17: [
+            {
+                'name': 'Elemental Disciplines (17th Level)',
+                'description': 'At 17th level, you learn one additional elemental discipline of your choice, such as Breath of Winter (Cone of Cold), Eternal Mountain Defense (Stoneskin), or River of Hungry Flame (Wall of Fire).'
+            },
+        ],
+    },
+
+    'Path of the Totem Warrior': {
+        3: [
+            {
+                'name': 'Spirit Seeker',
+                'description': 'Yours is a path that seeks a tune with the natural world. At 3rd level when you adopt this path, you gain the ability to cast the beast sense and speak with animals spells, but only as rituals.'
+            },
+            {
+                'name': 'Totem Spirit',
+                'description': 'At 3rd level, when you adopt this path, you choose a totem spirit and gain its feature. Bear: While raging, you have resistance to all damage except psychic damage. Eagle: While raging, other creatures have disadvantage on opportunity attacks against you and you can Dash as a bonus action. Wolf: While raging, your friends have advantage on melee attack rolls against any creature within 5 feet of you that is hostile to you.'
+            },
+        ],
+        6: [
+            {
+                'name': 'Aspect of the Beast',
+                'description': 'At 6th level, you gain a mystical benefit based on the totem animal of your choice. Bear: You gain the strength of a bear; carrying capacity is doubled and you have advantage on Strength checks to move objects. Eagle: You gain the eyesight of an eagle, seeing up to 1 mile clearly. Wolf: You gain the hunting sensibilities of a wolf, tracking creatures at a fast pace and moving stealthily at a normal pace.'
+            },
+        ],
+        10: [
+            {
+                'name': 'Spirit Walker',
+                'description': 'At 10th level, you can cast the commune with nature spell, but only as a ritual.'
+            },
+        ],
+        14: [
+            {
+                'name': 'Totemic Attunement',
+                'description': 'At 14th level, you gain a mystical benefit based on the totem animal of your choice. Bear: While raging, hostile creatures within 5 feet have disadvantage on attacks against targets other than you. Eagle: While raging, you gain a flying speed equal to your walking speed. Wolf: While raging, you can knock Large or smaller creatures prone with a melee weapon attack using a bonus action.'
+            },
+        ],
+    },
+
+    'College of Valor': {
+        3: [
+            {
+                'name': 'Bonus Proficiencies',
+                'description': 'When you join the College of Valor at 3rd level, you gain proficiency with medium armor, shields, and martial weapons.'
+            },
+            {
+                'name': 'Combat Inspiration',
+                'description': 'At 3rd level, a creature that has a Bardic Inspiration die from you can roll that die and add the number rolled to a weapon damage roll it just made. Alternatively, when an attack roll is made against the creature, it can use its reaction to roll the Bardic Inspiration die and add the number rolled to its AC against that attack, after seeing the roll but before knowing whether it hits or misses.'
+            },
+        ],
+        6: [
+            {
+                'name': 'Extra Attack',
+                'description': 'Starting at 6th level, you can attack twice, instead of once, whenever you take the Attack action on your turn.'
+            },
+        ],
+        14: [
+            {
+                'name': 'Battle Magic',
+                'description': 'At 14th level, you have mastered the art of weaving spellcasting and weapon use into a single harmonious act. When you use your action to cast a bard spell, you can make one weapon attack as a bonus action.'
+            },
+        ],
+    },
+
+    'Eldritch Knight': {
+        3: [
+            {
+                'name': 'Spellcasting',
+                'description': 'You augment your martial prowess with the ability to cast Wizard spells from the abjuration and evocation schools.'
+            },
+            {
+                'name': 'Weapon Bond',
+                'description': 'At 3rd level, you learn a ritual that creates a magical bond between yourself and one weapon. Once bonded, you can\'t be disarmed of that weapon unless incapacitated, and you can summon it to your hand as a bonus action.'
+            },
+        ],
+        7: [
+            {
+                'name': 'War Magic',
+                'description': 'Beginning at 7th level, when you use your action to cast a cantrip, you can make one weapon attack as a bonus action.'
+            },
+        ],
+        10: [
+            {
+                'name': 'Eldritch Strike',
+                'description': 'At 10th level, when you hit a creature with a weapon attack, that creature has disadvantage on the next saving throw it makes against a spell you cast before the end of your next turn.'
+            },
+        ],
+        15: [
+            {
+                'name': 'Arcane Charge',
+                'description': 'At 15th level, you gain the ability to teleport up to 30 feet to an unoccupied space you can see when you use your Action Surge. You can teleport before or after the additional action.'
+            },
+        ],
+        18: [
+            {
+                'name': 'Improved War Magic',
+                'description': 'Starting at 18th level, when you use your action to cast a spell, you can make one weapon attack as a bonus action.'
+            },
+        ],
+    },
+
+    'Oath of the Ancients': {
+        3: [
+            {
+                'name': 'Channel Divinity: Nature\'s Wrath',
+                'description': 'As an action, you can cause spectral vines to spring up and reach for a creature within 10 feet of you that you can see. The creature must succeed on a Strength or Dexterity saving throw or be restrained.'
+            },
+            {
+                'name': 'Channel Divinity: Turn the Faithless',
+                'description': 'As an action, you present your holy symbol and speak a prayer censuring fey and fiends. Each fey or fiend within 30 feet of you that can see or hear you must make a Wisdom saving throw or be turned for 1 minute or until it takes damage.'
+            },
+        ],
+        7: [
+            {
+                'name': 'Aura of Warding',
+                'description': 'Beginning at 7th level, ancient magic lies so heavily upon you that it forms an eldritch ward. You and friendly creatures within 10 feet of you have resistance to damage from spells. At 18th level, the range increases to 30 feet.'
+            },
+        ],
+        15: [
+            {
+                'name': 'Undying Sentinel',
+                'description': 'Starting at 15th level, when you are reduced to 0 hit points and are not killed outright, you can choose to drop to 1 hit point instead. You can\'t use this feature again until you finish a long rest. Additionally, you suffer none of the drawbacks of old age.'
+            },
+        ],
+        20: [
+            {
+                'name': 'Elder Champion',
+                'description': 'At 20th level, you can assume the form of an ancient force of nature, taking on an appearance you choose. For 1 minute, you regain 10 hit points at the start of each of your turns, you can cast paladin spells with a casting time of 1 action as a bonus action, and enemy creatures within 10 feet have disadvantage on saving throws against your paladin spells and Channel Divinity.'
+            },
+        ],
+    },
+
+    'Oath of Vengeance': {
+        3: [
+            {
+                'name': 'Channel Divinity: Abjure Enemy',
+                'description': 'As an action, you present your holy symbol and speak a prayer of denunciation, using your Channel Divinity. Choose one creature within 60 feet of you that you can see. That creature must make a Wisdom saving throw, unless it is immune to being frightened. Fiends and undead have disadvantage on this saving throw. On a failure, the creature is frightened and its speed is reduced to 0 for 1 minute.'
+            },
+            {
+                'name': 'Channel Divinity: Vow of Enmity',
+                'description': 'As a bonus action, you can utter a vow of enmity against a creature you can see within 10 feet of you, using your Channel Divinity. You gain advantage on attack rolls against the creature for 1 minute or until it drops to 0 hit points or falls unconscious.'
+            },
+        ],
+        7: [
+            {
+                'name': 'Relentless Avenger',
+                'description': 'By 7th level, your supernatural focus helps you close off a foe\'s retreat. When you hit a creature with an opportunity attack, you can move up to half your speed immediately after the attack and as part of the same reaction without provoking opportunity attacks.'
+            },
+        ],
+        15: [
+            {
+                'name': 'Soul of Vengeance',
+                'description': 'Starting at 15th level, the authority with which you speak your Vow of Enmity gives you greater power over your foe. When a creature under the effect of your Vow of Enmity makes an attack, you can use your reaction to make a melee weapon attack against that creature if it is within range.'
+            },
+        ],
+        20: [
+            {
+                'name': 'Avenging Angel',
+                'description': 'At 20th level, you can assume the form of an angelic avenger. As an action, you undergo a transformation that lasts for 1 hour. Wings sprout from your back, granting a flying speed of 60 feet, and you emanate an aura of menace in a 30-foot radius that can frighten enemies and give you advantage on attacks against them.'
+            },
+        ],
+    },
+
+    'Arcane Trickster': {
+        3: [
+            {
+                'name': 'Spellcasting',
+                'description': 'You augment your roguish prowess with the ability to cast Wizard spells, primarily from enchantment and illusion schools.'
+            },
+            {
+                'name': 'Mage Hand Legerdemain',
+                'description': 'Starting at 3rd level, when you cast Mage Hand, you can make the spectral hand invisible, and you can retrieve/stow items, use thieves\' tools to pick locks and disarm traps at range, or plant items on other creatures.'
+            },
+        ],
+        9: [
+            {
+                'name': 'Magical Ambush',
+                'description': 'Starting at 9th level, if you are hidden from a creature when you cast a spell on it, that creature has disadvantage on any saving throw it makes against the spell this turn.'
+            },
+        ],
+        13: [
+            {
+                'name': 'Versatile Trickster',
+                'description': 'At 13th level, you gain the ability to distract targets with your Mage Hand. As a bonus action on your turn, you can designate a creature within 5 feet of the spectral hand. Doing so gives you advantage on attack rolls against that creature until the end of the turn.'
+            },
+        ],
+        17: [
+            {
+                'name': 'Spell Thief',
+                'description': 'At 17th level, you gain the ability to magically steal the knowledge of how to cast a spell from another spellcaster. Immediately after a creature casts a spell that targets you or includes you in its area of effect, you can use your reaction to force the creature to make a saving throw with its spellcasting ability modifier. On a failure, you negate the spell\'s effect on you, and you steal the knowledge of the spell if it is at least 1st level and of a level you can cast.'
+            },
+        ],
+    },
+
+    'Beast Master': {
+        3: [
+            {
+                'name': 'Ranger\'s Companion',
+                'description': 'At 3rd level, you gain a beast companion that accompanies you on your adventures and is trained to fight alongside you. Choose a beast that is no larger than Medium and that has a challenge rating of 1/4 or lower. The beast obeys your commands as best as it can.'
+            },
+        ],
+        7: [
+            {
+                'name': 'Exceptional Training',
+                'description': 'Beginning at 7th level, on any of your turns when your beast companion doesn\'t attack, you can use a bonus action to command the beast to take the Dash, Disengage, or Help action on its turn.'
+            },
+        ],
+        11: [
+            {
+                'name': 'Bestial Fury',
+                'description': 'Starting at 11th level, when you command your beast companion to take the Attack action, the beast can make two attacks, or it can take the Multiattack action if it has that action.'
+            },
+        ],
+        15: [
+            {
+                'name': 'Share Spells',
+                'description': 'Beginning at 15th level, whenever you cast a spell targeting yourself, you can also have the spell affect your beast companion if the beast is within 30 feet of you.'
+            },
+        ],
+    },
+
+    'Wild Magic': {
+        3: [
+            {
+                'name': 'Wild Magic Surge',
+                'description': 'Starting when you choose this origin at 1st level, your spellcasting can unleash surges of untamed magic. Immediately after you cast a sorcerer spell of 1st level or higher, the DM can have you roll a d20. If you roll a 1, roll on the Wild Magic Surge table to create a random magical effect.'
+            },
+            {
+                'name': 'Tides of Chaos',
+                'description': 'Starting at 1st level, you can manipulate the forces of chance and chaos to gain advantage on one attack roll, ability check, or saving throw. Once you do so, you must finish a long rest before you can use this feature again, unless you experience a Wild Magic Surge.'
+            },
+        ],
+        6: [
+            {
+                'name': 'Bend Luck',
+                'description': 'Starting at 6th level, you have the ability to twist fate using your wild magic. When another creature you can see makes an attack roll, an ability check, or a saving throw, you can use your reaction and spend 2 sorcery points to roll 1d4 and apply the number rolled as a bonus or penalty (your choice) to the creature\'s roll.'
+            },
+        ],
+        14: [
+            {
+                'name': 'Controlled Chaos',
+                'description': 'At 14th level, you gain a modicum of control over the surges of your wild magic. Whenever you roll on the Wild Magic Surge table, you can roll twice and use either number.'
+            },
+        ],
+        18: [
+            {
+                'name': 'Spell Bombardment',
+                'description': 'Beginning at 18th level, the harmful energy of your spells intensifies. When you roll damage for a spell and roll the highest number possible on any of the dice, choose one of those dice, roll it again and add that damage to the total.'
+            },
+        ],
+    },
+
+    'The Archfey': {
+        3: [
+            {
+                'name': 'Fey Presence',
+                'description': 'Starting at 1st level, your patron bestows upon you the ability to project the beguiling and fearsome presence of the fey. As an action, you can cause each creature in a 10-foot cube originating from you to make a Wisdom saving throw against your warlock spell save DC. The creatures that fail are all charmed or frightened by you (your choice) until the end of your next turn.'
+            },
+        ],
+        6: [
+            {
+                'name': 'Misty Escape',
+                'description': 'Starting at 6th level, you can vanish in a puff of mist in response to harm. When you take damage, you can use your reaction to turn invisible and teleport up to 60 feet to an unoccupied space you can see. You remain invisible until the start of your next turn or until you attack or cast a spell.'
+            },
+        ],
+        10: [
+            {
+                'name': 'Beguiling Defenses',
+                'description': 'Beginning at 10th level, your patron teaches you how to turn the mind-affecting magic of your enemies against them. You are immune to being charmed, and when another creature attempts to charm you, you can use your reaction to turn the charm back on that creature.'
+            },
+        ],
+        14: [
+            {
+                'name': 'Dark Delirium',
+                'description': 'Starting at 14th level, you can plunge a creature into an illusory realm. As an action, choose a creature that you can see within 60 feet of you. It must make a Wisdom saving throw against your warlock spell save DC. On a failed save, it is charmed or frightened by you (your choice) for 1 minute or until your concentration is broken, experiencing a terrifying or enchanting misty delusion.'
+            },
+        ],
+    },
+
+    'The Great Old One': {
+        3: [
+            {
+                'name': 'Awakened Mind',
+                'description': 'Starting at 1st level, your alien knowledge gives you the ability to touch the minds of other creatures. You can telepathically speak to any creature you can see within 30 feet of you. You don\'t need to share a language with the creature for it to understand your telepathic utterances, but the creature must be able to understand at least one language.'
+            },
+        ],
+        6: [
+            {
+                'name': 'Entropic Ward',
+                'description': 'At 6th level, you learn to magically ward yourself against attack and to turn an enemy\'s failed strike into good luck for yourself. When a creature makes an attack roll against you, you can use your reaction to impose disadvantage on that roll. If the attack misses you, your next attack roll against the creature has advantage if you make it before the end of your next turn.'
+            },
+        ],
+        10: [
+            {
+                'name': 'Thought Shield',
+                'description': 'Starting at 10th level, your thoughts can\'t be read by telepathy or other means unless you allow it. You also have resistance to psychic damage, and whenever a creature deals psychic damage to you, that creature takes the same amount of damage that you take.'
+            },
+        ],
+        14: [
+            {
+                'name': 'Create Thrall',
+                'description': 'At 14th level, you gain the ability to infect a humanoid\'s mind with the alien magic of your patron. You can use your action to touch an incapacitated humanoid. That creature is then charmed by you until a remove curse spell is cast on it, the charmed condition is removed from it, or you use this feature again.'
+            },
+        ],
+    },
 }
 
 
@@ -2725,19 +3129,19 @@ CLASS_FEATURES_2024 = {
             {'name': 'Contact Patron', 'description': 'Contact patron for information.'}
         ],
         10: [{'name': 'Subclass Feature', 'description': 'You gain a feature from your Patron.'}],
-        11: [{'name': 'Mystic Arcanum (6th)', 'description': 'Choose one 6th-level spell. Cast once per Long Rest.'}],
+        11: [{'name': 'Mystic Arcanum (6th)', 'description': 'Choose one 6th-level spell. Cast once per Long Rest.', 'options': WARLOCK_MYSTIC_ARCANUM_6, 'choice_limit': 1}],
         12: [
             {'name': 'Ability Score Improvement', 'description': 'Increase Ability Scores or choose a Feat.'},
             {'name': 'Eldritch Invocations', 'description': 'Gain another Invocation.'}
         ],
-        13: [{'name': 'Mystic Arcanum (7th)', 'description': 'Choose one 7th-level spell.'}],
+        13: [{'name': 'Mystic Arcanum (7th)', 'description': 'Choose one 7th-level spell.', 'options': WARLOCK_MYSTIC_ARCANUM_7, 'choice_limit': 1}],
         14: [{'name': 'Subclass Feature', 'description': 'You gain a feature from your Patron.'}],
         15: [
             {'name': 'Eldritch Invocations', 'description': 'Gain another Invocation.'},
-            {'name': 'Mystic Arcanum (8th)', 'description': 'Choose one 8th-level spell.'}
+            {'name': 'Mystic Arcanum (8th)', 'description': 'Choose one 8th-level spell.', 'options': WARLOCK_MYSTIC_ARCANUM_8, 'choice_limit': 1}
         ],
         16: [{'name': 'Ability Score Improvement', 'description': 'Increase Ability Scores or choose a Feat.'}],
-        17: [{'name': 'Mystic Arcanum (9th)', 'description': 'Choose one 9th-level spell.'}],
+        17: [{'name': 'Mystic Arcanum (9th)', 'description': 'Choose one 9th-level spell.', 'options': WARLOCK_MYSTIC_ARCANUM_9, 'choice_limit': 1}],
         18: [{'name': 'Eldritch Invocations', 'description': 'Gain another Invocation.'}],
         19: [{'name': 'Epic Boon', 'description': 'Choose an Epic Boon feat.', 'options': EPIC_BOON_OPTIONS, 'choice_limit': 1}],
         20: [{'name': 'Eldritch Master', 'description': 'Regain all Pact Magic slots (Action) once per Long Rest.'}]
@@ -2999,3 +3403,96 @@ AVAILABLE_SUBCLASSES_2024 = {
     'Warlock': ['Fiend Patron'],
     'Wizard': ['School of Evocation']
 }
+
+# Subclass descriptions for character creation and selection
+SUBCLASS_DESCRIPTIONS = {
+    # Barbarian
+    'Path of the Berserker': 'For some barbarians, rage is a means to an end—that end being violence. Thrilling in the chaos of battle, you can enter a Frenzy for bonus-action attacks, shrug off mental charms and fears, and frighten foes with your sheer presence.',
+    'Path of the Totem Warrior': 'The Path of the Totem Warrior is a spiritual journey, as the barbarian accepts a spirit animal as guide, protector, and inspiration. You gain primal attunements like the Bear\'s legendary resistance to all damage, the Eagle\'s swiftness, or the Wolf\'s pack hunting prowess.',
+    'Path of the Wild Heart': 'A channeler of primal nature whose rage manifests as the boundless power of beast spirits, adapting aspects of the bear, eagle, or wolf to protect companions and dominate the fray.',
+    'Path of the World Tree': 'Drawing vitality from the cosmic roots of Yggdrasil, you sprout branches of life to grant temporary hit points, teleport allies, and control the battlefield with primal branches.',
+    'Path of the Zealot': 'A furious champion chosen by a deity, infused with divine radiant or necrotic fury on every strike and miraculously easy to restore from death.',
+
+    # Bard
+    'College of Lore': 'Bards of the College of Lore know something about most everything, collecting bits of knowledge from sources as diverse as scholarly tomes and peasant tales. They cut foes with Cutting Words and plunder spells from any class list with Additional Magical Secrets.',
+    'College of Valor': 'Bards of the College of Valor sing the deeds of heroes to inspire the battlefields. Wielding medium armor, shields, and martial weapons, they empower allies\' attack damage and AC with Combat Inspiration and weave magic with weapon strikes.',
+    'College of Dance': 'Masters of agile movement and unarmed combat who dance through danger, granting initiative buffs, unarmed strikes, and evasive reactions.',
+    'College of Glamour': 'Enchanters steeped in the beauty and terror of the Feywild, weaving enthralling mantles of majesty and inspiring temporary hit points that reposition allies across the battlefield.',
+
+    # Cleric
+    'Life Domain': 'Devoted to the vibrant positive energy of the multiverse, Life clerics are peerless healers who boost all healing spells and mend grievously wounded allies with Preserve Life.',
+    'Light Domain': 'Servants of truth, vigilance, and radiant sunfire who blind attackers with Warding Flare and incinerate hordes of darkness with Radiance of the Dawn and blazing domain spells.',
+    'Knowledge Domain': 'Seekers of esoteric wisdom and hidden secrets who gain expertise in academic skills, read thoughts, and channel divinity to gain instant proficiency in any skill or tool.',
+    'Nature Domain': 'Protectors of ancient groves who befriend beasts, master elemental cantrips, command heavy armor, and dampen elemental damage for nearby companions.',
+    'Tempest Domain': 'Commanders of the roaring storm who punish attackers with wrathful lightning and thunder, push enemies across the field, and maximize thunder/lightning damage to its absolute peak.',
+    'Trickery Domain': 'Deceptive agents of mischief and subversion who create illusory duplicates, grant stealth blessings to allies, and vanish into invisibility.',
+    'War Domain': 'Crusaders of battle who gain heavy armor, martial weapons, bonus-action weapon attacks, and Guided Strike to guarantee that decisive blows never miss.',
+
+    # Druid
+    'Circle of the Land': 'Mystics and sages who safeguard ancient knowledge and rites through an oral tradition, drawing magical power from arctic, coast, desert, forest, mountain, or swamp to recover spell slots on a short rest and ignore difficult terrain.',
+    'Circle of the Moon': 'Fierce guardians of the wilds who transform into lethal high-CR beasts as a bonus action, expend spell slots to mend their beast forms, and eventually take the shape of primordial elementals.',
+    'Circle of the Sea': 'Channelers of oceanic fury who summon tempestuous water spray to strike and push foes while warding themselves in a swirling marine aura.',
+    'Circle of the Stars': 'Astrologers who harness cosmic constellations—Archer, Chalice, and Dragon—to blast radiant starlight, boost healing magic, and maintain unbreakable concentration.',
+
+    # Fighter
+    'Champion': 'The archetypal Champion focuses on pure physical power and athletic perfection, scoring critical hits on rolls of 19-20, gaining Remarkable Athlete bonuses, and regenerating hit points in battle.',
+    'Battle Master': 'Tactical combatants who view fighting as an academic discipline, employing maneuvers fueled by superiority dice to disarm, trip, rally, and maneuver allies across the battlefield.',
+    'Eldritch Knight': 'Fighters who combine the martial mastery of the soldier with the arcane spells of the wizard, bonding to weapons that fly to their hand and weaving cantrips into weapon strikes.',
+    'Psi Warrior': 'Warriors who augment their physical strikes with the power of the mind, projecting telekinetic shields, telekinetic thrusts, and psionic movement.',
+
+    # Monk
+    'Way of the Open Hand': 'Masters of unarmed martial combat who manipulate ki to push foes, knock them prone, deny reactions, heal their own wounds with Wholeness of Body, and deliver lethal Quivering Palm strikes.',
+    'Way of Shadow': 'Monks of the Way of Shadow practice stealth and subterfuge, stepping through shadows to teleport across battlefields, creating zones of darkness, and striking from the unseen.',
+    'Way of the Four Elements': 'Monks who harness the primal power of earth, fire, air, and water, channeling their ki into elemental disciplines that cast spells and shape destructive bursts of elemental energy.',
+    'Warrior of the Open Hand': 'Masters of the traditional martial arts style who use ki to strip away enemies\' balance and vital energy with devastating flurries and vibrations.',
+    'Warrior of Shadow': 'Stealth masters who harness the power of shadow and darkness to teleport, blind foes, and summon shadowy darkness.',
+    'Warrior of the Elements': 'Monks whose strikes reach outward with elemental reach and burst with thunder, lightning, fire, or cold.',
+    'Warrior of Mercy': 'Monks who manipulate the life force of others to heal the wounded or deliver merciful, necrotic hands of harm.',
+    'Way of Mercy': 'Monks who manipulate the life force of others to heal the wounded or deliver merciful, necrotic hands of harm.',
+
+    # Paladin
+    'Oath of Devotion': 'The classic knight in shining armor bound to justice and virtue, imbuing their weapon with radiant positive energy, preventing charms with Aura of Devotion, and turning fiends and undead.',
+    'Oath of the Ancients': 'Paladins who fight for the light and beauty of the world, commanding spectral vines to restrain foes and surrounding themselves with an Aura of Warding that grants resistance to damage from all spells.',
+    'Oath of Vengeance': 'A solemn avenger who punishes wrongdoers at any cost, swearing a Vow of Enmity for relentless advantage on attacks and relentlessly pursuing fleeing prey.',
+    'Oath of Glory': 'Heroic paladins striving for legendary athletic deeds and peerless glory, inspiring their comrades with bursts of speed and protective temp HP.',
+
+    # Ranger
+    'Hunter': 'Specialized predators who adapt their techniques to vanquish hordes or fell towering giants, gaining features like Colossus Slayer, Horde Breaker, and Multiattack.',
+    'Beast Master': 'Rangers who forge an unbreakable bond with a wild beast companion that fights beside them, coordinating strikes and sharing defensive magic.',
+    'Gloom Stalker': 'Predators of the Underdark and dark places who strike first with lethal ambush damage, gain darkvision, and become invisible to darkvision in the shadows.',
+    'Fey Wanderer': 'Rangers infused with whimsical fey blessings, adding Charisma to Wisdom checks, dealing psychic dread damage on weapon hits, and summoning fey allies.',
+
+    # Rogue
+    'Thief': 'Nimble acrobats and burglars who pick locks and disarm traps as a bonus action with Fast Hands, climb at full speed, and use any magical item regardless of class restrictions.',
+    'Assassin': 'Masters of poison, disguise, and silent death who gain advantage against targets that haven\'t acted yet and turn surprise hits into automatic critical strikes.',
+    'Arcane Trickster': 'Cunning rogues who blend stealth with Wizard enchantment and illusion spells, manipulating locks and pockets with an invisible Mage Hand Legerdemain.',
+    'Soulknife': 'Rogues who manifest blades of pure psychic energy from their mind, striking silently without leaving marks and telepathically linking the minds of their party.',
+
+    # Sorcerer
+    'Draconic Bloodline': 'Descendants of ancient dragon lineages, sporting dragon scales that boost AC and HP, and commanding devastating elemental breath affinities.',
+    'Wild Magic': 'Conduits of chaotic, raw magic who manipulate probability with Tides of Chaos and unleash uncontrollable Wild Magic Surges with unpredictable effects.',
+    'Draconic Sorcery': 'Channelers of primordial dragon breath and draconic vigor who sprout spectral wings and unleash elemental devastation.',
+    'Wild Magic Sorcery': 'Mages whose spells erupt in chaotic wild magic surges, bending luck and rolling with controlled chaos.',
+    'Aberrant Sorcery': 'Sorcerers touched by an alien entity or far realm, casting psionic spells without components and warping space with tentacles of the deep.',
+    'Clockwork Sorcery': 'Orderly mages linked to the cosmic clockwork plane of Mechanus, neutralizing advantage/disadvantage and wrapping companions in shields of order.',
+
+    # Warlock
+    'The Archfey': 'Bound to a lord or lady of the fey, wielding powers of enchantment, charm, misty teleportation escapes, and deceptive phantasms.',
+    'The Fiend': 'Pacted to a devil of the Nine Hells or demon of the Abyss, gaining temporary hit points whenever they fell a foe and calling upon Hellfire and dark luck.',
+    'The Great Old One': 'Bound to an unfathomable alien consciousness from beyond the stars, communicating telepathically with any creature, shielding their thoughts, and binding thralls.',
+    'Archfey Patron': 'Pacted to the faerie courts, flitting across the battlefield in steps of mist and beguiling defenses.',
+    'Fiend Patron': 'Warlocks fueled by lower-planar brimstone, snatching dark vitality from dying foes and summoning hellish resistance.',
+    'Great Old One Patron': 'Touched by entities outside reality, whispering telepathic madness and dealing psychic damage.',
+    'Celestial Patron': 'Bound to an empyrean or solar of the upper planes, healing comrades with a pool of radiant d6s and searing foes with sacred fire.',
+
+    # Wizard
+    'School of Abjuration': 'Masters of protective magic who project an Arcane Ward that absorbs damage meant for them or their allies, and excel at counterspelling.',
+    'School of Conjuration': 'Wizards who conjure objects from thin air, teleport across distances with Benign Transposition, and summon unbreakable minions.',
+    'School of Divination': 'Foretellers of fate who roll Portent dice each morning to replace any d20 roll made by a friend or foe.',
+    'School of Enchantment': 'Hypnotists who beguile creatures with a gaze, redirect attacks with Instinctive Charm, and split enchantment spells across two targets.',
+    'School of Evocation': 'Masters of elemental devastation who sculpt spells to allow allies to automatically succeed on saves and take zero damage from fireballs and lightning.',
+    'School of Illusion': 'Artists of deception whose illusions are so convincing they feel real, eventually making illusory objects physically solid.',
+    'School of Necromancy': 'Scholars of life and death who regain hit points when slaying foes with spells and animate larger, tougher undead thralls.',
+    'School of Transmutation': 'Alchemists who transmute materials and forge a Transmuter\'s Stone granting darkvision, elemental resistance, or saving throw bonuses.',
+}
+

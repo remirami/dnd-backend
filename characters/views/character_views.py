@@ -118,7 +118,7 @@ class CharacterViewSet(viewsets.ModelViewSet):
         else:
             preview = bool(preview_raw)
 
-        ruleset_version = request.data.get('ruleset_version', '2014')
+        ruleset_version = request.data.get('ruleset_version', '2024')
         class_id = request.data.get('character_class_id')
         race_id = request.data.get('race_id')
         character_data = request.data.get('character_data')
@@ -553,8 +553,8 @@ class CharacterViewSet(viewsets.ModelViewSet):
                         'type': 'subclass'
                     })
             
-            # Handle Ability Score Improvements (ASI) based on CLASS level
-            asi_levels = [4, 8, 12, 16, 19]
+            # Handle Ability Score Improvements (ASI) / Epic Boons based on CLASS level
+            asi_levels = [4, 8, 12, 16, 19, 20]
             # Fighter gets extra ASIs at 6 and 14
             if target_class.name.lower() == 'fighter':
                 asi_levels.extend([6, 14])
@@ -563,10 +563,9 @@ class CharacterViewSet(viewsets.ModelViewSet):
                 asi_levels.append(10)
                 
             if new_class_level in asi_levels:
-                # We append the NEW level provided it triggers an ASI
-                # We allow multiple same-level ASIs if from different sources (though list is simple ints)
-                # But to avoid "already pending" check blocking legitimate 2nd ASI at same level, we just append.
                 character.pending_asi_levels.append(new_class_level)
+            elif total_level == 20 and 20 not in character.pending_asi_levels:
+                character.pending_asi_levels.append(20)
             
             # Check if subclass selection is needed
             subclass_levels_2014 = {
@@ -687,8 +686,8 @@ class CharacterViewSet(viewsets.ModelViewSet):
         # Update character level
         character.level = new_level
         
-        # Handle Ability Score Improvements (ASI) at levels 4, 8, 12, 16, 19
-        asi_levels = [4, 8, 12, 16, 19]
+        # Handle Ability Score Improvements (ASI) / Epic Boons at levels 4, 8, 12, 16, 19, 20
+        asi_levels = [4, 8, 12, 16, 19, 20]
         if new_level in asi_levels and new_level not in character.pending_asi_levels:
             character.pending_asi_levels.append(new_level)
         
@@ -899,12 +898,15 @@ class CharacterViewSet(viewsets.ModelViewSet):
                 if count > 0:
                      feature_name = f"{base_name} ({count + 1})"
             
+            is_boon = feat.category == 'epic_boon' or (feat.name and feat.name.startswith('Boon of'))
+            source_desc = f"Epic Boon (Level {level})" if is_boon else f"Feat (Level {level})"
+            
             CharacterFeature.objects.create(
                 character=character,
                 name=feature_name,
                 feature_type='feat',
                 description=feat.description,
-                source=f"Feat (Level {level})",
+                source=source_desc,
                 options=feat_config.get('options', []),
                 choice_limit=feat_config.get('choice_limit', 1)
             )
@@ -1115,20 +1117,21 @@ class CharacterViewSet(viewsets.ModelViewSet):
                 "class_name": target_class_name,
                 "message": f"No subclasses available for class '{target_class_name}'"
             })
-            
-        options = []
+        from campaigns.class_features_data import SUBCLASS_DESCRIPTIONS
+
         options = []
         for sub_name in AVAILABLE_SUBCLASSES[lookup_name]:
-            description = "No description available."
-            if sub_name in features_source:
+            description = SUBCLASS_DESCRIPTIONS.get(sub_name)
+            if not description and sub_name in features_source:
                 # Try to get a description from the first feature at the earliest level
                 levels = sorted(features_source[sub_name].keys())
                 if levels and features_source[sub_name][levels[0]]:
-                     for feature in features_source[sub_name][levels[0]]:
-                         if 'description' in feature:
-                             description = feature['description']
-                             break
-            
+                    for feature in features_source[sub_name][levels[0]]:
+                        if 'description' in feature:
+                            description = feature['description']
+                            break
+            if not description:
+                description = "No description available."
             
             options.append({
                 "name": sub_name,
@@ -2680,22 +2683,30 @@ class CharacterViewSet(viewsets.ModelViewSet):
 
         # 2. Recover Pact Magic slots (Warlock)
         slots_recovered = {}
-        if character.character_class.name == 'Warlock':
+        if character.character_class and character.character_class.name == 'Warlock':
              # Calculate max slots
             from campaigns.utils import calculate_spell_slots
             max_slots = calculate_spell_slots('Warlock', character.level)
             stats.spell_slots = max_slots
             slots_recovered = max_slots
 
+        # 3. Recover Monk Ki Points (PHB 5e: Regained on Short or Long Rest)
+        ki_regained = 0
+        if stats.ki_points_used:
+            ki_regained = stats.ki_points_used
+            stats.ki_points_used = 0
+
         stats.save()
         
         return Response({
-            "message": f"Short Rest complete. Regained {hp_recovered} HP using {dice_spent} Hit Dice.",
+            "message": f"Short Rest complete. Regained {hp_recovered} HP using {dice_spent} Hit Dice." + (f" Restored {ki_regained} Ki points." if ki_regained else ""),
             "hp_recovered": hp_recovered,
             "hit_dice_spent": dice_spent,
             "current_hp": stats.hit_points,
             "hit_dice_remaining": character.level - stats.hit_dice_used,
-            "slots_recovered": slots_recovered
+            "slots_recovered": slots_recovered,
+            "ki_points_current": stats.ki_points_current,
+            "ki_points_max": stats.ki_points_max
         })
 
     @action(detail=True, methods=['post'])
@@ -2705,6 +2716,7 @@ class CharacterViewSet(viewsets.ModelViewSet):
         - Restore HP to max
         - Regain Hit Dice (half max)
         - Restore all Spell Slots
+        - Restore Monk Ki points
         - Reduce Exhaustion (future)
         """
         character = self.get_object()
@@ -2744,15 +2756,65 @@ class CharacterViewSet(viewsets.ModelViewSet):
             
         stats.spell_slots = max_slots
         stats.expended_spell_slots = {}
+        
+        # 4. Restore Monk Ki Points
+        stats.ki_points_used = 0
         stats.save()
         
         return Response({
-            "message": f"Long Rest complete. HP and Spell Slots fully restored. Regained {regain_amount} Hit Dice.",
+            "message": f"Long Rest complete. HP, Spell Slots, and Ki Points fully restored. Regained {regain_amount} Hit Dice.",
             "hp_gained": hp_gained,
             "hit_dice_regained": regain_amount,
             "current_hp": stats.hit_points,
             "hit_dice_remaining": total_hit_dice - stats.hit_dice_used,
             "spell_slots": max_slots,
-            "expended_spell_slots": stats.expended_spell_slots
+            "expended_spell_slots": stats.expended_spell_slots,
+            "ki_points_current": stats.ki_points_current,
+            "ki_points_max": stats.ki_points_max
+        })
+
+    @action(detail=True, methods=['post'])
+    def use_ki(self, request, pk=None):
+        """Spend or regain Ki points for Monk characters"""
+        character = self.get_object()
+        if not hasattr(character, 'stats'):
+            return Response(
+                {"error": "Character stats not found"},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+        
+        try:
+            amount = int(request.data.get('amount', 1))
+        except (ValueError, TypeError):
+            return Response({"error": "amount must be an integer"}, status=status.HTTP_400_BAD_REQUEST)
+
+        stats = character.stats
+        max_ki = stats.ki_points_max
+        if max_ki <= 0:
+            return Response(
+                {"error": "This character does not have Ki points"},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
+        action_type = request.data.get('action', 'spend')  # 'spend', 'regain', or 'reset'
+        if action_type == 'spend':
+            current_ki = stats.ki_points_current
+            if current_ki < amount:
+                return Response(
+                    {"error": f"Not enough Ki points remaining. Available: {current_ki}"},
+                    status=status.HTTP_400_BAD_REQUEST
+                )
+            stats.ki_points_used = (stats.ki_points_used or 0) + amount
+        elif action_type == 'regain':
+            stats.ki_points_used = max(0, (stats.ki_points_used or 0) - amount)
+        elif action_type == 'reset':
+            stats.ki_points_used = 0
+
+        stats.save()
+        return Response({
+            "message": f"Ki points updated. Remaining: {stats.ki_points_current}/{max_ki}",
+            "ki_points_current": stats.ki_points_current,
+            "ki_points_max": max_ki,
+            "ki_points_used": stats.ki_points_used
         })
 

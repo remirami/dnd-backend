@@ -198,11 +198,12 @@ def get_racial_features(race_name):
     Returns:
         List of feature dictionaries with 'name' and 'description' keys
     """
-    race_name_lower = race_name.lower()
-    if race_name_lower not in RACIAL_FEATURES:
-        return []
-    
-    return RACIAL_FEATURES[race_name_lower]
+    clean_name = race_name.lower().split('(')[0].strip()
+    if clean_name in RACIAL_FEATURES:
+        return RACIAL_FEATURES[clean_name]
+    if race_name.lower() in RACIAL_FEATURES:
+        return RACIAL_FEATURES[race_name.lower()]
+    return []
 
 
 def apply_racial_features_to_character(character):

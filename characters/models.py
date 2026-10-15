@@ -298,6 +298,41 @@ class CharacterStats(models.Model):
         return f"{self.character.name} - Stats"
     
     @property
+    def ki_points_max(self):
+        """Calculate maximum Ki points based on Monk level (Level 2+)"""
+        if not self.character:
+            return 0
+        class_name = getattr(self.character.character_class, 'name', '').lower()
+        if class_name == 'monk' or self.character.features.filter(models.Q(name__iexact='ki') | models.Q(name__icontains='martial arts')).exists():
+            return self.character.level if self.character.level >= 2 else 0
+        return 0
+
+    @property
+    def ki_points_current(self):
+        """Calculate remaining Ki points"""
+        max_ki = self.ki_points_max
+        if max_ki <= 0:
+            return 0
+        return max(0, max_ki - (self.ki_points_used or 0))
+
+    @property
+    def martial_arts_die(self):
+        """Calculate Monk Martial Arts damage die based on level"""
+        if not self.character:
+            return None
+        class_name = getattr(self.character.character_class, 'name', '').lower()
+        if class_name == 'monk' or self.character.features.filter(name__icontains='martial arts').exists():
+            lvl = self.character.level or 1
+            if lvl >= 17:
+                return '1d10'
+            elif lvl >= 11:
+                return '1d8'
+            elif lvl >= 5:
+                return '1d6'
+            return '1d4'
+        return None
+
+    @property
     def strength_modifier(self):
         from core.dnd_utils import calculate_ability_modifier
         return calculate_ability_modifier(self.strength)
@@ -569,6 +604,18 @@ class Feat(models.Model):
         # Check level requirement
         if character.level < self.minimum_level:
             return False, f"Requires level {self.minimum_level}"
+
+        # Epic Boons are strictly restricted to 20th-level characters
+        if self.category == 'epic_boon' or (self.name and self.name.startswith('Boon of')):
+            if character.level < 20:
+                return False, "Requires level 20 (Epic Boon)"
+
+        # Check if already acquired (unless repeatable like Skilled)
+        from campaigns.feat_data import get_feat_config
+        feat_config = get_feat_config(self.name)
+        if getattr(character, 'pk', None) and not feat_config.get('repeatable'):
+            if character.character_feats.filter(feat=self).exists():
+                return False, "Already acquired"
         
         # Check ability score requirements
         if stats.strength < self.strength_requirement:

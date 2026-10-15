@@ -97,7 +97,8 @@ def populate_epic_boons():
             name=boon_data['name'],
             defaults={
                 'description': boon_data['description'],
-                'minimum_level': boon_data['minimum_level'],
+                'minimum_level': 20,
+                'category': 'epic_boon',
                 'source': boon_data['source'],
                 'strength_requirement': 0,
                 'dexterity_requirement': 0,

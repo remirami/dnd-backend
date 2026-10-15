@@ -234,6 +234,18 @@ class CombatEnvironmentMixin:
         return escape_grapple_endpoint(self, request, pk)
 
     @action(detail=True, methods=['post'])
+    def release_grapple(self, request, pk=None):
+        """Release an active grapple."""
+        from combat.tactical_endpoints import release_grapple_endpoint
+        return release_grapple_endpoint(self, request, pk)
+
+    @action(detail=True, methods=['post'])
+    def pin(self, request, pk=None):
+        """Pin a grappled creature (Grappler feat)."""
+        from combat.tactical_endpoints import pin_endpoint
+        return pin_endpoint(self, request, pk)
+
+    @action(detail=True, methods=['post'])
     def set_cover(self, request, pk=None):
         """Set cover type for a participant."""
         from combat.tactical_endpoints import set_cover_endpoint

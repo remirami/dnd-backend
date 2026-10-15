@@ -188,6 +188,7 @@ def get_targets_in_cube(participants, origin_x, origin_y, size):
 AOE_SPELL_TEMPLATES = {
     'fireball': {
         'name': 'Fireball',
+        'base_level': 3,
         'shape': 'sphere',
         'size': 20,  # 20 ft radius
         'save_type': 'dex',
@@ -197,6 +198,7 @@ AOE_SPELL_TEMPLATES = {
     },
     'cone_of_cold': {
         'name': 'Cone of Cold',
+        'base_level': 5,
         'shape': 'cone',
         'size': 60,  # 60 ft cone
         'save_type': 'con',
@@ -206,6 +208,7 @@ AOE_SPELL_TEMPLATES = {
     },
     'lightning_bolt': {
         'name': 'Lightning Bolt',
+        'base_level': 3,
         'shape': 'line',
         'size': 100,  # 100 ft line
         'width': 5,
@@ -216,6 +219,7 @@ AOE_SPELL_TEMPLATES = {
     },
     'thunderwave': {
         'name': 'Thunderwave',
+        'base_level': 1,
         'shape': 'cube',
         'size': 15,  # 15 ft cube
         'save_type': 'con',
@@ -225,6 +229,7 @@ AOE_SPELL_TEMPLATES = {
     },
     'burning_hands': {
         'name': 'Burning Hands',
+        'base_level': 1,
         'shape': 'cone',
         'size': 15,  # 15 ft cone
         'save_type': 'dex',

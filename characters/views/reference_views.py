@@ -39,7 +39,11 @@ class CharacterClassViewSet(viewsets.ReadOnlyModelViewSet):
         character_class = self.get_object()
         ruleset = request.query_params.get('ruleset', '2014')
         
-        from campaigns.class_features_data import AVAILABLE_SUBCLASSES_2014, AVAILABLE_SUBCLASSES_2024
+        from campaigns.class_features_data import (
+            AVAILABLE_SUBCLASSES_2014,
+            AVAILABLE_SUBCLASSES_2024,
+            SUBCLASS_DESCRIPTIONS
+        )
         
         if ruleset == '2024':
             subclasses = AVAILABLE_SUBCLASSES_2024.get(character_class.name, [])
@@ -51,7 +55,7 @@ class CharacterClassViewSet(viewsets.ReadOnlyModelViewSet):
             data.append({
                 'name': sc_name,
                 'id': sc_name,
-                'description': f"A valid subclass for {character_class.name}"
+                'description': SUBCLASS_DESCRIPTIONS.get(sc_name, f"A valid subclass for {character_class.name}")
             })
             
         return Response(data)
@@ -66,14 +70,14 @@ class CharacterRaceViewSet(viewsets.ReadOnlyModelViewSet):
         queryset = CharacterRace.objects.all()
         if self.action == 'retrieve':
             return queryset
-        ruleset = self.request.query_params.get('ruleset', '2014')
+        ruleset = self.request.query_params.get('ruleset', '2024')
         
         if ruleset == '2024':
-            return queryset.filter(source_ruleset__in=['2024', 'all'])
+            return queryset.filter(source_ruleset__in=['2024', 'all']).order_by('name')
         elif ruleset == 'all':
-            return queryset
+            return queryset.order_by('name')
         else:
-            return queryset.filter(source_ruleset__in=['2014', 'all'])
+            return queryset.filter(source_ruleset__in=['2014', 'all']).order_by('name')
 
 
 class CharacterBackgroundViewSet(viewsets.ReadOnlyModelViewSet):
@@ -85,14 +89,14 @@ class CharacterBackgroundViewSet(viewsets.ReadOnlyModelViewSet):
         queryset = CharacterBackground.objects.all()
         if self.action == 'retrieve':
             return queryset
-        ruleset = self.request.query_params.get('ruleset', '2014')
+        ruleset = self.request.query_params.get('ruleset', '2024')
         
         if ruleset == '2024':
-            return queryset.filter(source_ruleset__in=['2024', 'all'])
+            return queryset.filter(source_ruleset__in=['2024', 'all']).order_by('name')
         elif ruleset == 'all':
-            return queryset
+            return queryset.order_by('name')
         else:
-            return queryset.filter(source_ruleset__in=['2014', 'all'])
+            return queryset.filter(source_ruleset__in=['2014', 'all']).order_by('name')
 
 
 
@@ -128,6 +132,32 @@ class CharacterFeatureViewSet(viewsets.ModelViewSet):
     def perform_update(self, serializer):
         feature = serializer.save()
         self._sync_proficiencies(feature)
+        self._sync_mystic_arcanum_spells(feature)
+
+    def _sync_mystic_arcanum_spells(self, feature):
+        """
+        Syncs selected Mystic Arcanum spells to CharacterSpell model so they appear in Grimoire.
+        """
+        if not feature.name.startswith('Mystic Arcanum'):
+            return
+
+        from spells.models import Spell
+        from ..models import CharacterSpell
+
+        for spell_name in (feature.selection or []):
+            spell = Spell.objects.filter(name__iexact=spell_name).first()
+            if spell:
+                CharacterSpell.objects.get_or_create(
+                    character=feature.character,
+                    name=spell.name,
+                    defaults={
+                        'level': spell.level,
+                        'school': spell.school,
+                        'description': spell.description,
+                        'is_prepared': True,
+                        'is_ritual': spell.ritual,
+                    }
+                )
         
     def _sync_proficiencies(self, feature):
         """

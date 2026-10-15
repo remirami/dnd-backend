@@ -115,6 +115,14 @@ def calculate_damage(
     # Extract just the dice part
     dice_part = damage_string.split()[0] if ' ' in damage_string else damage_string
     
+    # Check if damage_string is a flat number (e.g. "1" for standard D&D 5e Unarmed Strike)
+    if dice_part.strip().isdigit():
+        base_val = int(dice_part.strip())
+        total = max(1, base_val + ability_modifier)
+        mod_str = f" {'+' if ability_modifier >= 0 else '-'} {abs(ability_modifier)}" if ability_modifier else ""
+        breakdown_str = f"Flat damage {base_val}{mod_str} = {total}"
+        return total, breakdown_str
+
     pattern = r'(\d+)d(\d+)([+-]\d+)?'
     match = re.match(pattern, dice_part.lower().replace(' ', ''))
     

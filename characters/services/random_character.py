@@ -280,7 +280,7 @@ def select_random_subclass(class_name: str, ruleset_version: str = '2014') -> st
 
 
 def generate_random_character_data(
-    ruleset_version: str = '2014',
+    ruleset_version: str = '2024',
     character_class_id: int | None = None,
     race_id: int | None = None
 ) -> dict[str, Any]:
@@ -508,7 +508,7 @@ def generate_random_character_data(
 
 def create_random_character(
     user: User,
-    ruleset_version: str = '2014',
+    ruleset_version: str = '2024',
     character_class_id: int | None = None,
     race_id: int | None = None,
     character_data: dict[str, Any] | None = None
