@@ -181,7 +181,7 @@ class CombatEnvironmentMixin:
             is_active=True
         )
         for cover_effect in cover_effects:
-            if cover_effect.cover_area_x and cover_effect.cover_area_y and cover_effect.cover_area_radius:
+            if cover_effect.cover_area_x is not None and cover_effect.cover_area_y is not None and cover_effect.cover_area_radius:
                 if position.is_in_area(cover_effect.cover_area_x, cover_effect.cover_area_y, cover_effect.cover_area_radius):
                     position.current_cover = cover_effect.cover_type
                     break
@@ -193,7 +193,7 @@ class CombatEnvironmentMixin:
             is_active=True
         )
         for lighting_effect in lighting_effects:
-            if lighting_effect.lighting_area_x and lighting_effect.lighting_area_y and lighting_effect.lighting_area_radius:
+            if lighting_effect.lighting_area_x is not None and lighting_effect.lighting_area_y is not None and lighting_effect.lighting_area_radius:
                 if position.is_in_area(lighting_effect.lighting_area_x, lighting_effect.lighting_area_y, lighting_effect.lighting_area_radius):
                     position.current_lighting = lighting_effect.lighting_type
                     break
@@ -206,7 +206,7 @@ class CombatEnvironmentMixin:
         )
         hazards = []
         for hazard_effect in hazard_effects:
-            if hazard_effect.hazard_area_x and hazard_effect.hazard_area_y and hazard_effect.hazard_area_radius:
+            if hazard_effect.hazard_area_x is not None and hazard_effect.hazard_area_y is not None and hazard_effect.hazard_area_radius:
                 if position.is_in_area(hazard_effect.hazard_area_x, hazard_effect.hazard_area_y, hazard_effect.hazard_area_radius):
                     hazards.append(hazard_effect.hazard_type)
         position.current_hazards = hazards

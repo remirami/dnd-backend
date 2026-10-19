@@ -154,21 +154,65 @@ HAZARD_TYPES = {
         'save_dc': 12,
         'on_contact': True,
     },
+    'spike_growth': {
+        'description': 'Spike Growth',
+        'damage_per_5ft': '2d4',
+        'damage_type': 'piercing',
+        'save_type': None,
+        'save_dc': None,
+        'on_movement': True,
+        'difficult_terrain': True,
+    },
+    'wall_of_fire': {
+        'description': 'Wall of Fire',
+        'damage_per_round': '5d8',
+        'damage_type': 'fire',
+        'save_type': 'DEX',
+        'save_dc': 15,
+        'on_contact': True,
+    },
+    'moonbeam': {
+        'description': 'Moonbeam',
+        'damage_per_round': '2d10',
+        'damage_type': 'radiant',
+        'save_type': 'CON',
+        'save_dc': 15,
+        'on_contact': True,
+    },
+    'cloudkill': {
+        'description': 'Cloudkill',
+        'damage_per_round': '5d8',
+        'damage_type': 'poison',
+        'save_type': 'CON',
+        'save_dc': 15,
+        'on_contact': True,
+        'obscured': 'heavily',
+    },
 }
 
 
-def calculate_movement_cost(base_movement, terrain_type=None, weather=None):
+def calculate_movement_cost(base_movement, terrain_type=None, weather=None, participant=None, hazards=None):
     """
-    Calculate movement cost considering terrain and weather.
+    Calculate movement cost considering terrain, hazards, and weather.
+    Land's Stride (Circle of the Land Level 6+): Moving through nonmagical difficult terrain costs no extra movement.
+    Spike Growth creates magical difficult terrain that doubles movement cost.
     Returns: (effective_movement, cost_multiplier)
     """
     cost_multiplier = 1.0
     
-    # Difficult terrain doubles movement cost
+    # Difficult terrain doubles movement cost (unless participant has Land's Stride on nonmagical terrain)
     if terrain_type and terrain_type in DIFFICULT_TERRAIN_TYPES:
-        terrain = DIFFICULT_TERRAIN_TYPES[terrain_type]
-        cost_multiplier *= terrain['movement_cost_multiplier']
-    
+        if not (participant and getattr(participant, 'has_lands_stride', lambda: False)()):
+            terrain = DIFFICULT_TERRAIN_TYPES[terrain_type]
+            cost_multiplier *= terrain['movement_cost_multiplier']
+
+    # Hazards creating difficult terrain (e.g. Spike Growth)
+    if hazards:
+        for h in hazards:
+            if h in HAZARD_TYPES and HAZARD_TYPES[h].get('difficult_terrain'):
+                cost_multiplier *= 2
+                break
+
     # Weather effects
     if weather and weather in WEATHER_EFFECTS:
         weather_effect = WEATHER_EFFECTS[weather]
@@ -180,6 +224,74 @@ def calculate_movement_cost(base_movement, terrain_type=None, weather=None):
     effective_movement = int(base_movement / cost_multiplier)
     
     return effective_movement, cost_multiplier
+
+
+def resolve_movement_hazards(participant, distance_moved: int, hazards: list) -> tuple[int, list]:
+    """
+    Resolve damage and saving throws for hazards triggered during movement.
+    - spike_growth: 2d4 piercing per 5 ft moved.
+    - wall_of_fire, moonbeam, cloudkill, lava, acid: saving throw on contact.
+    Returns: (total_damage, list_of_report_messages)
+    """
+    import random
+    from combat.utils import calculate_saving_throw, roll_d20
+
+    if not hazards or distance_moved <= 0:
+        return 0, []
+
+    total_damage = 0
+    reports = []
+
+    for hazard_name in hazards:
+        if hazard_name not in HAZARD_TYPES:
+            continue
+        hazard = HAZARD_TYPES[hazard_name]
+
+        # Spike Growth: 2d4 piercing for every 5 feet moved through it
+        if hazard_name == 'spike_growth':
+            five_foot_increments = max(1, distance_moved // 5)
+            spike_dmg = sum(random.randint(1, 4) + random.randint(1, 4) for _ in range(five_foot_increments))
+            if spike_dmg > 0:
+                _new_hp, _ = participant.take_damage(spike_dmg, damage_type='piercing')
+                total_damage += spike_dmg
+                reports.append(
+                    f"🌿 Spike Growth: Took {spike_dmg} piercing damage ({five_foot_increments}x 2d4 for {distance_moved} ft moved)!"
+                )
+            continue
+
+        # Contact / area hazards
+        damage_dice = hazard.get('damage_per_round')
+        dtype = hazard.get('damage_type')
+        save_type = hazard.get('save_type')
+        save_dc = hazard.get('save_dc', 15)
+
+        if damage_dice and dtype:
+            from combat.utils import calculate_damage
+            base_dmg, _ = calculate_damage(damage_dice, 0, False)
+            if save_type:
+                save_roll, _ = roll_d20()
+                con_or_dex_mod = participant.get_ability_modifier(save_type)
+                prof = False
+                if participant.character and hasattr(participant.character, 'saving_throw_proficiencies') and participant.character.saving_throw_proficiencies:
+                    prof = save_type.lower() in [s.lower() for s in participant.character.saving_throw_proficiencies]
+                prof_bonus = participant.character.proficiency_bonus if participant.character else 2
+                aura_bonus = getattr(participant, 'get_aura_of_protection_bonus', lambda: 0)()
+                save_total, _ = calculate_saving_throw(save_roll, con_or_dex_mod, prof_bonus, prof, other_modifiers=aura_bonus)
+                if save_total >= save_dc:
+                    actual_dmg = base_dmg // 2
+                    res_str = f"succeeded {save_type} save ({save_total} vs DC {save_dc}, half damage: {actual_dmg})"
+                else:
+                    actual_dmg = base_dmg
+                    res_str = f"failed {save_type} save ({save_total} vs DC {save_dc}, full damage: {actual_dmg})"
+            else:
+                actual_dmg = base_dmg
+                res_str = f"took {actual_dmg} damage"
+
+            _new_hp, _ = participant.take_damage(actual_dmg, damage_type=dtype)
+            total_damage += actual_dmg
+            reports.append(f"⚠️ {hazard['description']}: {participant.get_name()} {res_str}!")
+
+    return total_damage, reports
 
 
 def calculate_cover_ac_bonus(cover_type):
@@ -201,14 +313,18 @@ def has_full_cover(cover_type):
     return cover_type == 'full'
 
 
-def get_lighting_attack_modifier(lighting, has_darkvision=False):
+def get_lighting_attack_modifier(lighting, has_darkvision=False, has_devils_sight=False):
     """
     Get attack modifier from lighting conditions.
     Returns: 'advantage', 'disadvantage', or 0
+    Devil's Sight allows seeing normally in both nonmagical and magical darkness.
     """
     if not lighting or lighting not in LIGHTING_CONDITIONS:
         return 0
-    
+
+    if has_devils_sight and lighting in ['darkness', 'magical_darkness']:
+        return 0
+
     lighting_effect = LIGHTING_CONDITIONS[lighting]
     
     # Darkvision can see in darkness (but not magical darkness)
@@ -228,12 +344,15 @@ def get_lighting_attack_modifier(lighting, has_darkvision=False):
     return 0
 
 
-def get_lighting_perception_modifier(lighting, has_darkvision=False):
+def get_lighting_perception_modifier(lighting, has_darkvision=False, has_devils_sight=False):
     """
     Get perception modifier from lighting conditions.
     Returns: modifier value or 'disadvantage'
     """
     if not lighting or lighting not in LIGHTING_CONDITIONS:
+        return 0
+
+    if has_devils_sight and lighting in ['darkness', 'magical_darkness']:
         return 0
     
     lighting_effect = LIGHTING_CONDITIONS[lighting]
@@ -288,7 +407,7 @@ def calculate_hazard_damage(hazard_type, rounds_exposed=1):
     return damage_dice, damage_type, save_type, save_dc, condition
 
 
-def can_see_target(attacker_lighting, target_lighting, attacker_darkvision=False, target_distance=0):
+def can_see_target(attacker_lighting, target_lighting, attacker_darkvision=False, target_distance=0, has_devils_sight=False):
     """
     Check if attacker can see target based on lighting and distance.
     Returns: (can_see, reason)
@@ -297,10 +416,15 @@ def can_see_target(attacker_lighting, target_lighting, attacker_darkvision=False
     
     # Check lighting
     if attacker_lighting == 'magical_darkness':
+        if has_devils_sight and (target_distance <= 120):
+            return True, None
         return False, "Magical darkness blocks vision"
     
-    if attacker_lighting == 'darkness' and not attacker_darkvision:
-        return False, "Cannot see in darkness without darkvision"
+    if attacker_lighting == 'darkness':
+        if has_devils_sight and (target_distance <= 120):
+            return True, None
+        if not attacker_darkvision:
+            return False, "Cannot see in darkness without darkvision"
     
     # Check weather visibility range
     # This would need weather context

@@ -550,4 +550,282 @@ class ClassFeaturesCombatTests(TestCase):
         self.assertEqual(target_p.position_y, 10)
         self.assertIn('blasted 10 ft away', res.data.get('message', ''))
 
+    def test_has_fighting_style_detection(self):
+        """CombatParticipant.has_fighting_style detects fighting styles across features, feats, and feature_uses."""
+        from characters.models import CharacterFeature, Feat, CharacterFeat
+
+        fighter_class, _ = CharacterClass.objects.get_or_create(name='fighter', defaults={'hit_dice': 'd10', 'primary_ability': 'STR'})
+        char = Character.objects.create(name='Archer Guy', user=self.user, level=2, character_class=fighter_class, race=self.race)
+        CharacterStats.objects.create(character=char, hit_points=20, max_hit_points=20, strength=14, dexterity=16, armor_class=10)
+
+        # 1. Feature with selection
+        CharacterFeature.objects.create(
+            character=char,
+            name='Fighting Style',
+            options=['Archery', 'Defense', 'Dueling', 'Great Weapon Fighting'],
+            selection=['Archery']
+        )
+        p = CombatParticipant.objects.create(
+            combat_session=self.session,
+            participant_type='character',
+            character=char,
+            current_hp=20,
+            max_hp=20,
+            armor_class=14,
+            initiative=15
+        )
+        self.assertTrue(p.has_fighting_style('archery'))
+        self.assertTrue(p.has_fighting_style('Archery'))
+        self.assertFalse(p.has_fighting_style('defense'))
+
+        # 2. Direct feature name e.g. "Defense"
+        CharacterFeature.objects.create(character=char, name='Defense', feature_type='class')
+        self.assertTrue(p.has_fighting_style('defense'))
+
+        # 3. Via feature_uses on participant
+        mock_p = CombatParticipant.objects.create(
+            combat_session=self.session,
+            participant_type='enemy',
+            name='Duelist Champion',
+            current_hp=20,
+            max_hp=20,
+            armor_class=14,
+            initiative=10,
+            feature_uses={'fighting_styles': ['Dueling', 'Great Weapon Fighting']}
+        )
+        self.assertTrue(mock_p.has_fighting_style('dueling'))
+        self.assertTrue(mock_p.has_fighting_style('great_weapon_fighting'))
+        self.assertFalse(mock_p.has_fighting_style('archery'))
+
+    def test_archery_fighting_style_attack_bonus(self):
+        """Archery grants +2 bonus to attack rolls made with ranged weapons, but not melee weapons."""
+        from characters.models import CharacterFeature, CharacterItem
+        import unittest.mock as mock
+
+        session = CombatSession.objects.create(status='active', current_round=1, current_turn_index=0)
+        fighter_class, _ = CharacterClass.objects.get_or_create(name='fighter', defaults={'hit_dice': 'd10', 'primary_ability': 'STR'})
+        char = Character.objects.create(name='Robin', user=self.user, level=2, character_class=fighter_class, race=self.race)
+        CharacterStats.objects.create(character=char, hit_points=20, max_hit_points=20, strength=10, dexterity=16, armor_class=13)
+        CharacterFeature.objects.create(
+            character=char,
+            name='Fighting Style',
+            selection=['Archery']
+        )
+        fighter_p = CombatParticipant.objects.create(
+            combat_session=session,
+            participant_type='character',
+            character=char,
+            current_hp=20,
+            max_hp=20,
+            armor_class=13,
+            initiative=100,
+            position_x=0,
+            position_y=0
+        )
+        # Target enemy 30 ft away
+        target_p = CombatParticipant.objects.create(
+            combat_session=session,
+            participant_type='enemy',
+            name='Target Dummy',
+            current_hp=30,
+            max_hp=30,
+            armor_class=10,
+            initiative=10,
+            position_x=30,
+            position_y=0
+        )
+
+        longbow = Weapon.objects.create(
+            name='Longbow', weapon_type='martial_ranged', damage_dice='1d8', range_normal=150, range_long=600
+        )
+        CharacterItem.objects.create(character=char, item=longbow, is_equipped=True, equipment_slot='main_hand')
+
+        view = CombatSessionViewSet.as_view({'post': 'attack'})
+        # Mock d20 roll = 10. DEX mod = +3, Prof = +2, Archery = +2 -> Total 17!
+        with mock.patch('random.randint', return_value=10):
+            req = self.factory.post(
+                f'/combat/sessions/{session.id}/attack/',
+                {
+                    'attacker_id': fighter_p.id,
+                    'target_id': target_p.id,
+                    'attack_name': 'Longbow'
+                },
+                format='json'
+            )
+            res = view(req, pk=session.id)
+            self.assertEqual(res.status_code, 200, res.data)
+            # Attack total should be 10 (base) + 3 (DEX) + 2 (Prof) + 2 (Archery) = 17
+            self.assertEqual(res.data.get('attack_total'), 17)
+            self.assertIn("Fighting Style: Archery (+2)", res.data.get('advantage_reasons', []))
+            self.assertIn("Other: +2", res.data.get('breakdown', {}).get('attack', ''))
+
+        # Also verify via get_attack_bonus helper
+        self.assertEqual(fighter_p.get_attack_bonus(weapon=longbow, is_melee=False), 7)  # 3 DEX + 2 Prof + 2 Archery
+
+    def test_defense_fighting_style_ac_bonus(self):
+        """Defense grants +1 AC while wearing armor, but NOT when unarmored."""
+        from characters.models import CharacterFeature, CharacterItem
+        from items.models import Armor, ItemCategory
+        from characters.inventory_management import recalculate_armor_class
+
+        session = CombatSession.objects.create(status='active', current_round=1, current_turn_index=0)
+        armor_cat, _ = ItemCategory.objects.get_or_create(name='Armor')
+        chain_mail = Armor.objects.create(name='Chain Mail', category=armor_cat, armor_type='heavy', base_ac=16)
+
+        fighter_class, _ = CharacterClass.objects.get_or_create(name='fighter', defaults={'hit_dice': 'd10', 'primary_ability': 'STR'})
+        char = Character.objects.create(name='Guardian', user=self.user, level=2, character_class=fighter_class, race=self.race)
+        stats = CharacterStats.objects.create(character=char, hit_points=20, max_hit_points=20, strength=16, dexterity=12, armor_class=10)
+        CharacterFeature.objects.create(
+            character=char,
+            name='Fighting Style',
+            selection=['Defense']
+        )
+        fighter_p = CombatParticipant.objects.create(
+            combat_session=session,
+            participant_type='character',
+            character=char,
+            current_hp=20,
+            max_hp=20,
+            armor_class=10,
+            initiative=15
+        )
+
+        # 1. Unarmored: AC remains base 10 (Defense does NOT apply)
+        self.assertEqual(fighter_p.calculate_effective_ac(), 10)
+
+        # 2. Wearing Chain Mail: Heavy armor base 16 + 1 Defense = 17!
+        ci = CharacterItem.objects.create(character=char, item=chain_mail, is_equipped=True, equipment_slot='armor')
+        recalculate_armor_class(char)
+        stats.refresh_from_db()
+        self.assertEqual(stats.armor_class, 17)
+        self.assertEqual(fighter_p.calculate_effective_ac(), 17)
+
+    def test_dueling_fighting_style_damage_bonus(self):
+        """Dueling grants +2 damage with 1H melee weapon, works with shield, but not with 2H weapon."""
+        from characters.models import CharacterFeature, CharacterItem
+        from items.models import Armor, ItemCategory
+        import unittest.mock as mock
+
+        session = CombatSession.objects.create(status='active', current_round=1, current_turn_index=0)
+        fighter_class, _ = CharacterClass.objects.get_or_create(name='fighter', defaults={'hit_dice': 'd10', 'primary_ability': 'STR'})
+        char = Character.objects.create(name='Swordsman', user=self.user, level=2, character_class=fighter_class, race=self.race)
+        CharacterStats.objects.create(character=char, hit_points=20, max_hit_points=20, strength=16, dexterity=10, armor_class=15)
+        CharacterFeature.objects.create(
+            character=char,
+            name='Fighting Style',
+            selection=['Dueling']
+        )
+        fighter_p = CombatParticipant.objects.create(
+            combat_session=session,
+            participant_type='character',
+            character=char,
+            current_hp=20,
+            max_hp=20,
+            armor_class=15,
+            initiative=100,
+            position_x=0,
+            position_y=0
+        )
+        target_p = CombatParticipant.objects.create(
+            combat_session=session,
+            participant_type='enemy',
+            name='Target Dummy 2',
+            current_hp=50,
+            max_hp=50,
+            armor_class=10,
+            initiative=10,
+            position_x=5,
+            position_y=0
+        )
+
+        longsword = Weapon.objects.create(name='Longsword', weapon_type='martial_melee', damage_dice='1d8')
+        CharacterItem.objects.create(character=char, item=longsword, is_equipped=True, equipment_slot='main_hand')
+
+        # Equip shield in off_hand (allowed by Dueling rules)
+        armor_cat, _ = ItemCategory.objects.get_or_create(name='Armor')
+        shield = Armor.objects.create(name='Shield', category=armor_cat, armor_type='shield', base_ac=2)
+        CharacterItem.objects.create(character=char, item=shield, is_equipped=True, equipment_slot='off_hand')
+
+        view = CombatSessionViewSet.as_view({'post': 'attack'})
+        # d20 roll = 15 (hits AC 10), damage die = 4. STR mod = +3, Dueling = +2 -> Total damage: 4 + 3 + 2 = 9
+        with mock.patch('random.randint', side_effect=lambda a, b: 15 if b == 20 else 4):
+            req = self.factory.post(
+                f'/combat/sessions/{session.id}/attack/',
+                {
+                    'attacker_id': fighter_p.id,
+                    'target_id': target_p.id,
+                    'attack_name': 'Longsword'
+                },
+                format='json'
+            )
+            res = view(req, pk=session.id)
+            self.assertEqual(res.status_code, 200, res.data)
+            self.assertEqual(res.data.get('damage'), 9)
+            self.assertIn('Dueling (+2)', res.data.get('breakdown', {}).get('damage', ''))
+
+    def test_great_weapon_fighting_style_rerolls_ones_and_twos(self):
+        """Great Weapon Fighting rerolls 1s and 2s on damage dice for two-handed melee weapons."""
+        from characters.models import CharacterFeature, CharacterItem
+        import unittest.mock as mock
+
+        session = CombatSession.objects.create(status='active', current_round=1, current_turn_index=0)
+        fighter_class, _ = CharacterClass.objects.get_or_create(name='fighter', defaults={'hit_dice': 'd10', 'primary_ability': 'STR'})
+        char = Character.objects.create(name='Mauler', user=self.user, level=2, character_class=fighter_class, race=self.race)
+        CharacterStats.objects.create(character=char, hit_points=20, max_hit_points=20, strength=16, dexterity=10, armor_class=14)
+        CharacterFeature.objects.create(
+            character=char,
+            name='Fighting Style',
+            selection=['Great Weapon Fighting']
+        )
+        fighter_p = CombatParticipant.objects.create(
+            combat_session=session,
+            participant_type='character',
+            character=char,
+            current_hp=20,
+            max_hp=20,
+            armor_class=14,
+            initiative=100,
+            position_x=0,
+            position_y=0
+        )
+        target_p = CombatParticipant.objects.create(
+            combat_session=session,
+            participant_type='enemy',
+            name='Target Dummy 3',
+            current_hp=50,
+            max_hp=50,
+            armor_class=10,
+            initiative=10,
+            position_x=5,
+            position_y=0
+        )
+
+        greatsword = Weapon.objects.create(name='Greatsword', weapon_type='martial_melee', damage_dice='2d6', two_handed=True)
+        CharacterItem.objects.create(character=char, item=greatsword, is_equipped=True, equipment_slot='main_hand')
+
+        view = CombatSessionViewSet.as_view({'post': 'attack'})
+        # Roll sequence:
+        # 1. d20 attack roll = 15
+        # 2. Damage die 1 = 1 -> GWF triggers! Rerolls to 5
+        # 3. Damage die 2 = 2 -> GWF triggers! Rerolls to 6
+        roll_sequence = [15, 1, 5, 2, 6]
+        with mock.patch('random.randint', side_effect=roll_sequence):
+            req = self.factory.post(
+                f'/combat/sessions/{session.id}/attack/',
+                {
+                    'attacker_id': fighter_p.id,
+                    'target_id': target_p.id,
+                    'attack_name': 'Greatsword'
+                },
+                format='json'
+            )
+            res = view(req, pk=session.id)
+            self.assertEqual(res.status_code, 200, res.data)
+            # Rerolled dice: 5 + 6 = 11 + 3 STR mod = 14 damage
+            self.assertEqual(res.data.get('damage'), 14)
+            self.assertIn('GWF', res.data.get('breakdown', {}).get('damage', ''))
+
+
+
+
 

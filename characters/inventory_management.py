@@ -487,6 +487,26 @@ def recalculate_armor_class(character):
         elif equipped_armor.armor_type == 'heavy':
             # No DEX bonus (neither positive nor negative usually, though strict 5e says no bonus)
             pass
+
+        # Defense Fighting Style: +1 AC while wearing armor
+        has_defense = False
+        if hasattr(character, 'features'):
+            for feat in character.features.all():
+                f_name = (feat.name or '').lower()
+                if 'defense' in f_name:
+                    has_defense = True
+                    break
+                if 'fighting style' in f_name and feat.selection:
+                    if any('defense' in str(s).lower() for s in feat.selection):
+                        has_defense = True
+                        break
+        if not has_defense and hasattr(character, 'character_feats'):
+            for cf in character.character_feats.select_related('feat').all():
+                if 'defense' in (cf.feat.name or '').lower():
+                    has_defense = True
+                    break
+        if has_defense:
+            ac += 1
     else:
         # Unarmored Defense & Draconic Resilience
         from .multiclassing import get_class_level

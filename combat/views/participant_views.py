@@ -188,10 +188,13 @@ class CombatParticipantViewSet(viewsets.ModelViewSet):
         ).first()
         weather = weather_effect.weather_type if weather_effect else None
         
+        hazards = position.current_hazards or []
         effective_movement, cost_multiplier = calculate_movement_cost(
             base_speed,
             terrain_type=terrain_type,
-            weather=weather
+            weather=weather,
+            participant=participant,
+            hazards=hazards
         )
         
         # Calculate actual movement cost
@@ -206,6 +209,8 @@ class CombatParticipantViewSet(viewsets.ModelViewSet):
             )
         
         # Update position if provided
+        hazard_damage = 0
+        hazard_reports = []
         if x is not None and y is not None:
             position.x = x
             position.y = y
@@ -216,17 +221,27 @@ class CombatParticipantViewSet(viewsets.ModelViewSet):
             mixin = CombatEnvironmentMixin()
             mixin._update_position_environmental_effects(position, session)
             position.save()
+
+            if position.current_hazards:
+                from combat.environmental_effects import resolve_movement_hazards
+                hazard_damage, hazard_reports = resolve_movement_hazards(participant, distance, position.current_hazards)
         
         # Update movement used
         participant.movement_used += movement_cost
         participant.save()
         
         serializer = self.get_serializer(participant)
+        msg = f"{participant.get_name()} moved {distance} feet (cost: {movement_cost} feet)"
+        if hazard_reports:
+            msg += ". " + " ".join(hazard_reports)
         return Response({
-            "message": f"{participant.get_name()} moved {distance} feet (cost: {movement_cost} feet)",
+            "message": msg,
             "movement_used": participant.movement_used,
             "movement_remaining": effective_movement - participant.movement_used,
             "terrain_multiplier": cost_multiplier,
+            "hazard_damage": hazard_damage,
+            "hazard_reports": hazard_reports,
+            "current_hp": participant.current_hp,
             "position": ParticipantPositionSerializer(position).data if hasattr(position, 'id') else None,
             "participant": serializer.data
         })
@@ -269,8 +284,11 @@ class CombatParticipantViewSet(viewsets.ModelViewSet):
             if save_type and save_dc:
                 save_roll, _ = roll_d20()
                 ability_mod = participant.get_ability_modifier(save_type)
-                proficiency_bonus = participant.character.proficiency_bonus if participant.character else 2
-                save_total, _ = calculate_saving_throw(save_roll, ability_mod, proficiency_bonus, False)
+                prof = False
+                if participant.character and hasattr(participant.character, 'saving_throw_proficiencies') and participant.character.saving_throw_proficiencies:
+                    prof = save_type.lower() in [s.lower() for s in participant.character.saving_throw_proficiencies]
+                aura_bon = getattr(participant, 'get_aura_of_protection_bonus', lambda: 0)()
+                save_total, _ = calculate_saving_throw(save_roll, ability_mod, proficiency_bonus, prof, other_modifiers=aura_bon)
                 
                 if save_total >= save_dc:
                     damage_amount = damage_amount // 2  # Half damage on successful save

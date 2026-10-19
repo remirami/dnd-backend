@@ -59,6 +59,21 @@ class CharacterFeatureSerializer(serializers.ModelSerializer):
     class Meta:
         model = CharacterFeature
         fields = "__all__"
+
+    def to_representation(self, instance):
+        data = super().to_representation(instance)
+        # Dynamic options fallback for Favored Enemy & Natural Explorer if options list is empty
+        if not data.get('options'):
+            name_lower = (instance.name or '').lower()
+            if 'favored enemy' in name_lower:
+                from campaigns.class_features_data import FAVORED_ENEMY_OPTIONS
+                data['options'] = FAVORED_ENEMY_OPTIONS
+                data['choice_limit'] = 1
+            elif 'natural explorer' in name_lower:
+                from campaigns.class_features_data import NATURAL_EXPLORER_OPTIONS
+                data['options'] = NATURAL_EXPLORER_OPTIONS
+                data['choice_limit'] = 1
+        return data
         
     def validate(self, data):
         """Validate selection against options and limit"""
@@ -71,6 +86,22 @@ class CharacterFeatureSerializer(serializers.ModelSerializer):
             if instance:
                 options = instance.options
                 choice_limit = instance.choice_limit
+                if not options:
+                    name_lower = (instance.name or '').lower()
+                    if 'favored enemy' in name_lower:
+                        from campaigns.class_features_data import FAVORED_ENEMY_OPTIONS
+                        options = FAVORED_ENEMY_OPTIONS
+                        choice_limit = 1
+                        instance.options = options
+                        instance.choice_limit = choice_limit
+                        instance.save(update_fields=['options', 'choice_limit'])
+                    elif 'natural explorer' in name_lower:
+                        from campaigns.class_features_data import NATURAL_EXPLORER_OPTIONS
+                        options = NATURAL_EXPLORER_OPTIONS
+                        choice_limit = 1
+                        instance.options = options
+                        instance.choice_limit = choice_limit
+                        instance.save(update_fields=['options', 'choice_limit'])
                 
                 if selection:
                     # Generic validation for list
@@ -186,6 +217,8 @@ class CharacterStatsSerializer(serializers.ModelSerializer):
     ki_points_max = serializers.ReadOnlyField()
     ki_points_current = serializers.ReadOnlyField()
     martial_arts_die = serializers.ReadOnlyField()
+    sorcery_points_max = serializers.ReadOnlyField()
+    sorcery_points_current = serializers.ReadOnlyField()
     
     class Meta:
         model = CharacterStats

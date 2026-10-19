@@ -20,6 +20,18 @@ WARLOCK_MYSTIC_ARCANUM_9 = [
     'Astral Projection', 'Foresight', 'Imprisonment', 'Power Word Kill', 'True Polymorph'
 ]
 
+# Ranger Favored Enemy & Terrain choices (SRD 5.1 & 5.2)
+FAVORED_ENEMY_OPTIONS = [
+    'Aberrations', 'Beasts', 'Celestials', 'Constructs', 'Dragons',
+    'Elementals', 'Fey', 'Fiends', 'Giants', 'Humanoids',
+    'Monstrosities', 'Oozes', 'Plants', 'Undead'
+]
+
+NATURAL_EXPLORER_OPTIONS = [
+    'Arctic', 'Coast', 'Desert', 'Forest',
+    'Grassland', 'Mountain', 'Swamp', 'Underdark'
+]
+
 CLASS_FEATURES_2014 = {
 
     'fighter': {
@@ -42,8 +54,8 @@ CLASS_FEATURES_2014 = {
         3: [
             {
                 'name': 'Martial Archetype',
-                'description': 'You choose an archetype that you strive to emulate in your combat styles and techniques (Champion, Battle Master, or Eldritch Knight). Your choice grants you features at 3rd level and again at 7th, 10th, 15th, and 18th level.',
-                'options': ['Champion', 'Battle Master', 'Eldritch Knight'],
+                'description': 'You choose an archetype that you strive to emulate in your combat styles and techniques (Champion). Your choice grants you features at 3rd level and again at 7th, 10th, 15th, and 18th level.',
+                'options': ['Champion'],
                 'choice_limit': 1
             }
         ],
@@ -874,17 +886,23 @@ CLASS_FEATURES_2014 = {
         1: [
             {
                 'name': 'Favored Enemy',
-                'description': 'You have significant experience studying, tracking, hunting, and even talking to a certain type of enemy. Choose a type of favored enemy: aberrations, beasts, celestials, constructs, dragons, elementals, fey, fiends, giants, monstrosities, oozes, plants, or undead. Alternatively, you can select two races of humanoid as favored enemies. You have advantage on Wisdom (Survival) checks to track your favored enemies, as well as on Intelligence checks to recall information about them.'
+                'description': 'You have significant experience studying, tracking, hunting, and even talking to a certain type of enemy. Choose a type of favored enemy: aberrations, beasts, celestials, constructs, dragons, elementals, fey, fiends, giants, humanoids, monstrosities, oozes, plants, or undead. You have advantage on Wisdom (Survival) checks to track your favored enemies, as well as on Intelligence checks to recall information about them.',
+                'options': FAVORED_ENEMY_OPTIONS,
+                'choice_limit': 1
             },
             {
                 'name': 'Natural Explorer',
-                'description': 'You are particularly familiar with one type of natural environment and are adept at traveling and surviving in such regions. Choose one type of favored terrain: arctic, coast, desert, forest, grassland, mountain, swamp, or the Underdark. When you make an Intelligence or Wisdom check related to your favored terrain, your proficiency bonus is doubled if you are using a skill that you\'re proficient in.'
+                'description': 'You are particularly familiar with one type of natural environment and are adept at traveling and surviving in such regions. Choose one type of favored terrain: arctic, coast, desert, forest, grassland, mountain, swamp, or the Underdark. When you make an Intelligence or Wisdom check related to your favored terrain, your proficiency bonus is doubled if you are using a skill that you\'re proficient in.',
+                'options': NATURAL_EXPLORER_OPTIONS,
+                'choice_limit': 1
             }
         ],
         2: [
             {
                 'name': 'Fighting Style',
-                'description': 'You adopt a particular style of fighting as your specialty. Choose one: Archery, Defense, Dueling, or Two-Weapon Fighting.'
+                'description': 'You adopt a particular style of fighting as your specialty. Choose one: Archery, Defense, Dueling, or Two-Weapon Fighting.',
+                'options': ['Archery', 'Defense', 'Dueling', 'Two-Weapon Fighting'],
+                'choice_limit': 1
             },
             {
                 'name': 'Spellcasting',
@@ -911,11 +929,15 @@ CLASS_FEATURES_2014 = {
         6: [
             {
                 'name': 'Favored Enemy (Additional)',
-                'description': 'You choose one additional favored enemy, as well as an associated language.'
+                'description': 'You choose one additional favored enemy, as well as an associated language.',
+                'options': FAVORED_ENEMY_OPTIONS,
+                'choice_limit': 1
             },
             {
                 'name': 'Natural Explorer (Additional)',
-                'description': 'You choose one additional favored terrain.'
+                'description': 'You choose one additional favored terrain.',
+                'options': NATURAL_EXPLORER_OPTIONS,
+                'choice_limit': 1
             }
         ],
         7: [],  # Ranger Archetype feature
@@ -929,7 +951,9 @@ CLASS_FEATURES_2014 = {
         10: [
             {
                 'name': 'Natural Explorer (Additional)',
-                'description': 'You choose one additional favored terrain.'
+                'description': 'You choose one additional favored terrain.',
+                'options': NATURAL_EXPLORER_OPTIONS,
+                'choice_limit': 1
             },
             {
                 'name': 'Hide in Plain Sight',
@@ -942,7 +966,9 @@ CLASS_FEATURES_2014 = {
         14: [
             {
                 'name': 'Favored Enemy (Additional)',
-                'description': 'You choose one additional favored enemy, as well as an associated language.'
+                'description': 'You choose one additional favored enemy, as well as an associated language.',
+                'options': FAVORED_ENEMY_OPTIONS,
+                'choice_limit': 1
             },
             {
                 'name': 'Vanish',
@@ -1341,8 +1367,8 @@ CLASS_FEATURES_2024 = {
         3: [
             {
                 'name': 'Martial Archetype',
-                'description': 'You choose an archetype that you strive to emulate in your combat styles and techniques.',
-                'options': ['Champion', 'Battle Master', 'Eldritch Knight'],
+                'description': 'You choose an archetype that you strive to emulate in your combat styles and techniques (Champion).',
+                'options': ['Champion'],
                 'choice_limit': 1
             }
         ]
@@ -1770,8 +1796,8 @@ def get_all_features_up_to_level(class_name, level, ruleset='2014'):
 # Available subclasses by class
 # Available subclasses by class
 AVAILABLE_SUBCLASSES_2014 = {
-    'Fighter': ['Champion', 'Battle Master'],
-    'Rogue': ['Thief', 'Assassin'],
+    'Fighter': ['Champion'],
+    'Rogue': ['Thief'],
     'Wizard': ['School of Evocation'],
     'Cleric': ['Life Domain'],
     'Druid': ['Circle of the Land'],
@@ -1785,18 +1811,18 @@ AVAILABLE_SUBCLASSES_2014 = {
 }
 
 AVAILABLE_SUBCLASSES_2024 = {
-    'Fighter': ['Champion', 'Battle Master'],
-    'Rogue': ['Thief', 'Assassin'], # Thief, Assassin, Soulknife, Arcane Trickster
-    'Wizard': ['School of Evocation'], # Abjuration, Divination, Evocation, Illusion
-    'Cleric': ['Life Domain'], # Light, Life, Trickery, War
-    'Druid': ['Circle of the Land'], # Land, Moon, Sea, Stars
-    'Monk': ['Warrior of the Open Hand'], # Open Hand, Shadow, Elements, Mercy
-    'Paladin': ['Oath of Devotion'], # Devotion, Glory, Ancients, Vengeance
-    'Ranger': ['Hunter'], # Hunter, Beast Master, Gloom Stalker, Fey Wanderer
-    'Sorcerer': ['Draconic Sorcery'], # Draconic, Wild Magic, Aberrant, Clockwork
-    'Warlock': ['Fiend Patron'], # Archfey, Celestial, Fiend, GOO
-    'Barbarian': ['Path of the Berserker'], # Berserker, Wild Heart, World Tree, Zealot
-    'Bard': ['College of Lore'], # Dance, Glamour, Lore, Valor
+    'Barbarian': ['Path of the Berserker'],
+    'Bard': ['College of Lore'],
+    'Cleric': ['Life Domain'],
+    'Druid': ['Circle of the Land'],
+    'Fighter': ['Champion'],
+    'Monk': ['Warrior of the Open Hand'],
+    'Paladin': ['Oath of Devotion'],
+    'Ranger': ['Hunter'],
+    'Rogue': ['Thief'],
+    'Sorcerer': ['Draconic Sorcery'],
+    'Warlock': ['Fiend Patron'],
+    'Wizard': ['School of Evocation'],
 }
 
 
@@ -3185,28 +3211,6 @@ SUBCLASS_FEATURES_2024 = {
         10: [{'name': 'Heroic Warrior', 'description': 'During combat, you can give yourself Heroic Inspiration whenever you start your turn without it.'}],
         15: [{'name': 'Superior Critical', 'description': 'Your weapon attacks score a critical hit on a roll of 18-20.'}],
         18: [{'name': 'Survivor', 'description': 'At the start of each of your turns, you regain 5 + CON modifier HP if you have no more than half your HP left.'}],
-
-    },
-    'Battle Master': {
-        3: [
-            {
-                'name': 'Combat Superiority', 
-                'description': 'You learn maneuvers fueled by superiority dice (4d8). Choose 3 Maneuvers.',
-                'options': ['Commander\'s Strike', 'Disarming Attack', 'Distracting Strike', 'Evasive Footwork', 'Feinting Attack', 'Goading Attack', 'Lunging Attack', 'Maneuvering Attack', 'Menacing Attack', 'Parry', 'Precision Attack', 'Pushing Attack', 'Rally', 'Riposte', 'Sweeping Attack', 'Trip Attack', 'Ambush', 'Bait and Switch', 'Brace', 'Commanding Presence', 'Grappling Strike', 'Quick Toss', 'Tactical Assessment'],
-                'choice_limit': 3
-            },
-            {
-                'name': 'Student of War',
-                'description': 'Gain proficiency with one artisan\'s tool.',
-                'options': ['Alchemist\'s supplies', 'Brewer\'s supplies', 'Calligrapher\'s supplies', 'Carpenter\'s tools', 'Cartographer\'s tools', 'Cobbler\'s tools', 'Cook\'s utensils', 'Glassblower\'s tools', 'Jeweler\'s tools', 'Leatherworker\'s tools', 'Mason\'s tools', 'Painter\'s supplies', 'Potter\'s tools', 'Smith\'s tools', 'Tinker\'s tools', 'Weaver\'s tools', 'Woodcarver\'s tools'],
-                'choice_limit': 1
-            }
-        ],
-        7: [{'name': 'Know Your Enemy', 'description': 'Learn capabilities of a creature by observing it.'}],
-        10: [{'name': 'Improved Combat Superiority', 'description': 'Superiority dice turn into d10s.'}],
-        15: [{'name': 'Relentless', 'description': 'Regain 1 superiority die if you have none when rolling initiative.'}],
-        18: [{'name': 'Improved Combat Superiority', 'description': 'Superiority dice turn into d12s.'}],
-
     },
     'Path of the Berserker': {
         3: [{'name': 'Frenzy', 'description': 'If you use Reckless Attack while raging, you can deal extra damage equal to your Rage Damage bonus.'}],
@@ -3375,18 +3379,18 @@ def get_all_subclass_features_up_to_level(subclass_name, level, ruleset='2014'):
 
 # Available Subclasses by Ruleset
 AVAILABLE_SUBCLASSES_2014 = {
-    'Barbarian': ['Path of the Berserker', 'Path of the Totem Warrior'],
-    'Bard': ['College of Lore', 'College of Valor'],
-    'Cleric': ['Knowledge Domain', 'Life Domain', 'Light Domain', 'Nature Domain', 'Tempest Domain', 'Trickery Domain', 'War Domain'],
-    'Druid': ['Circle of the Land', 'Circle of the Moon'],
-    'Fighter': ['Champion', 'Battle Master', 'Eldritch Knight'],
-    'Monk': ['Way of the Open Hand', 'Way of Shadow', 'Way of the Four Elements'],
-    'Paladin': ['Oath of Devotion', 'Oath of the Ancients', 'Oath of Vengeance'],
-    'Ranger': ['Hunter', 'Beast Master'],
-    'Rogue': ['Thief', 'Assassin', 'Arcane Trickster'],
-    'Sorcerer': ['Draconic Bloodline', 'Wild Magic'],
-    'Warlock': ['The Archfey', 'The Fiend', 'The Great Old One'],
-    'Wizard': ['School of Abjuration', 'School of Conjuration', 'School of Divination', 'School of Enchantment', 'School of Evocation', 'School of Illusion', 'School of Necromancy', 'School of Transmutation']
+    'Barbarian': ['Path of the Berserker'],
+    'Bard': ['College of Lore'],
+    'Cleric': ['Life Domain'],
+    'Druid': ['Circle of the Land'],
+    'Fighter': ['Champion'],
+    'Monk': ['Way of the Open Hand'],
+    'Paladin': ['Oath of Devotion'],
+    'Ranger': ['Hunter'],
+    'Rogue': ['Thief'],
+    'Sorcerer': ['Draconic Bloodline'],
+    'Warlock': ['The Fiend'],
+    'Wizard': ['School of Evocation']
 }
 
 AVAILABLE_SUBCLASSES_2024 = {
@@ -3394,7 +3398,7 @@ AVAILABLE_SUBCLASSES_2024 = {
     'Bard': ['College of Lore'],
     'Cleric': ['Life Domain'],
     'Druid': ['Circle of the Land'],
-    'Fighter': ['Champion', 'Battle Master'],
+    'Fighter': ['Champion'],
     'Monk': ['Warrior of the Open Hand'],
     'Paladin': ['Oath of Devotion'],
     'Ranger': ['Hunter'],

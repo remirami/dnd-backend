@@ -292,6 +292,8 @@ class CharacterStats(models.Model):
     # Rest mechanics
     hit_dice_used = models.IntegerField(default=0, help_text="Number of hit dice spent")
     ki_points_used = models.IntegerField(default=0, help_text="Number of Ki points spent")
+    sorcery_points_used = models.IntegerField(default=0, help_text="Number of Sorcery points spent")
+    created_spell_slots = models.JSONField(default=dict, blank=True, help_text="Bonus spell slots created via Font of Magic")
     temp_hp = models.IntegerField(default=0, help_text="Temporary Hit Points")
     
     def __str__(self):
@@ -314,6 +316,44 @@ class CharacterStats(models.Model):
         if max_ki <= 0:
             return 0
         return max(0, max_ki - (self.ki_points_used or 0))
+
+    @property
+    def sorcery_points_max(self):
+        """Calculate maximum Sorcery Points based on Sorcerer level (Level 2+)"""
+        if not self.character:
+            return 0
+        class_name = getattr(self.character.character_class, 'name', '').lower()
+        if class_name == 'sorcerer' or self.character.features.filter(name__icontains='font of magic').exists():
+            return self.character.level if self.character.level >= 2 else 0
+        return 0
+
+    @property
+    def sorcery_points_current(self):
+        """Calculate remaining Sorcery Points"""
+        max_sp = self.sorcery_points_max
+        if max_sp <= 0:
+            return 0
+        return max(0, max_sp - (self.sorcery_points_used or 0))
+
+    def spend_sorcery_points(self, amount: int) -> bool:
+        """Spend Sorcery Points if enough are available. Returns True if successful."""
+        if amount <= 0:
+            return True
+        if self.sorcery_points_current < amount:
+            return False
+        self.sorcery_points_used = (self.sorcery_points_used or 0) + amount
+        self.save(update_fields=['sorcery_points_used'])
+        return True
+
+    def regain_sorcery_points(self, amount: int) -> int:
+        """Regain Sorcery Points up to maximum. Returns actual points regained."""
+        if amount <= 0:
+            return 0
+        current_used = self.sorcery_points_used or 0
+        actual_regained = min(current_used, amount)
+        self.sorcery_points_used = max(0, current_used - amount)
+        self.save(update_fields=['sorcery_points_used'])
+        return actual_regained
 
     @property
     def martial_arts_die(self):

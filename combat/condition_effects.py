@@ -29,9 +29,17 @@ SPELL_CONDITION_MAP = {
     'Prone': 'prone',
     'Grease': 'prone',
     'Invisibility': 'invisible',
+    'Greater Invisibility': 'invisible',
     'Petrify': 'petrified',
-    'Flesh to Stone': 'petrified',
+    'Flesh to Stone': 'restrained',
     'Exhaustion': 'exhaustion',
+    'Banishment': 'incapacitated',
+    'Dominate Monster': 'charmed',
+    'Eyebite': 'frightened',
+    'Feeblemind': 'stunned',
+    'Power Word Stun': 'stunned',
+    'Suggestion': 'charmed',
+    'Mass Suggestion': 'charmed',
     
     # Abilities
     'Uncanny Dodge': None,  # No condition, just damage reduction
@@ -140,7 +148,16 @@ CONDITION_EFFECTS = {
 
 def get_condition_for_spell(spell_name):
     """Get the condition that a spell applies"""
-    return SPELL_CONDITION_MAP.get(spell_name)
+    if not spell_name:
+        return None
+    clean = str(spell_name).strip().lower()
+    for k, v in SPELL_CONDITION_MAP.items():
+        if k.lower() == clean:
+            return v
+    from combat.spell_rules import SPELL_RULES
+    rule = SPELL_RULES.get(clean) or {}
+    return rule.get('condition')
+
 
 
 def get_condition_effects(condition_name):
@@ -219,6 +236,28 @@ def is_condition_immune(participant, condition_name, is_magical: bool = True):
         if hasattr(participant, 'has_buff') and participant.has_buff('heroism'):
             return True
 
+    # Paladin Aura of Courage: immune to frightened
+    if clean_cond in ['frightened']:
+        from combat.high_tier_passives import is_protected_by_aura_of_courage
+        if is_protected_by_aura_of_courage(participant):
+            return True
+
+    # Circle of the Land Druid (Nature's Ward): immune to poisoned condition
+    if clean_cond in ['poisoned', 'poison']:
+        if getattr(participant, 'has_natures_ward', lambda: False)():
+            return True
+
+    # Protection from Poison: immune to poisoned condition
+    if clean_cond in ['poisoned', 'poison']:
+        if hasattr(participant, 'has_buff') and participant.has_buff('protection from poison'):
+            return True
+
+    # Freedom of Movement: immune to paralyzed and restrained
+    if clean_cond in ['paralyzed', 'restrained']:
+        if hasattr(participant, 'has_buff') and participant.has_buff('freedom of movement'):
+            return True
+
+
     if participant.encounter_enemy:
         try:
             return participant.encounter_enemy.enemy.condition_immunities.filter(
@@ -247,13 +286,12 @@ def auto_apply_condition_from_spell(participant, spell_name):
         participant.last_condition_immune = condition_name
         return None
     
-    try:
-        condition = Condition.objects.get(name=condition_name)
+    condition = Condition.objects.filter(name__iexact=condition_name).first()
+    if condition:
         participant.conditions.add(condition)
         participant.save()
         return condition
-    except Condition.DoesNotExist:
-        return None
+    return None
 
 
 def should_remove_condition(participant, condition_name, reason=''):

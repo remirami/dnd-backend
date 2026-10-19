@@ -2619,159 +2619,57 @@ class CharacterViewSet(viewsets.ModelViewSet):
     @action(detail=True, methods=['post'])
     def short_rest(self, request, pk=None):
         """
-        Perform a Short Rest.
-        - Spend Hit Dice to heal
-        - Recover Warlock spell slots
-        - Reset Short Rest features (Action Surge, etc. - future impl)
+        Perform a Short Rest (SRD 5.1 / 2024 SRD 5.2).
+        - Spend Hit Dice to heal (roll + CON mod)
+        - Recover Warlock Pact Magic slots
+        - Recover Monk Ki points
+        - Recover Sorcerous Restoration (2024 lv5+ / 2014 lv20)
+        - Reset short rest class features (Action Surge, Second Wind, Wild Shape, Channel Divinity)
         """
         character = self.get_object()
-        
-        if not hasattr(character, 'stats'):
-             return Response(
-                {"error": "Character stats not found"},
-                status=status.HTTP_400_BAD_REQUEST
-            )
+        if not hasattr(character, 'stats') or not character.stats:
+            return Response({"error": "Character stats not found"}, status=status.HTTP_400_BAD_REQUEST)
 
         try:
             hit_dice_to_spend = int(request.data.get('hit_dice_to_spend', 0))
         except (ValueError, TypeError):
-             return Response(
-                {"error": "hit_dice_to_spend must be an integer"},
-                status=status.HTTP_400_BAD_REQUEST
+            return Response({"error": "hit_dice_to_spend must be an integer"}, status=status.HTTP_400_BAD_REQUEST)
+
+        dice_choices = request.data.get('dice_choices') or request.data.get('dice')
+
+        from ..rest_mechanics import execute_short_rest
+        try:
+            result = execute_short_rest(
+                character,
+                hit_dice_to_spend=hit_dice_to_spend,
+                dice_choices=dice_choices,
+                sync_combat=True
             )
-            
-        stats = character.stats
-        
-        # 1. Spend Hit Dice & Heal
-        hp_recovered = 0
-        dice_spent = 0
-        
-        if hit_dice_to_spend > 0:
-            current_level = character.level
-            # Check availability
-            # "hit_dice_used" tracks how many have been SPENT. 
-            # Available = Total - Used
-            available = current_level - stats.hit_dice_used
-            
-            if hit_dice_to_spend > available:
-                 return Response(
-                    {"error": f"Not enough Hit Dice. Available: {available}"},
-                    status=status.HTTP_400_BAD_REQUEST
-                )
-            
-            # Roll for healing
-            # Determine die size from class
-            hit_die_size = 8 # Default
-            if character.character_class:
-                # "d10" -> 10
-                try:
-                    hit_die_size = int(character.character_class.hit_dice.strip('d'))
-                except (ValueError, AttributeError):
-                    pass
-            
-            import random
-            con_mod = stats.constitution_modifier
-            
-            for _ in range(hit_dice_to_spend):
-                roll = random.randint(1, hit_die_size)
-                heal_amt = max(0, roll + con_mod) # Minimum 0? PHB says minimum 0.
-                hp_recovered += heal_amt
-                stats.hit_points = min(stats.max_hit_points, stats.hit_points + heal_amt)
-                
-            stats.hit_dice_used += hit_dice_to_spend
-            dice_spent = hit_dice_to_spend
-
-        # 2. Recover Pact Magic slots (Warlock)
-        slots_recovered = {}
-        if character.character_class and character.character_class.name == 'Warlock':
-             # Calculate max slots
-            from campaigns.utils import calculate_spell_slots
-            max_slots = calculate_spell_slots('Warlock', character.level)
-            stats.spell_slots = max_slots
-            slots_recovered = max_slots
-
-        # 3. Recover Monk Ki Points (PHB 5e: Regained on Short or Long Rest)
-        ki_regained = 0
-        if stats.ki_points_used:
-            ki_regained = stats.ki_points_used
-            stats.ki_points_used = 0
-
-        stats.save()
-        
-        return Response({
-            "message": f"Short Rest complete. Regained {hp_recovered} HP using {dice_spent} Hit Dice." + (f" Restored {ki_regained} Ki points." if ki_regained else ""),
-            "hp_recovered": hp_recovered,
-            "hit_dice_spent": dice_spent,
-            "current_hp": stats.hit_points,
-            "hit_dice_remaining": character.level - stats.hit_dice_used,
-            "slots_recovered": slots_recovered,
-            "ki_points_current": stats.ki_points_current,
-            "ki_points_max": stats.ki_points_max
-        })
+            return Response(result)
+        except ValueError as ve:
+            return Response({"error": str(ve)}, status=status.HTTP_400_BAD_REQUEST)
+        except Exception as e:
+            return Response({"error": str(e)}, status=status.HTTP_400_BAD_REQUEST)
 
     @action(detail=True, methods=['post'])
     def long_rest(self, request, pk=None):
         """
-        Perform a Long Rest.
-        - Restore HP to max
-        - Regain Hit Dice (half max)
+        Perform a Long Rest (SRD 5.1 / 2024 SRD 5.2).
+        - Restore HP to max & clear temporary HP
+        - Regain Hit Dice (half of total, min 1)
         - Restore all Spell Slots
-        - Restore Monk Ki points
-        - Reduce Exhaustion (future)
+        - Restore Monk Ki points, Sorcery points, Rages, Lay on Hands, Channel Divinity, etc.
         """
         character = self.get_object()
-        
-        if not hasattr(character, 'stats'):
-             return Response(
-                {"error": "Character stats not found"},
-                status=status.HTTP_400_BAD_REQUEST
-            )
-            
-        stats = character.stats
-        
-        # 1. Restore HP
-        hp_gained = stats.max_hit_points - stats.hit_points
-        stats.hit_points = stats.max_hit_points
-        
-        # 2. Regain Hit Dice
-        # Regain up to half of total hit dice (min 1)
-        total_hit_dice = character.level
-        regain_amount = max(1, total_hit_dice // 2)
-        
-        # Reduce "used" count
-        if stats.hit_dice_used is None:
-            stats.hit_dice_used = 0
-        stats.hit_dice_used = max(0, stats.hit_dice_used - regain_amount)
-        
-        # 3. Restore Spell Slots
-        from ..multiclassing import calculate_multiclass_spell_slots
-        from campaigns.utils import calculate_spell_slots
-        
-        if CharacterClassLevel.objects.filter(character=character).count() > 1:
-            max_slots = calculate_multiclass_spell_slots(character)
-        elif character.character_class:
-            max_slots = calculate_spell_slots(character.character_class.name, character.level)
-        else:
-            max_slots = {}
-            
-        stats.spell_slots = max_slots
-        stats.expended_spell_slots = {}
-        
-        # 4. Restore Monk Ki Points
-        stats.ki_points_used = 0
-        stats.save()
-        
-        return Response({
-            "message": f"Long Rest complete. HP, Spell Slots, and Ki Points fully restored. Regained {regain_amount} Hit Dice.",
-            "hp_gained": hp_gained,
-            "hit_dice_regained": regain_amount,
-            "current_hp": stats.hit_points,
-            "hit_dice_remaining": total_hit_dice - stats.hit_dice_used,
-            "spell_slots": max_slots,
-            "expended_spell_slots": stats.expended_spell_slots,
-            "ki_points_current": stats.ki_points_current,
-            "ki_points_max": stats.ki_points_max
-        })
+        if not hasattr(character, 'stats') or not character.stats:
+            return Response({"error": "Character stats not found"}, status=status.HTTP_400_BAD_REQUEST)
+
+        from ..rest_mechanics import execute_long_rest
+        try:
+            result = execute_long_rest(character, sync_combat=True)
+            return Response(result)
+        except Exception as e:
+            return Response({"error": str(e)}, status=status.HTTP_400_BAD_REQUEST)
 
     @action(detail=True, methods=['post'])
     def use_ki(self, request, pk=None):

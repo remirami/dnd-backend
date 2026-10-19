@@ -154,10 +154,12 @@ class CombatSessionViewSet(
         for participant in instance.participants.all():
             if participant.character and hasattr(participant.character, 'stats') and participant.character.stats:
                 stats = participant.character.stats
-                if stats.expended_spell_slots or stats.ki_points_used:
+                if stats.expended_spell_slots or stats.ki_points_used or stats.sorcery_points_used or stats.created_spell_slots:
                     stats.expended_spell_slots = {}
                     stats.ki_points_used = 0
-                    stats.save(update_fields=['expended_spell_slots', 'ki_points_used'])
+                    stats.sorcery_points_used = 0
+                    stats.created_spell_slots = {}
+                    stats.save(update_fields=['expended_spell_slots', 'ki_points_used', 'sorcery_points_used', 'created_spell_slots'])
         super().perform_destroy(instance)
     
     @action(detail=True, methods=['post'])
@@ -550,7 +552,9 @@ class CombatSessionViewSet(
                 stats = participant.character.stats
                 stats.expended_spell_slots = {}
                 stats.ki_points_used = 0
-                stats.save(update_fields=['expended_spell_slots', 'ki_points_used'])
+                stats.sorcery_points_used = 0
+                stats.created_spell_slots = {}
+                stats.save(update_fields=['expended_spell_slots', 'ki_points_used', 'sorcery_points_used', 'created_spell_slots'])
 
             # Reset enemy spell slots if applicable
             if participant.encounter_enemy:

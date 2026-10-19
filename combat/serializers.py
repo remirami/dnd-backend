@@ -277,6 +277,18 @@ class CombatParticipantSerializer(serializers.ModelSerializer):
                 data['arcane_recovery_used'] = instance.is_arcane_recovery_used()
                 data['arcane_recovery_max_levels'] = instance.get_arcane_recovery_max_levels()
 
+            # Sorcerer features (Sorcery Points, Font of Magic, Metamagic)
+            is_sorcerer = class_name == 'sorcerer'
+            data['is_sorcerer'] = is_sorcerer
+            if is_sorcerer:
+                sp_info = instance.get_sorcery_points()
+                data['sorcery_points_max'] = sp_info.get('max', 0)
+                data['sorcery_points_current'] = sp_info.get('current', 0)
+                data['has_font_of_magic'] = (instance.character.level or 1) >= 2
+                data['has_metamagic'] = (instance.character.level or 1) >= 3
+                if hasattr(instance.character, 'stats') and instance.character.stats:
+                    data['created_spell_slots'] = instance.character.stats.created_spell_slots or {}
+
         
         # Add enemy stat block for enemy participants
         enemy = None
@@ -627,6 +639,10 @@ class SpellRequestSerializer(serializers.Serializer):
     is_bonus_action = serializers.BooleanField(required=False, default=False)
     casting_time = serializers.CharField(required=False, allow_blank=True, default='')
     half_on_save = serializers.BooleanField(required=False, default=True)
+    dm_override = serializers.BooleanField(required=False, default=False)
+    metamagic = serializers.CharField(required=False, allow_blank=True, default='')
+    twinned_target_id = serializers.IntegerField(required=False, allow_null=True)
+    careful_target_ids = serializers.ListField(child=serializers.IntegerField(), required=False, default=list)
 
 
 class CombatLogSerializer(serializers.ModelSerializer):

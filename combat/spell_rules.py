@@ -274,6 +274,88 @@ SPELL_RULES = {
         'humanoid_only': True,
         'upcast_targets': True,
     },
+    'hold monster': {
+        'base_level': 5,
+        'range': '60 feet',
+        'save_type': 'WIS',
+        'requires_concentration': True,
+        'condition': 'paralyzed',
+        'humanoid_only': False,
+        'upcast_targets': True,
+    },
+    'blindness/deafness': {
+        'base_level': 2,
+        'range': '30 feet',
+        'save_type': 'CON',
+        'half_on_save': False,
+        'condition': 'blinded',
+        'upcast_targets': True,
+    },
+    'hideous laughter': {
+        'base_level': 1,
+        'range': '30 feet',
+        'save_type': 'WIS',
+        'half_on_save': False,
+        'requires_concentration': True,
+        'condition': 'prone',
+    },
+    'command': {
+        'base_level': 1,
+        'range': '60 feet',
+        'save_type': 'WIS',
+        'half_on_save': False,
+        'condition': 'prone',
+    },
+    'blight': {
+        'base_level': 4,
+        'range': '30 feet',
+        'save_type': 'CON',
+        'half_on_save': True,
+        'damage_type': 'necrotic',
+        'damage': '8d8 necrotic',
+    },
+    'finger of death': {
+        'base_level': 7,
+        'range': '60 feet',
+        'save_type': 'CON',
+        'half_on_save': True,
+        'damage_type': 'necrotic',
+        'damage': '7d8+30 necrotic',
+    },
+    'ray of enfeeblement': {
+        'base_level': 2,
+        'range': '60 feet',
+        'requires_attack_roll': True,
+        'attack_type': 'ranged_spell',
+        'damage_type': 'necrotic',
+        'requires_concentration': True,
+    },
+    'vampiric touch': {
+        'base_level': 3,
+        'range': 'Touch',
+        'requires_attack_roll': True,
+        'attack_type': 'melee_spell',
+        'damage_type': 'necrotic',
+        'damage': '3d6 necrotic',
+        'requires_concentration': True,
+    },
+    'chain lightning': {
+        'base_level': 6,
+        'range': '120 feet',
+        'save_type': 'DEX',
+        'half_on_save': True,
+        'damage_type': 'lightning',
+        'damage': '10d8 lightning',
+    },
+    'hellish rebuke': {
+        'base_level': 1,
+        'range': '60 feet',
+        'is_reaction': True,
+        'save_type': 'DEX',
+        'half_on_save': True,
+        'damage_type': 'fire',
+        'damage': '2d10 fire',
+    },
     'sleep': {
         'base_level': 1,
         'range': '90 feet',
@@ -682,6 +764,188 @@ SPELL_RULES = {
         'damage_type': 'fire',
         'damage': '20d6 fire + 20d6 bludgeoning',
     },
+    'bane': {
+        'base_level': 1,
+        'range': '30 feet',
+        'save_type': 'CHA',
+        'half_on_save': False,
+        'requires_concentration': True,
+        'condition': 'bane',
+        'upcast_targets': True,
+        'description': 'Up to 3 creatures must make a Charisma saving throw. Whenever a target that fails this save makes an attack roll or saving throw before the spell ends, the target must roll a d4 and subtract the number rolled.',
+    },
+    'banishment': {
+        'base_level': 4,
+        'range': '60 feet',
+        'save_type': 'CHA',
+        'half_on_save': False,
+        'requires_concentration': True,
+        'condition': 'incapacitated',
+        'upcast_targets': True,
+        'description': 'Target must make a Charisma saving throw or be banished to a harmless demiplane, incapacitated while there.',
+    },
+    'bestow curse': {
+        'base_level': 3,
+        'range': 'Touch',
+        'save_type': 'WIS',
+        'half_on_save': False,
+        'requires_concentration': True,
+        'condition': 'cursed',
+        'description': 'Touch a creature; it must succeed on a Wisdom saving throw or become cursed for the duration.',
+    },
+    'charm person': {
+        'base_level': 1,
+        'range': '30 feet',
+        'save_type': 'WIS',
+        'half_on_save': False,
+        'requires_concentration': False,
+        'condition': 'charmed',
+        'upcast_targets': True,
+        'description': 'Target humanoid must succeed on a Wisdom saving throw or be charmed by you until the spell ends.',
+    },
+    'dominate monster': {
+        'base_level': 8,
+        'range': '60 feet',
+        'save_type': 'WIS',
+        'half_on_save': False,
+        'requires_concentration': True,
+        'condition': 'charmed',
+        'description': 'Creature must succeed on a Wisdom saving throw or be charmed and telepathically controlled by you.',
+    },
+    'eyebite': {
+        'base_level': 6,
+        'range': 'Self',
+        'save_type': 'WIS',
+        'half_on_save': False,
+        'requires_concentration': True,
+        'description': 'Your eyes become inky voids. Target within 60 ft must make a Wisdom saving throw or be panicked, asleep, or sickened.',
+    },
+    'feeblemind': {
+        'base_level': 8,
+        'range': '150 feet',
+        'save_type': 'INT',
+        'half_on_save': False,
+        'damage_type': 'psychic',
+        'damage': '4d6 psychic',
+        'condition': 'stunned',
+        'description': 'Target takes 4d6 psychic damage and must make an Intelligence saving throw. On a failure, its Intelligence and Charisma scores become 1.',
+    },
+    'flesh to stone': {
+        'base_level': 6,
+        'range': '60 feet',
+        'save_type': 'CON',
+        'half_on_save': False,
+        'requires_concentration': True,
+        'condition': 'restrained',
+        'description': 'Target must make a Constitution saving throw or be restrained as its flesh begins to harden into stone.',
+    },
+    'power word kill': {
+        'base_level': 9,
+        'range': '60 feet',
+        'requires_concentration': False,
+        'kill_hp_threshold': 100,
+        'description': 'You utter a word of power. If the creature has 100 hit points or fewer, it dies instantly.',
+    },
+    'power word stun': {
+        'base_level': 8,
+        'range': '60 feet',
+        'requires_concentration': False,
+        'condition': 'stunned',
+        'stun_hp_threshold': 150,
+        'description': 'You speak a word of power. If the target has 150 hit points or fewer, it is stunned.',
+    },
+    'prayer of healing': {
+        'base_level': 2,
+        'range': '30 feet',
+        'is_healing': True,
+        'healing': '2d8',
+        'upcast_dice_count': 1,
+        'description': 'Up to six creatures of your choice regain hit points equal to 2d8 + your spellcasting ability modifier.',
+    },
+    'wall of thorns': {
+        'base_level': 6,
+        'range': '120 feet',
+        'save_type': 'DEX',
+        'half_on_save': True,
+        'damage_type': 'piercing',
+        'damage': '7d8 piercing',
+        'requires_concentration': True,
+        'description': 'A barrier of spiny, pliable brushes appears. Creatures inside or passing through take 7d8 piercing damage (Dex save half).',
+    },
+    'storm of vengeance': {
+        'base_level': 9,
+        'range': 'Sight',
+        'save_type': 'CON',
+        'half_on_save': True,
+        'damage_type': 'thunder',
+        'damage': '2d6 thunder',
+        'requires_concentration': True,
+        'description': 'A churning storm cloud pelts the area with deafening thunder (2d6 thunder), followed by acid rain, lightning, and hailstones.',
+    },
+    'reverse gravity': {
+        'base_level': 7,
+        'range': '120 feet',
+        'save_type': 'DEX',
+        'half_on_save': False,
+        'requires_concentration': True,
+        'description': 'Gravity reverses in a 50-foot cylinder; creatures fall upward 100 feet unless they succeed on a Dexterity saving throw to grab something.',
+    },
+    'telekinesis': {
+        'base_level': 5,
+        'range': '60 feet',
+        'save_type': 'STR',
+        'half_on_save': False,
+        'requires_concentration': True,
+        'description': 'You gain the ability to move or manipulate creatures or objects by thought. Make contested checks to restrain and move targets.',
+    },
+    'suggestion': {
+        'base_level': 2,
+        'range': '30 feet',
+        'save_type': 'WIS',
+        'half_on_save': False,
+        'requires_concentration': True,
+        'condition': 'charmed',
+        'description': 'You suggest a course of activity to a creature. On a failed Wisdom saving throw, it pursues that course for up to 8 hours.',
+    },
+    'mass suggestion': {
+        'base_level': 6,
+        'range': '60 feet',
+        'save_type': 'WIS',
+        'half_on_save': False,
+        'requires_concentration': False,
+        'condition': 'charmed',
+        'description': 'You suggest a course of activity to up to twelve creatures. On a failed Wisdom save, each pursues that course for up to 24 hours.',
+    },
+    'true strike': {
+        'base_level': 0,
+        'range': '30 feet',
+        'requires_concentration': True,
+        'description': 'You point a finger at a target. On your next turn, you gain advantage on your first attack roll against the target.',
+    },
+    'wall of force': {
+        'base_level': 5,
+        'range': '120 feet',
+        'requires_concentration': True,
+        'description': 'An invisible wall of force springs into existence. It is immune to damage and can only be destroyed by Dispel Magic or Disintegrate.',
+    },
+    'wall of stone': {
+        'base_level': 5,
+        'range': '120 feet',
+        'save_type': 'DEX',
+        'half_on_save': False,
+        'requires_concentration': True,
+        'description': 'A nonmagical wall of solid stone springs up. Creatures caught in its area must make a Dexterity saving throw or be pushed/surrounded.',
+    },
+    'prismatic wall': {
+        'base_level': 9,
+        'range': '60 feet',
+        'save_type': 'DEX',
+        'half_on_save': True,
+        'damage_type': 'fire',
+        'damage': '10d6 fire',
+        'requires_concentration': False,
+        'description': 'A shimmering, multicolored plane of light forms an opaque wall with seven distinct layers of destructive power.',
+    },
 }
 
 
@@ -1065,6 +1329,139 @@ BUFF_SPELL_RULES = {
         'upcast_targets': True,
         'description': 'Target is invisible. Attacks have advantage, attacks against have disadvantage. Can target +1 creature per slot level above 2nd.',
     },
+    'greater invisibility': {
+        'name': 'Greater Invisibility',
+        'base_level': 4,
+        'requires_concentration': True,
+        'condition': 'invisible',
+        'description': 'Target is invisible and remains invisible even after attacking or casting a spell.',
+    },
+    "hunter's mark": {
+        'name': "Hunter's Mark",
+        'base_level': 1,
+        'requires_concentration': True,
+        'bonus_weapon_damage': '1d6',
+        'description': 'You deal an extra 1d6 damage to the target whenever you hit it with a weapon attack.',
+    },
+    'hex': {
+        'name': 'Hex',
+        'base_level': 1,
+        'requires_concentration': True,
+        'bonus_weapon_damage': '1d6 necrotic',
+        'description': 'You deal an extra 1d6 necrotic damage to the target whenever you hit it with an attack.',
+    },
+    'divine favor': {
+        'name': 'Divine Favor',
+        'base_level': 1,
+        'requires_concentration': True,
+        'bonus_weapon_damage': '1d4 radiant',
+        'description': 'Your weapon attacks deal an extra 1d4 radiant damage on a hit.',
+    },
+    'crusader\'s mantle': {
+        'name': "Crusader's Mantle",
+        'base_level': 3,
+        'requires_concentration': True,
+        'bonus_weapon_damage': '1d4 radiant',
+        'description': 'Holy power radiates from you in a 30-foot aura. Weapon attacks by you and allies deal an extra 1d4 radiant damage.',
+    },
+    'stoneskin': {
+        'name': 'Stoneskin',
+        'base_level': 4,
+        'requires_concentration': True,
+        'physical_resistance': True,
+        'description': 'Target gains resistance to nonmagical bludgeoning, piercing, and slashing damage.',
+    },
+    'sanctuary': {
+        'name': 'Sanctuary',
+        'base_level': 1,
+        'requires_concentration': False,
+        'sanctuary_ward': True,
+        'description': 'Any creature targeting this creature with an attack or harmful spell must first make a Wisdom saving throw.',
+    },
+    'death ward': {
+        'name': 'Death Ward',
+        'base_level': 4,
+        'requires_concentration': False,
+        'prevent_death': True,
+        'description': 'The first time the target would drop to 0 hit points, it drops to 1 hit point instead and the spell ends.',
+    },
+    'freedom of movement': {
+        'name': 'Freedom of Movement',
+        'base_level': 4,
+        'requires_concentration': False,
+        'immune_conditions': ['paralyzed', 'restrained'],
+        'description': 'Target’s movement is completely unhindered; magic cannot reduce speed, and target is immune to paralyzed and restrained.',
+    },
+    'protection from energy': {
+        'name': 'Protection from Energy',
+        'base_level': 3,
+        'requires_concentration': True,
+        'description': 'The target has resistance to one damage type of your choice: acid, cold, fire, lightning, or thunder.',
+    },
+    'protection from poison': {
+        'name': 'Protection from Poison',
+        'base_level': 2,
+        'requires_concentration': False,
+        'immune_conditions': ['poisoned'],
+        'poison_resistance': True,
+        'description': 'Neutralizes poisons; target has advantage on saves against poison and resistance to poison damage.',
+    },
+    'beacon of hope': {
+        'name': 'Beacon of Hope',
+        'base_level': 3,
+        'requires_concentration': True,
+        'max_healing': True,
+        'adv_wis_death_saves': True,
+        'description': 'Allies have advantage on Wisdom saves and death saves, and regain the maximum possible hit points from any healing.',
+    },
+    'magic weapon': {
+        'name': 'Magic Weapon',
+        'base_level': 2,
+        'requires_concentration': True,
+        'weapon_bonus': 1,
+        'description': 'You touch a nonmagical weapon. It becomes a magic weapon with a +1 bonus to attack rolls and damage rolls.',
+    },
+    'enlarge/reduce': {
+        'name': 'Enlarge/Reduce',
+        'base_level': 2,
+        'requires_concentration': True,
+        'bonus_weapon_damage': '1d4',
+        'description': 'Target grows one size larger, has advantage on Strength checks and saves, and deals +1d4 weapon damage.',
+    },
+    'enhance ability': {
+        'name': 'Enhance Ability',
+        'base_level': 2,
+        'requires_concentration': True,
+        'temp_hp': 7,
+        'description': 'Bestows magical enhancement: advantage on chosen ability checks. Bear’s Endurance grants temporary hit points.',
+    },
+    'blink': {
+        'name': 'Blink',
+        'base_level': 3,
+        'requires_concentration': False,
+        'blink_ethereal': True,
+        'description': 'At the end of your turns, roll a d20. On 11+, you vanish into the Ethereal Plane, reappearing next turn.',
+    },
+    'see invisibility': {
+        'name': 'See Invisibility',
+        'base_level': 2,
+        'requires_concentration': False,
+        'description': 'You see invisible creatures and objects as if they were visible, and can see into the Ethereal Plane.',
+    },
+    'spider climb': {
+        'name': 'Spider Climb',
+        'base_level': 2,
+        'requires_concentration': True,
+        'climbing_speed': True,
+        'description': 'One willing creature gains the ability to move up, down, and across vertical surfaces and ceilings.',
+    },
+    'longstrider': {
+        'name': 'Longstrider',
+        'base_level': 1,
+        'requires_concentration': False,
+        'speed_bonus': 10,
+        'description': 'Target creature’s speed increases by 10 feet for 1 hour.',
+    },
 }
 
 BUFF_SPELL_ALIASES = {
@@ -1073,6 +1470,12 @@ BUFF_SPELL_ALIASES = {
     'protect from evil and good': 'protection from evil and good',
     'protection from evil & good': 'protection from evil and good',
     'protect from evil & good': 'protection from evil and good',
+    'hunters mark': "hunter's mark",
+    'crusaders mantle': "crusader's mantle",
+    'enlarge': 'enlarge/reduce',
+    'reduce': 'enlarge/reduce',
+    'protect from poison': 'protection from poison',
+    'protect from energy': 'protection from energy',
 }
 
 
@@ -1172,12 +1575,76 @@ def apply_buff_to_target(caster, target, spell_name, spell_level=1):
         target.action_used = False
         target.save(update_fields=['attacks_remaining', 'action_used'])
 
+    # Special handling for Death Ward protection
+    if buff_name.lower() == 'death ward':
+        if not isinstance(target.feature_uses, dict):
+            target.feature_uses = {}
+        target.feature_uses['death_ward_active'] = True
+        target.save(update_fields=['feature_uses'])
+
+    # Special handling for Stoneskin physical damage resistance
+    if buff_name.lower() == 'stoneskin':
+        if not isinstance(target.feature_uses, dict):
+            target.feature_uses = {}
+        target.feature_uses['stoneskin_active'] = True
+        target.save(update_fields=['feature_uses'])
+
+    # Special handling for Sanctuary ward
+    if buff_name.lower() == 'sanctuary':
+        if not isinstance(target.feature_uses, dict):
+            target.feature_uses = {}
+        target.feature_uses['sanctuary_active'] = True
+        target.save(update_fields=['feature_uses'])
+
+    # Special handling for Freedom of Movement
+    if buff_name.lower() == 'freedom of movement':
+        if not isinstance(target.feature_uses, dict):
+            target.feature_uses = {}
+        target.feature_uses['freedom_of_movement_active'] = True
+        target.save(update_fields=['feature_uses'])
+
+    # Special handling for Beacon of Hope max healing
+    if buff_name.lower() == 'beacon of hope':
+        if not isinstance(target.feature_uses, dict):
+            target.feature_uses = {}
+        target.feature_uses['beacon_of_hope_active'] = True
+        target.save(update_fields=['feature_uses'])
+
+    # Special handling for Magic Weapon attack/damage bonus
+    if buff_name.lower() == 'magic weapon':
+        if not isinstance(target.feature_uses, dict):
+            target.feature_uses = {}
+        target.feature_uses['magic_weapon_bonus'] = rule.get('weapon_bonus', 1)
+        target.save(update_fields=['feature_uses'])
+
+    # Special handling for weapon damage riders (Hunter's Mark, Hex, Divine Favor, Crusader's Mantle, Enlarge)
+    bonus_dmg = rule.get('bonus_weapon_damage')
+    if bonus_dmg:
+        if not isinstance(target.feature_uses, dict):
+            target.feature_uses = {}
+        active_riders = target.feature_uses.get('weapon_damage_riders', {})
+        active_riders[buff_name.lower()] = bonus_dmg
+        target.feature_uses['weapon_damage_riders'] = active_riders
+        target.save(update_fields=['feature_uses'])
+
+    # Track Hunter's Mark quarry target on caster
+    if buff_name.lower() == "hunter's mark" and caster:
+        if not isinstance(caster.feature_uses, dict):
+            caster.feature_uses = {}
+        caster.feature_uses['hunters_mark_target_id'] = target.id
+        caster.save(update_fields=['feature_uses'])
+
+    # Special handling for Longstrider speed bonus (+10 ft)
+    if buff_name.lower() == 'longstrider':
+        target.speed = (target.speed or 30) + rule.get('speed_bonus', 10)
+        target.save(update_fields=['speed'])
+
     # If the buff also applies a condition (e.g. Invisibility -> invisible)
     cond_name = rule.get('condition')
     if cond_name:
         try:
             from bestiary.models import Condition
-            cond_obj = Condition.objects.filter(name=cond_name).first()
+            cond_obj = Condition.objects.filter(name__iexact=cond_name).first()
             if cond_obj:
                 target.conditions.add(cond_obj)
         except Exception:

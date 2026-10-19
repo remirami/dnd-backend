@@ -104,11 +104,15 @@ def calculate_attack_roll(
 def calculate_damage(
     damage_string: str,
     ability_modifier: int = 0,
-    critical: bool = False
+    critical: bool = False,
+    reroll_ones_and_twos: bool = False,
+    treat_ones_and_twos_as_three: bool = False
 ) -> tuple[int, str]:
     """
     Calculate damage from a dice string
     If critical, double the dice (but not modifiers)
+    If reroll_ones_and_twos (5e 2014 Great Weapon Fighting), reroll any 1s or 2s once.
+    If treat_ones_and_twos_as_three (5e 2024 Great Weapon Fighting), treat 1s and 2s as 3.
     Returns: (damage, breakdown_string)
     """
     # Parse damage string (e.g., "2d6+3 slashing")
@@ -141,20 +145,34 @@ def calculate_damage(
         breakdown_parts = [f"Rolling {num_dice}d{die_size}"]
     
     # Roll the dice
-    rolls = [random.randint(1, die_size) for _ in range(num_dice)]
+    rolls = []
+    gwf_notes = []
+    for _ in range(num_dice):
+        r = random.randint(1, die_size)
+        if treat_ones_and_twos_as_three and r in (1, 2):
+            gwf_notes.append(f"{r}→3")
+            r = 3
+        elif reroll_ones_and_twos and r in (1, 2):
+            new_r = random.randint(1, die_size)
+            gwf_notes.append(f"{r}↺{new_r}")
+            r = new_r
+        rolls.append(r)
+
     total_modifier = modifier + ability_modifier
     total = sum(rolls) + total_modifier
     
     rolls_str = ', '.join(map(str, rolls))
+    gwf_str = f" [GWF: {', '.join(gwf_notes)}]" if gwf_notes else ""
     if total_modifier > 0:
-        breakdown_parts.append(f"{rolls_str} + {total_modifier} = {total}")
+        breakdown_parts.append(f"{rolls_str}{gwf_str} + {total_modifier} = {total}")
     elif total_modifier < 0:
-        breakdown_parts.append(f"{rolls_str} {total_modifier} = {total}")
+        breakdown_parts.append(f"{rolls_str}{gwf_str} {total_modifier} = {total}")
     else:
-        breakdown_parts.append(f"{rolls_str} = {total}")
+        breakdown_parts.append(f"{rolls_str}{gwf_str} = {total}")
     
     breakdown = " | ".join(breakdown_parts)
     return total, breakdown
+
 
 
 def calculate_saving_throw(
@@ -184,6 +202,56 @@ def calculate_saving_throw(
         parts.append(f"Other: {other_modifiers:+d}")
     parts.append(f"Total: {total}")
     
+    breakdown = " + ".join(parts)
+    return total, breakdown
+
+
+def calculate_ability_check(
+    base_roll: int,
+    ability_modifier: int,
+    proficiency_bonus: int = 0,
+    proficiency: bool = False,
+    half_proficiency: bool = False,
+    other_modifiers: int = 0,
+    reliable_talent: bool = False,
+    indomitable_might_score: int = 0
+) -> tuple[int, str]:
+    """
+    Calculate total ability check roll (supports Remarkable Athlete, Rogue Reliable Talent, and Barbarian Indomitable Might).
+    Returns: (total, breakdown_string)
+    """
+    import math
+    effective_roll = base_roll
+    rt_note = ""
+    if reliable_talent and proficiency:
+        if base_roll < 10:
+            effective_roll = 10
+            rt_note = f" (Reliable Talent from {base_roll})"
+
+    check_modifier = ability_modifier
+    if proficiency:
+        check_modifier += proficiency_bonus
+    elif half_proficiency:
+        check_modifier += math.ceil(proficiency_bonus / 2)
+    check_modifier += other_modifiers
+
+    total = effective_roll + check_modifier
+    parts = [f"Roll: {effective_roll}{rt_note}"]
+    if ability_modifier != 0:
+        parts.append(f"Ability: {ability_modifier:+d}")
+    if proficiency:
+        parts.append(f"Proficiency: +{proficiency_bonus}")
+    elif half_proficiency:
+        parts.append(f"Remarkable Athlete: +{math.ceil(proficiency_bonus / 2)}")
+    if other_modifiers != 0:
+        parts.append(f"Other: {other_modifiers:+d}")
+
+    if indomitable_might_score > 0 and total < indomitable_might_score:
+        parts.append(f"Indomitable Might: adjusted {total} -> {indomitable_might_score}")
+        total = indomitable_might_score
+
+    parts.append(f"Total: {total}")
+
     breakdown = " + ".join(parts)
     return total, breakdown
 

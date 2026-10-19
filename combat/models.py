@@ -384,6 +384,10 @@ class EnvironmentalEffect(models.Model):
         ('poison_gas', 'Poison Gas'),
         ('spike_pit', 'Spike Pit'),
         ('electrified_water', 'Electrified Water'),
+        ('spike_growth', 'Spike Growth'),
+        ('wall_of_fire', 'Wall of Fire'),
+        ('moonbeam', 'Moonbeam'),
+        ('cloudkill', 'Cloudkill'),
     ]
     
     combat_session = models.ForeignKey('CombatSession', on_delete=models.CASCADE, related_name='environmental_effects')
@@ -795,6 +799,395 @@ class CombatParticipant(models.Model):
             return enemy.traits.filter(name__icontains='grappler').exists()
         return False
 
+    def has_feat(self, feat_name: str) -> bool:
+        """Check if participant has a specific 5e feat."""
+        from combat.feats_and_invocations import has_feat as _hf
+        return _hf(self, feat_name)
+
+    def has_eldritch_invocation(self, invocation_name: str) -> bool:
+        """Check if participant has a specific Warlock Eldritch Invocation."""
+        from combat.feats_and_invocations import has_eldritch_invocation as _hei
+        return _hei(self, invocation_name)
+
+    def has_sentinel(self) -> bool:
+        return self.has_feat('Sentinel')
+
+    def has_sharpshooter(self) -> bool:
+        return self.has_feat('Sharpshooter')
+
+    def has_great_weapon_master(self) -> bool:
+        return self.has_feat('Great Weapon Master')
+
+    def has_polearm_master(self) -> bool:
+        return self.has_feat('Polearm Master')
+
+    def has_war_caster(self) -> bool:
+        return self.has_feat('War Caster')
+
+    def has_devils_sight(self) -> bool:
+        return self.has_eldritch_invocation('devils_sight') or self.has_eldritch_invocation("devil's sight")
+
+    def has_fighting_style(self, style_name: str) -> bool:
+        """
+        Check if participant has a specific 5e Fighting Style.
+        Supports Archery, Defense, Dueling, Great Weapon Fighting, Two-Weapon Fighting, etc.
+        Checks:
+        1. participant.feature_uses (e.g. mock combat, direct flags, fighting_styles list)
+        2. character.features (CharacterFeature selection or name)
+        3. character.character_feats (Feat name or category)
+        4. enemy traits
+        """
+        if not style_name:
+            return False
+
+        target = style_name.strip().lower().replace('_', ' ')
+        target_slug = target.replace(' ', '_')
+        aliases = {target, target_slug}
+        if 'great weapon' in target:
+            aliases.update({'great weapon', 'great weapon fighting', 'great_weapon', 'great_weapon_fighting'})
+        if 'two weapon' in target:
+            aliases.update({'two weapon', 'two weapon fighting', 'two_weapon', 'two_weapon_fighting'})
+
+        # 1. Check feature_uses on participant
+        if self.feature_uses and isinstance(self.feature_uses, dict):
+            for alias in aliases:
+                slug = alias.replace(' ', '_')
+                if self.feature_uses.get(f'has_{slug}') or self.feature_uses.get(f'{slug}_fighting_style') or self.feature_uses.get(slug):
+                    return True
+            fs = self.feature_uses.get('fighting_style')
+            if isinstance(fs, str) and any(alias in fs.lower().strip() for alias in aliases):
+                return True
+            styles_list = self.feature_uses.get('fighting_styles') or self.feature_uses.get('styles')
+            if isinstance(styles_list, list):
+                for s in styles_list:
+                    if isinstance(s, str) and any(alias in s.lower().strip() for alias in aliases):
+                        return True
+
+        # 2. Check character features and feats
+        if self.character:
+            # Check CharacterFeature objects
+            try:
+                features = self.character.features.all()
+                for feat in features:
+                    f_name = (feat.name or '').lower()
+                    # Check direct name match e.g. "Archery" or "Fighting Style: Archery"
+                    if any(alias in f_name for alias in aliases):
+                        return True
+                    # Check selection list inside "Fighting Style" feature
+                    if 'fighting style' in f_name and feat.selection:
+                        for sel in feat.selection:
+                            if isinstance(sel, str) and any(alias in sel.lower().strip() for alias in aliases):
+                                return True
+            except Exception:
+                pass
+
+            # Check CharacterFeat objects (2024 rules store fighting styles as Feats)
+            try:
+                for char_feat in self.character.character_feats.select_related('feat').all():
+                    feat_obj = char_feat.feat
+                    feat_name = (feat_obj.name or '').lower()
+                    if any(alias in feat_name for alias in aliases):
+                        return True
+            except Exception:
+                pass
+
+        # 3. Check enemy traits
+        enemy = self.resolve_enemy()
+        if enemy:
+            for alias in aliases:
+                if enemy.traits.filter(
+                    models.Q(name__icontains=alias) |
+                    models.Q(description__icontains=alias)
+                ).exists():
+                    return True
+
+        return False
+
+    def get_creature_type(self) -> str:
+        """
+        Return the creature type of this participant in lowercase (e.g. 'beast', 'dragon', 'undead', 'humanoid').
+        """
+        if self.encounter_enemy and hasattr(self.encounter_enemy, 'enemy') and self.encounter_enemy.enemy:
+            return (self.encounter_enemy.enemy.creature_type or 'humanoid').lower().strip()
+        enemy = self.resolve_enemy()
+        if enemy and hasattr(enemy, 'creature_type') and enemy.creature_type:
+            return enemy.creature_type.lower().strip()
+        # For characters, races define creature type; 5e default is 'humanoid'
+        return 'humanoid'
+
+    def get_favored_enemies(self) -> list:
+        """
+        Return list of normalized, lowercase favored enemy types for this participant.
+        Sources:
+        1. participant.feature_uses (e.g. {'favored_enemies': ['beast', 'dragon']})
+        2. character.features (CharacterFeature selection list for 'Favored Enemy')
+        """
+        favored = []
+        # 1. Feature uses
+        if self.feature_uses and isinstance(self.feature_uses, dict):
+            fu_fe = self.feature_uses.get('favored_enemies') or self.feature_uses.get('favored_enemy')
+            if isinstance(fu_fe, list):
+                for item in fu_fe:
+                    if isinstance(item, str) and item.strip():
+                        favored.append(item.lower().strip().rstrip('s'))
+            elif isinstance(fu_fe, str) and fu_fe.strip():
+                favored.append(fu_fe.lower().strip().rstrip('s'))
+
+        # 2. Character features
+        if self.character:
+            try:
+                for feat in self.character.features.all():
+                    if 'favored enemy' in (feat.name or '').lower():
+                        if feat.selection and isinstance(feat.selection, list):
+                            for sel in feat.selection:
+                                if isinstance(sel, str) and sel.strip():
+                                    favored.append(sel.lower().strip().rstrip('s'))
+            except Exception:
+                pass
+
+        return list(set(favored))
+
+    def has_favored_enemy_trait(self) -> bool:
+        """Check if participant has the Favored Enemy feature (Ranger Level 1+)."""
+        if self.feature_uses and isinstance(self.feature_uses, dict):
+            if self.feature_uses.get('has_favored_enemy') or self.feature_uses.get('favored_enemies'):
+                return True
+        if self.character:
+            try:
+                if self.character.character_class and self.character.character_class.name.lower() == 'ranger':
+                    return True
+                return self.character.features.filter(name__icontains='favored enemy').exists()
+            except Exception:
+                pass
+        return False
+
+    def is_favored_enemy(self, target) -> bool:
+        """
+        Check if target creature matches any of attacker's favored enemies.
+        Supports both exact and singular/plural matching.
+        Also returns True if target is marked by attacker's Hunter's Mark quarry.
+        """
+        if not target:
+            return False
+        # Also check if target is quarry of Hunter's Mark
+        if hasattr(self, 'has_buff') and self.has_buff("hunter's mark"):
+            quarry_id = (self.feature_uses or {}).get('hunters_mark_target_id')
+            if quarry_id is None or quarry_id == getattr(target, 'id', None):
+                return True
+
+        favored_types = self.get_favored_enemies()
+        if not favored_types:
+            return False
+
+        t_type = target.get_creature_type() if hasattr(target, 'get_creature_type') else 'humanoid'
+        clean_target = t_type.lower().strip().rstrip('s')
+        for ft in favored_types:
+            clean_ft = ft.lower().strip().rstrip('s')
+            if clean_ft == clean_target or clean_ft in clean_target or clean_target in clean_ft:
+                return True
+        return False
+
+    def has_foe_slayer(self) -> bool:
+        """Check if participant has Level 20 Ranger Foe Slayer."""
+        if self.feature_uses and isinstance(self.feature_uses, dict):
+            if self.feature_uses.get('has_foe_slayer'):
+                return True
+        if self.character:
+            try:
+                if self.character.character_class and self.character.character_class.name.lower() == 'ranger' and (self.character.level or 1) >= 20:
+                    return True
+                return self.character.features.filter(name__icontains='foe slayer').exists()
+            except Exception:
+                pass
+        return False
+
+    def get_speed(self) -> int:
+        """Calculate effective walking speed for combat participant"""
+        return self.speed
+
+    def has_weapon_mastery(self, weapon_name: str = None, property_name: str = None) -> bool:
+        """
+        Check if participant can use 2024 Weapon Mastery for a weapon and/or property.
+        Delegates to combat.weapon_mastery.can_use_weapon_mastery.
+        """
+        from combat.weapon_mastery import can_use_weapon_mastery
+        return can_use_weapon_mastery(self, weapon_name=weapon_name, property_name=property_name)
+
+    def get_sorcery_points(self) -> dict:
+        """Get Sorcery Points status (max, current, used) for participant."""
+        from combat.sorcery import get_sorcery_points_info
+        return get_sorcery_points_info(self)
+
+    def spend_sorcery_points(self, amount: int) -> bool:
+        """Spend Sorcery Points. Returns True if successful."""
+        from combat.sorcery import spend_sorcery_points
+        return spend_sorcery_points(self, amount)
+
+    def regain_sorcery_points(self, amount: int) -> int:
+        """Regain Sorcery Points up to max. Returns points regained."""
+        from combat.sorcery import regain_sorcery_points
+        return regain_sorcery_points(self, amount)
+
+    @property
+    def temporary_hp(self) -> int:
+        """Get current temporary hit points from feature_uses or character stats."""
+        if self.feature_uses and isinstance(self.feature_uses, dict):
+            if 'temporary_hp' in self.feature_uses:
+                return int(self.feature_uses.get('temporary_hp') or 0)
+        if self.character and hasattr(self.character, 'stats') and hasattr(self.character.stats, 'temporary_hit_points'):
+            return int(self.character.stats.temporary_hit_points or 0)
+        return 0
+
+    @temporary_hp.setter
+    def temporary_hp(self, value: int):
+        """Set current temporary hit points and synchronize with character stats."""
+        if not isinstance(self.feature_uses, dict):
+            self.feature_uses = {}
+        val = max(0, int(value or 0))
+        self.feature_uses['temporary_hp'] = val
+        if self.character and hasattr(self.character, 'stats') and hasattr(self.character.stats, 'temporary_hit_points'):
+            try:
+                self.character.stats.temporary_hit_points = val
+                self.character.stats.save(update_fields=['temporary_hit_points'])
+            except Exception:
+                pass
+
+    # ---------------------------------------------------------------------------
+    # SRD 5.2 Subclass Specialization Helpers
+    # ---------------------------------------------------------------------------
+
+    def is_champion(self) -> bool:
+        """Check if participant is a Champion Fighter."""
+        from combat.subclasses import is_champion
+        return is_champion(self)
+
+    def get_critical_threshold(self) -> int:
+        """Get the d20 natural roll needed for a critical hit (e.g. 19 for Champion, 18 for Superior Critical)."""
+        from combat.subclasses import get_critical_threshold
+        return get_critical_threshold(self)
+
+    def is_hunter(self) -> bool:
+        """Check if participant is a Hunter Ranger."""
+        from combat.subclasses import is_hunter
+        return is_hunter(self)
+
+    def is_fiend_warlock(self) -> bool:
+        """Check if participant is a Fiend Patron Warlock."""
+        from combat.subclasses import is_fiend_warlock
+        return is_fiend_warlock(self)
+
+    def is_open_hand_monk(self) -> bool:
+        """Check if participant is a Warrior of the Open Hand Monk."""
+        from combat.subclasses import is_open_hand_monk
+        return is_open_hand_monk(self)
+
+    def is_thief(self) -> bool:
+        """Check if participant is a Thief Rogue."""
+        from combat.subclasses import is_thief
+        return is_thief(self)
+
+    def is_lore_bard(self) -> bool:
+        """Check if participant is a College of Lore Bard."""
+        from combat.subclasses import is_lore_bard
+        return is_lore_bard(self)
+
+    def is_land_druid(self) -> bool:
+        """Check if participant is a Circle of the Land Druid."""
+        from combat.subclasses import is_land_druid
+        return is_land_druid(self)
+
+    def is_draconic_sorcerer(self) -> bool:
+        """Check if participant is a Draconic Sorcery / Draconic Bloodline Sorcerer."""
+        from combat.subclasses import is_draconic_sorcerer
+        return is_draconic_sorcerer(self)
+
+    def has_elemental_affinity_resistance(self, damage_type: str) -> bool:
+        """Check if participant has active Elemental Affinity damage resistance."""
+        from combat.subclasses import has_elemental_affinity_resistance
+        return has_elemental_affinity_resistance(self, damage_type)
+
+    def has_natures_ward(self) -> bool:
+        """Check if participant has Nature's Ward (Circle of the Land level 10+)."""
+        from combat.subclasses import has_natures_ward
+        return has_natures_ward(self)
+
+    def has_lands_stride(self) -> bool:
+        """Check if participant has Land's Stride (Circle of the Land level 6+)."""
+        from combat.subclasses import has_lands_stride
+        return has_lands_stride(self)
+
+    def has_aura_of_protection(self) -> bool:
+        """Check if participant has Aura of Protection (Paladin level 6+)."""
+        from combat.high_tier_passives import has_aura_of_protection
+        return has_aura_of_protection(self)
+
+    def get_aura_of_protection_bonus(self) -> int:
+        """Get the Aura of Protection saving throw bonus affecting this participant."""
+        from combat.high_tier_passives import get_aura_of_protection_bonus
+        return get_aura_of_protection_bonus(self)
+
+    def has_aura_of_courage(self) -> bool:
+        """Check if participant has Aura of Courage (Paladin level 10+)."""
+        from combat.high_tier_passives import has_aura_of_courage
+        return has_aura_of_courage(self)
+
+    def is_protected_by_aura_of_courage(self) -> bool:
+        """Check if participant is protected by an Aura of Courage."""
+        from combat.high_tier_passives import is_protected_by_aura_of_courage
+        return is_protected_by_aura_of_courage(self)
+
+    def has_reliable_talent(self) -> bool:
+        """Check if participant has Reliable Talent (Rogue level 11+)."""
+        from combat.high_tier_passives import has_reliable_talent
+        return has_reliable_talent(self)
+
+    def has_indomitable_might(self) -> bool:
+        """Check if participant has Indomitable Might (Barbarian level 18+)."""
+        from combat.high_tier_passives import has_indomitable_might
+        return has_indomitable_might(self)
+
+    def has_relentless_rage(self) -> bool:
+        """Check if participant has Relentless Rage (Barbarian level 11+)."""
+        from combat.high_tier_passives import has_relentless_rage
+        return has_relentless_rage(self)
+
+
+    def get_proficiency_bonus(self) -> int:
+        """Get proficiency bonus for this participant"""
+        if self.character and hasattr(self.character, 'stats') and hasattr(self.character.stats, 'proficiency_bonus'):
+            return self.character.stats.proficiency_bonus
+        if self.character:
+            level = getattr(self.character, 'level', 1) or 1
+            return 2 + (level - 1) // 4
+        enemy = self.resolve_enemy()
+        if enemy and hasattr(enemy, 'proficiency_bonus'):
+            return enemy.proficiency_bonus
+        return 2
+
+    def get_attack_bonus(self, weapon=None, is_melee=True) -> int:
+        """
+        Calculate total static attack roll bonus for the participant with the given weapon/attack mode.
+        Includes ability modifier, proficiency bonus, magic weapon bonus, and Fighting Style (Archery).
+        """
+        if weapon and getattr(weapon, 'finesse', False):
+            ability_mod = max(self.get_ability_modifier('STR'), self.get_ability_modifier('DEX'))
+        elif not is_melee or (weapon and ('ranged' in str(getattr(weapon, 'weapon_type', '')).lower() or getattr(weapon, 'range_normal', 0) > 5)):
+            ability_mod = self.get_ability_modifier('DEX')
+        else:
+            ability_mod = self.get_ability_modifier('STR')
+
+        prof_bonus = self.get_proficiency_bonus()
+        magic_bonuses = self.get_magic_item_bonuses() if hasattr(self, 'get_magic_item_bonuses') else {'to_hit': 0, 'to_damage': 0}
+        total_bonus = ability_mod + prof_bonus + magic_bonuses.get('to_hit', 0)
+
+        # Archery Fighting Style (+2 for ranged weapons)
+        is_ranged = (not is_melee) or (weapon and 'ranged' in str(getattr(weapon, 'weapon_type', '')).lower())
+        if is_ranged and self.has_fighting_style('archery'):
+            total_bonus += 2
+
+        return total_bonus
+
+
     def release_grapple(self):
         """Release grapple on this participant or by this participant, clearing conditions."""
         grappled_cond = Condition.objects.filter(name__iexact='Grappled').first()
@@ -933,7 +1326,7 @@ class CombatParticipant(models.Model):
                 if v_rank > g_rank - 2:
                     base = base // 2
 
-        speed_penalty = (self.feature_uses or {}).get('speed_penalty', 0)
+        speed_penalty = (self.feature_uses or {}).get('speed_penalty', 0) + (self.feature_uses or {}).get('slowed_speed_reduction', 0)
         return max(0, base - speed_penalty)
 
     @property
@@ -1410,6 +1803,11 @@ class CombatParticipant(models.Model):
                 dex_mod = self.get_ability_modifier('DEX')
                 base_ac = max(base_ac, 13 + dex_mod)
         
+        # Defense Fighting Style (+1 AC while wearing armor)
+        is_armored = (armor is not None) or bool(self.feature_uses and self.feature_uses.get('wearing_armor'))
+        if is_armored and self.has_fighting_style('defense'):
+            base_ac += 1
+
         # Add shield bonus
         if shield:
             shield_bonus = getattr(shield, 'ac_bonus', None)
@@ -1544,13 +1942,81 @@ class CombatParticipant(models.Model):
                     'original_damage': amount,
                     'actual_damage': actual_damage,
                 }
+            elif self.has_elemental_affinity_resistance(dtype_name):
+                actual_damage = max(1, amount // 2)
+                was_resisted = True
+                self.last_resistance_info = {
+                    'type': 'resistance',
+                    'source': 'Elemental Affinity',
+                    'damage_type': dtype_name,
+                    'original_damage': amount,
+                    'actual_damage': actual_damage,
+                }
+            elif dtype_name == 'poison' and self.has_natures_ward():
+                actual_damage = max(1, amount // 2)
+                was_resisted = True
+                self.last_resistance_info = {
+                    'type': 'resistance',
+                    'source': "Nature's Ward",
+                    'damage_type': dtype_name,
+                    'original_damage': amount,
+                    'actual_damage': actual_damage,
+                }
+
+        # 5. Magical Buff Resistances (Stoneskin, Protection from Poison)
+        if not was_resisted and hasattr(self, 'has_buff'):
+            if self.has_buff('stoneskin') and (not dtype_name or dtype_name in ['bludgeoning', 'piercing', 'slashing', 'physical', 'untyped']):
+                actual_damage = max(1, amount // 2)
+                was_resisted = True
+                self.last_resistance_info = {
+                    'type': 'resistance',
+                    'source': 'Stoneskin',
+                    'damage_type': dtype_name or 'physical',
+                    'original_damage': amount,
+                    'actual_damage': actual_damage,
+                }
+            elif self.has_buff('protection from poison') and dtype_name == 'poison':
+                actual_damage = max(1, amount // 2)
+                was_resisted = True
+                self.last_resistance_info = {
+                    'type': 'resistance',
+                    'source': 'Protection from Poison',
+                    'damage_type': 'poison',
+                    'original_damage': amount,
+                    'actual_damage': actual_damage,
+                }
+
 
         self.last_relentless_endurance_triggered = False
+        self.last_relentless_rage_triggered = False
+        self.relentless_rage_details = None
         self.last_undead_fortitude_triggered = False
         self.undead_fortitude_details = None
+        self.last_death_ward_triggered = False
         concentration_broken = False
+
+        # Temporary Hit Points absorb incoming damage first per 5e rules
+        cur_thp = self.temporary_hp
+        if cur_thp > 0 and actual_damage > 0:
+            if cur_thp >= actual_damage:
+                self.temporary_hp = cur_thp - actual_damage
+                actual_damage = 0
+            else:
+                actual_damage -= cur_thp
+                self.temporary_hp = 0
+
         potential_hp = self.current_hp - actual_damage
-        if potential_hp <= 0 and self.current_hp > 0 and self.has_relentless_endurance():
+        if potential_hp <= 0 and self.current_hp > 0 and hasattr(self, 'has_buff') and self.has_buff('death ward'):
+            # 5e Death Ward: First time dropping to 0 HP, drop to 1 HP instead and spell ends
+            self.current_hp = 1
+            self.is_active = True
+            self.last_death_ward_triggered = True
+            if hasattr(self, 'remove_buff'):
+                self.remove_buff('Death Ward')
+            if isinstance(self.feature_uses, dict):
+                self.feature_uses.pop('death_ward_active', None)
+            self.save(update_fields=['current_hp', 'is_active', 'feature_uses'])
+        elif potential_hp <= 0 and self.current_hp > 0 and self.has_relentless_endurance():
             uses = self.feature_uses or {}
             if not uses.get('relentless_endurance_used', False):
                 excess_damage = actual_damage - self.current_hp
@@ -1561,6 +2027,27 @@ class CombatParticipant(models.Model):
                         self.feature_uses = {}
                     self.feature_uses['relentless_endurance_used'] = True
                     self.last_relentless_endurance_triggered = True
+                else:
+                    self.current_hp = 0
+                    self.is_active = False
+            else:
+                self.current_hp = 0
+                self.is_active = False
+        elif potential_hp <= 0 and self.current_hp > 0 and self.is_raging() and self.has_relentless_rage():
+            # Barbarian Relentless Rage (Level 11+): DC 10 (scaling +5) CON save to drop to 1 HP instead of 0
+            excess_damage = actual_damage - self.current_hp
+            if excess_damage < self.max_hp:
+                from combat.high_tier_passives import check_relentless_rage
+                success, dc, save_total, msg = check_relentless_rage(self)
+                if success:
+                    self.current_hp = 1
+                    self.is_active = True
+                    self.last_relentless_rage_triggered = True
+                    self.relentless_rage_details = {
+                        'dc': dc,
+                        'total': save_total,
+                        'message': msg,
+                    }
                 else:
                     self.current_hp = 0
                     self.is_active = False
@@ -2163,7 +2650,11 @@ class CombatParticipant(models.Model):
         # Check active buff/spell like Fly
         if hasattr(self, 'has_buff') and self.has_buff('fly'):
             return 60
+        # Check Dragon Wings feature
+        if self.feature_uses and isinstance(self.feature_uses, dict) and self.feature_uses.get('dragon_wings_active'):
+            return self.speed
         return 0
+
 
     def has_hover(self) -> bool:
         """Check if creature has hover flight trait."""
@@ -2293,13 +2784,17 @@ class CombatParticipant(models.Model):
         # Calculate DC: 10 or half damage, whichever is higher
         save_dc = max(10, damage_amount // 2)
         
-        # Roll CON saving throw
-        roll, _ = roll_d20(lucky=self.has_lucky_trait())
+        # Roll CON saving throw (War Caster grants advantage)
+        has_war_caster_adv = self.has_war_caster()
+        roll, _ = roll_d20(advantage=has_war_caster_adv, lucky=self.has_lucky_trait())
         con_mod = self.get_ability_modifier('CON')
         proficiency_bonus = self.character.proficiency_bonus if self.character else 2
-        proficiency = False  # Simplified - should check actual CON save proficiency
+        proficiency = False
+        if self.character and hasattr(self.character, 'saving_throw_proficiencies') and self.character.saving_throw_proficiencies:
+            proficiency = 'con' in [s.lower() for s in self.character.saving_throw_proficiencies]
         
-        save_total, _ = calculate_saving_throw(roll, con_mod, proficiency_bonus, proficiency)
+        aura_bonus = self.get_aura_of_protection_bonus()
+        save_total, _ = calculate_saving_throw(roll, con_mod, proficiency_bonus, proficiency, other_modifiers=aura_bonus)
         concentration_broken = save_total < save_dc
         
         if concentration_broken:
@@ -2356,6 +2851,16 @@ class CombatParticipant(models.Model):
             self.feature_uses['reckless_attack_active'] = False
             self.feature_uses['sneak_attack_used_this_turn'] = False
             self.feature_uses['shield_spell_active'] = False
+            self.feature_uses['colossus_slayer_used_this_turn'] = False
+            self.feature_uses['open_hand_flurry_attacks_remaining'] = 0
+
+        # Champion Fighter: Survivor (regain 5 + CON modifier HP if <= half HP at turn start)
+        try:
+            from combat.subclasses import apply_champion_survivor
+            apply_champion_survivor(self)
+        except Exception:
+            pass
+
         if self.participant_type == 'enemy':
             recharged_items = self.check_recharges()
             session = getattr(self, 'combat_session', None) or getattr(self, 'session', None)
@@ -2443,17 +2948,38 @@ class CombatParticipant(models.Model):
     
     def reset_reaction(self):
         """Reset reaction at start of round (reactions reset each round)"""
+        # Check if reaction is locked by Open Hand Technique
+        if self.feature_uses and isinstance(self.feature_uses, dict):
+            lock_until = self.feature_uses.get('no_reactions_until_round')
+            if lock_until:
+                session = getattr(self, 'combat_session', None) or getattr(self, 'session', None)
+                cur_round = session.current_round if session else 1
+                if cur_round < lock_until:
+                    self.reaction_used = True
+                    self.save(update_fields=['reaction_used'])
+                    return
+                else:
+                    self.feature_uses.pop('no_reactions_until_round', None)
+                    self.save(update_fields=['feature_uses'])
+
         self.reaction_used = False
-        self.save()
+        self.save(update_fields=['reaction_used'])
     
     def can_use_reaction(self):
         """Check if participant can use a reaction"""
+        if self.feature_uses and isinstance(self.feature_uses, dict):
+            lock_until = self.feature_uses.get('no_reactions_until_round')
+            if lock_until:
+                session = getattr(self, 'combat_session', None) or getattr(self, 'session', None)
+                cur_round = session.current_round if session else 1
+                if cur_round < lock_until:
+                    return False
         return not self.reaction_used and self.is_active
     
     def use_reaction(self):
         """Mark reaction as used"""
         self.reaction_used = True
-        self.save()
+        self.save(update_fields=['reaction_used'])
     
     def get_reach(self):
         """Get melee reach in feet (default 5 feet)"""

@@ -368,19 +368,54 @@ class CombatReactionMixin:
                     status=status.HTTP_404_NOT_FOUND
                 )
         
-        # Mark reaction as used
-        participant.use_reaction()
-        
         # Get reaction details
+        counterspell_details = None
         if reaction_type == 'spell':
             spell_name = request.data.get('spell_name', 'Unknown Spell')
             description = request.data.get('description', f"{participant.get_name()} casts {spell_name} as a reaction")
-            if str(spell_name).strip().lower() == 'shield':
+            clean_spell = str(spell_name).strip().lower()
+            if clean_spell == 'shield':
+                participant.use_reaction()
                 if not participant.feature_uses:
                     participant.feature_uses = {}
                 participant.feature_uses['shield_spell_active'] = True
                 participant.save(update_fields=['feature_uses'])
+            elif clean_spell == 'counterspell' and target:
+                from combat.reaction_spells import resolve_counterspell
+                target_spell_name = request.data.get('target_spell_name', 'Spell')
+                target_spell_lvl = int(request.data.get('target_spell_level', 3))
+                slot_lvl = int(request.data.get('slot_level', 3))
+                is_countered, counterspell_details = resolve_counterspell(
+                    participant, target, target_spell_name, target_spell_lvl, slot_lvl
+                )
+                description = counterspell_details.get('message', description)
+            else:
+                participant.use_reaction()
+                if hasattr(participant, 'has_war_caster') and participant.has_war_caster():
+                    description = f"⚡ War Caster: {participant.get_name()} casts {spell_name} as a reaction!"
+        elif reaction_type == 'sentinel' or (reaction_type == 'ability' and 'sentinel' in str(request.data.get('ability_name', '')).lower()):
+            participant.use_reaction()
+            ability_name = 'Sentinel Retaliation'
+            if target:
+                raw_d20, _ = roll_d20()
+                eq_w = participant.get_equipped_weapon('main_hand') if hasattr(participant, 'get_equipped_weapon') else None
+                atk_mod = participant.get_ability_modifier('STR')
+                if eq_w and getattr(eq_w, 'finesse', False):
+                    atk_mod = max(atk_mod, participant.get_ability_modifier('DEX'))
+                pb = participant.character.proficiency_bonus if participant.character else 2
+                tot_atk = raw_d20 + atk_mod + pb
+                tgt_ac = target.calculate_effective_ac() if hasattr(target, 'calculate_effective_ac') else target.armor_class
+                hit = (tot_atk >= tgt_ac or raw_d20 == 20) and raw_d20 != 1
+                dmg_dealt = 0
+                if hit:
+                    dmg_str = eq_w.damage_dice if eq_w else "1d8"
+                    dmg_dealt, _ = calculate_damage(dmg_str, atk_mod, critical=(raw_d20 == 20))
+                    target.take_damage(dmg_dealt)
+                description = f"🛡️ Sentinel Reaction! {participant.get_name()} lashes out at {target.get_name()} for attacking an ally: rolled {tot_atk} vs AC {tgt_ac} ({'HIT for ' + str(dmg_dealt) + ' dmg' if hit else 'MISSED'})."
+            else:
+                description = f"{participant.get_name()} prepares a Sentinel reaction."
         else:
+            participant.use_reaction()
             ability_name = request.data.get('ability_name', 'Unknown Ability')
             description = request.data.get('description', f"{participant.get_name()} uses {ability_name} as a reaction")
         
@@ -397,14 +432,17 @@ class CombatReactionMixin:
             is_reaction=True
         )
         
-        return Response({
+        resp_data = {
             "message": description,
             "reaction_type": reaction_type,
             "participant": participant.get_name(),
             "target": target.get_name() if target else None,
             "reaction_used": True,
             "action": CombatActionSerializer(combat_action).data
-        })
+        }
+        if counterspell_details:
+            resp_data["counterspell"] = counterspell_details
+        return Response(resp_data)
 
     @action(detail=True, methods=['post'])
     def legendary_action(self, request, pk=None):
