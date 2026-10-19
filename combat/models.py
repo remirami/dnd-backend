@@ -710,28 +710,54 @@ class CombatParticipant(models.Model):
     
     def resolve_enemy(self):
         """Resolve the Enemy model for this participant (supports encounter & practice mode)."""
+        if hasattr(self, '_resolved_enemy_cache'):
+            return self._resolved_enemy_cache
+
+        enemy = None
         if self.encounter_enemy:
-            return self.encounter_enemy.enemy
+            enemy = self.encounter_enemy.enemy
         elif self.participant_type == 'enemy' and self.name:
             import re
             from bestiary.models import Enemy as EnemyModel
             # 1. Exact match
             enemy = EnemyModel.objects.filter(name__iexact=self.name).first()
-            if enemy:
-                return enemy
-            # 2. Strip numeric or alphabetic suffixes (e.g. "Goblin 1", "Dire Wolf #2", "Skeleton A")
-            base_name = re.sub(r'\s*(?:#?\d+|[A-Z])$', '', self.name).strip()
-            if base_name:
-                enemy = EnemyModel.objects.filter(name__iexact=base_name).first()
-                if enemy:
-                    return enemy
-            # 3. Fuzzy first word match (e.g. "Goblin Archer" -> "Goblin")
-            first_word = self.name.split()[0] if self.name.split() else ''
-            if first_word:
-                enemy = EnemyModel.objects.filter(name__iexact=first_word).first()
-                if enemy:
-                    return enemy
-        return None
+            if not enemy:
+                # 2. Strip numeric or alphabetic suffixes (e.g. "Goblin 1", "Dire Wolf #2", "Skeleton A")
+                base_name = re.sub(r'\s*(?:#?\d+|[A-Z])$', '', self.name).strip()
+                if base_name:
+                    enemy = EnemyModel.objects.filter(name__iexact=base_name).first()
+            if not enemy:
+                # 3. Fuzzy first word match (e.g. "Goblin Archer" -> "Goblin")
+                first_word = self.name.split()[0] if self.name.split() else ''
+                if first_word:
+                    enemy = EnemyModel.objects.filter(name__iexact=first_word).first()
+        self._resolved_enemy_cache = enemy
+        return enemy
+
+    def _has_character_feature(self, *terms, exact: bool = False) -> bool:
+        """Helper to check if character has a feature by name, using prefetch cache when available."""
+        if not self.character:
+            return False
+        if hasattr(self.character, '_prefetched_objects_cache') and 'features' in self.character._prefetched_objects_cache:
+            for feat in self.character._prefetched_objects_cache['features']:
+                feat_name = (feat.name or '').lower()
+                for term in terms:
+                    term_lower = term.lower()
+                    if exact:
+                        if feat_name == term_lower:
+                            return True
+                    else:
+                        if term_lower in feat_name:
+                            return True
+            return False
+
+        q = models.Q()
+        for term in terms:
+            if exact:
+                q |= models.Q(name__iexact=term)
+            else:
+                q |= models.Q(name__icontains=term)
+        return self.character.features.filter(q).exists()
 
     def init_recharge_state(self):
         """Initialize all recharge abilities to charged (ready)."""
@@ -782,6 +808,13 @@ class CombatParticipant(models.Model):
         enemy = self.resolve_enemy()
         if enemy:
             normalized = trait_type.lower().replace('_', ' ')
+            if hasattr(enemy, '_prefetched_objects_cache') and 'traits' in enemy._prefetched_objects_cache:
+                for t in enemy._prefetched_objects_cache['traits']:
+                    tt = (getattr(t, 'trait_type', None) or '').lower()
+                    t_name = (getattr(t, 'name', None) or '').lower()
+                    if tt == trait_type.lower() or normalized in t_name:
+                        return True
+                return False
             return enemy.traits.filter(
                 models.Q(trait_type__iexact=trait_type) |
                 models.Q(name__icontains=normalized)
@@ -793,9 +826,17 @@ class CombatParticipant(models.Model):
         if self.feature_uses and (self.feature_uses.get('has_grappler') or self.feature_uses.get('grappler_feat')):
             return True
         if self.character:
+            if hasattr(self.character, '_prefetched_objects_cache') and 'character_feats' in self.character._prefetched_objects_cache:
+                for cf in self.character._prefetched_objects_cache['character_feats']:
+                    feat = getattr(cf, 'feat', None)
+                    if feat and (feat.name or '').strip().lower() == 'grappler':
+                        return True
+                return False
             return self.character.character_feats.filter(feat__name__iexact='Grappler').exists()
         enemy = self.resolve_enemy()
         if enemy:
+            if hasattr(enemy, '_prefetched_objects_cache') and 'traits' in enemy._prefetched_objects_cache:
+                return any('grappler' in (t.name or '').lower() for t in enemy._prefetched_objects_cache['traits'])
             return enemy.traits.filter(name__icontains='grappler').exists()
         return False
 
@@ -883,23 +924,38 @@ class CombatParticipant(models.Model):
 
             # Check CharacterFeat objects (2024 rules store fighting styles as Feats)
             try:
-                for char_feat in self.character.character_feats.select_related('feat').all():
-                    feat_obj = char_feat.feat
-                    feat_name = (feat_obj.name or '').lower()
-                    if any(alias in feat_name for alias in aliases):
-                        return True
+                if hasattr(self.character, '_prefetched_objects_cache') and 'character_feats' in self.character._prefetched_objects_cache:
+                    for char_feat in self.character._prefetched_objects_cache['character_feats']:
+                        feat_obj = getattr(char_feat, 'feat', None)
+                        if feat_obj:
+                            feat_name = (feat_obj.name or '').lower()
+                            if any(alias in feat_name for alias in aliases):
+                                return True
+                else:
+                    for char_feat in self.character.character_feats.select_related('feat').all():
+                        feat_obj = char_feat.feat
+                        feat_name = (feat_obj.name or '').lower()
+                        if any(alias in feat_name for alias in aliases):
+                            return True
             except Exception:
                 pass
 
         # 3. Check enemy traits
         enemy = self.resolve_enemy()
         if enemy:
-            for alias in aliases:
-                if enemy.traits.filter(
-                    models.Q(name__icontains=alias) |
-                    models.Q(description__icontains=alias)
-                ).exists():
-                    return True
+            if hasattr(enemy, '_prefetched_objects_cache') and 'traits' in enemy._prefetched_objects_cache:
+                for t in enemy._prefetched_objects_cache['traits']:
+                    t_name = (getattr(t, 'name', None) or '').lower()
+                    t_desc = (getattr(t, 'description', None) or '').lower()
+                    if any(alias in t_name or alias in t_desc for alias in aliases):
+                        return True
+            else:
+                for alias in aliases:
+                    if enemy.traits.filter(
+                        models.Q(name__icontains=alias) |
+                        models.Q(description__icontains=alias)
+                    ).exists():
+                        return True
 
         return False
 
@@ -956,7 +1012,7 @@ class CombatParticipant(models.Model):
             try:
                 if self.character.character_class and self.character.character_class.name.lower() == 'ranger':
                     return True
-                return self.character.features.filter(name__icontains='favored enemy').exists()
+                return self._has_character_feature('favored enemy')
             except Exception:
                 pass
         return False
@@ -996,7 +1052,7 @@ class CombatParticipant(models.Model):
             try:
                 if self.character.character_class and self.character.character_class.name.lower() == 'ranger' and (self.character.level or 1) >= 20:
                     return True
-                return self.character.features.filter(name__icontains='foe slayer').exists()
+                return self._has_character_feature('foe slayer')
             except Exception:
                 pass
         return False
@@ -2188,17 +2244,13 @@ class CombatParticipant(models.Model):
         if not self.character:
             return False
         class_name = getattr(self.character.character_class, 'name', '').lower()
-        return class_name == 'barbarian' or self.character.features.filter(
-            models.Q(name__iexact='rage') |
-            models.Q(name__istartswith='rage ') |
-            models.Q(name__icontains='barbarian rage')
-        ).exists()
+        return class_name == 'barbarian' or self._has_character_feature('rage', 'barbarian rage')
 
     def has_reckless_attack(self):
         """Check if participant has access to Reckless Attack"""
         if not self.character:
             return False
-        if self.character.features.filter(name__icontains='reckless attack').exists():
+        if self._has_character_feature('reckless attack'):
             return True
         class_name = getattr(self.character.character_class, 'name', '').lower()
         return class_name == 'barbarian' and (self.character.level or 1) >= 2
@@ -2208,21 +2260,21 @@ class CombatParticipant(models.Model):
         if not self.character:
             return False
         class_name = getattr(self.character.character_class, 'name', '').lower()
-        return class_name == 'fighter' or self.character.features.filter(name__icontains='second wind').exists()
+        return class_name == 'fighter' or self._has_character_feature('second wind')
 
     def is_rogue(self):
         """Check if participant is a rogue or has rogue features"""
         if not self.character:
             return False
         class_name = getattr(self.character.character_class, 'name', '').lower()
-        return class_name == 'rogue' or self.character.features.filter(name__icontains='sneak attack').exists()
+        return class_name == 'rogue' or self._has_character_feature('sneak attack')
 
     def is_paladin(self):
         """Check if participant is a paladin or has paladin features"""
         if not self.character:
             return False
         class_name = getattr(self.character.character_class, 'name', '').lower()
-        return class_name == 'paladin' or self.character.features.filter(name__icontains='lay on hands').exists()
+        return class_name == 'paladin' or self._has_character_feature('lay on hands')
     
     def get_lay_on_hands_pool(self):
         """Get remaining Lay on Hands pool for Paladin participant"""
@@ -2230,7 +2282,7 @@ class CombatParticipant(models.Model):
             return 0
         
         # Check if character has Lay on Hands feature or is a Paladin
-        has_loh = self.character.features.filter(name__iexact='Lay on Hands').exists()
+        has_loh = self._has_character_feature('lay on hands')
         class_name = getattr(self.character.character_class, 'name', '').lower()
         if not has_loh and class_name != 'paladin':
             return 0
@@ -2247,48 +2299,35 @@ class CombatParticipant(models.Model):
         if not self.character:
             return False
         class_name = getattr(self.character.character_class, 'name', '').lower()
-        return class_name == 'cleric' or self.character.features.filter(
-            models.Q(name__icontains='turn undead') |
-            models.Q(name__icontains='preserve life') |
-            models.Q(name__icontains='destroy undead')
-        ).exists()
+        return class_name == 'cleric' or self._has_character_feature('turn undead', 'preserve life', 'destroy undead')
 
     def is_monk(self):
         """Check if participant is a monk or has monk features"""
         if not self.character:
             return False
         class_name = getattr(self.character.character_class, 'name', '').lower()
-        return class_name == 'monk' or self.character.features.filter(
-            models.Q(name__iexact='ki') |
-            models.Q(name__istartswith='ki ') |
-            models.Q(name__iendswith=' ki') |
-            models.Q(name__icontains='ki points') |
-            models.Q(name__icontains='ki-fueled') |
-            models.Q(name__icontains='flurry of blows') |
-            models.Q(name__icontains='martial arts') |
-            models.Q(name__icontains='stunning strike')
-        ).exists()
+        return class_name == 'monk' or self._has_character_feature('ki', 'ki points', 'ki-fueled', 'flurry of blows', 'martial arts', 'stunning strike')
 
     def is_bard(self):
         """Check if participant is a bard or has bard features"""
         if not self.character:
             return False
         class_name = getattr(self.character.character_class, 'name', '').lower()
-        return class_name == 'bard' or self.character.features.filter(name__icontains='bardic inspiration').exists()
+        return class_name == 'bard' or self._has_character_feature('bardic inspiration')
 
     def is_druid(self):
         """Check if participant is a druid or has druid features"""
         if not self.character:
             return False
         class_name = getattr(self.character.character_class, 'name', '').lower()
-        return class_name == 'druid' or self.character.features.filter(name__icontains='wild shape').exists()
+        return class_name == 'druid' or self._has_character_feature('wild shape')
 
     def is_sorcerer(self):
         """Check if participant is a sorcerer or has sorcerer features"""
         if not self.character:
             return False
         class_name = getattr(self.character.character_class, 'name', '').lower()
-        return class_name == 'sorcerer' or self.character.features.filter(name__icontains='font of magic').exists()
+        return class_name == 'sorcerer' or self._has_character_feature('font of magic')
 
     def is_warlock(self):
         """Check if participant is a warlock"""
@@ -2302,14 +2341,14 @@ class CombatParticipant(models.Model):
         if not self.character:
             return False
         class_name = getattr(self.character.character_class, 'name', '').lower()
-        return class_name == 'wizard' or self.character.features.filter(name__icontains='arcane recovery').exists()
+        return class_name == 'wizard' or self._has_character_feature('arcane recovery')
 
     def has_arcane_recovery(self):
         """Check if participant has the Arcane Recovery feature available"""
         if not self.character:
             return False
         class_name = getattr(self.character.character_class, 'name', '').lower()
-        has_feat = self.character.features.filter(name__icontains='arcane recovery').exists()
+        has_feat = self._has_character_feature('arcane recovery')
         return class_name == 'wizard' or has_feat
 
     def get_arcane_recovery_max_levels(self):
@@ -2537,7 +2576,7 @@ class CombatParticipant(models.Model):
             return False
         if self.character.race and 'halfling' in self.character.race.name.lower():
             return True
-        return self.character.features.filter(name__icontains='Lucky').exists()
+        return self._has_character_feature('lucky')
 
     def has_halfling_nimbleness(self) -> bool:
         """Check if participant has Halfling Nimbleness trait (move through larger creatures' space)."""
@@ -2545,7 +2584,7 @@ class CombatParticipant(models.Model):
             return False
         if self.character.race and 'halfling' in self.character.race.name.lower():
             return True
-        return self.character.features.filter(name__icontains='Nimbleness').exists()
+        return self._has_character_feature('nimbleness')
 
     def has_relentless_endurance(self) -> bool:
         """Check if participant has Half-Orc Relentless Endurance."""
@@ -2553,7 +2592,7 @@ class CombatParticipant(models.Model):
             return False
         if self.character.race and any(r in self.character.race.name.lower() for r in ['orc', 'half-orc']):
             return True
-        return self.character.features.filter(name__icontains='Relentless Endurance').exists()
+        return self._has_character_feature('relentless endurance')
 
     def has_fey_ancestry(self) -> bool:
         """Check if participant has Elf/Half-Elf Fey Ancestry (advantage vs charm, immune to magical sleep)."""
@@ -2561,7 +2600,7 @@ class CombatParticipant(models.Model):
             return False
         if self.character.race and any(r in self.character.race.name.lower() for r in ['elf', 'half-elf', 'eladrin', 'drow']):
             return True
-        return self.character.features.filter(name__icontains='Fey Ancestry').exists()
+        return self._has_character_feature('fey ancestry')
 
     def has_brave_trait(self) -> bool:
         """Check if participant has Halfling Brave trait (advantage vs frightened)."""
@@ -2569,7 +2608,7 @@ class CombatParticipant(models.Model):
             return False
         if self.character.race and 'halfling' in self.character.race.name.lower():
             return True
-        return self.character.features.filter(name__icontains='Brave').exists()
+        return self._has_character_feature('brave')
 
     def has_gnome_cunning(self) -> bool:
         """Check if participant has Gnome Cunning (advantage on INT, WIS, CHA saves vs magic)."""
@@ -2577,7 +2616,7 @@ class CombatParticipant(models.Model):
             return False
         if self.character.race and 'gnome' in self.character.race.name.lower():
             return True
-        return self.character.features.filter(name__icontains='Gnome Cunning').exists()
+        return self._has_character_feature('gnome cunning')
 
     def has_dwarven_resilience(self) -> bool:
         """Check if participant has Dwarven Resilience (poison resistance and save advantage)."""
@@ -2585,7 +2624,7 @@ class CombatParticipant(models.Model):
             return False
         if self.character.race and 'dwarf' in self.character.race.name.lower():
             return True
-        return self.character.features.filter(name__icontains='Dwarven Resilience').exists()
+        return self._has_character_feature('dwarven resilience')
 
     def has_hellish_resistance(self) -> bool:
         """Check if participant has Tiefling Hellish Resistance (fire resistance)."""
@@ -2593,7 +2632,7 @@ class CombatParticipant(models.Model):
             return False
         if self.character.race and 'tiefling' in self.character.race.name.lower():
             return True
-        return self.character.features.filter(name__icontains='Hellish Resistance').exists()
+        return self._has_character_feature('hellish resistance')
 
     SIZE_SCALE = {
         'T': {'tiles': 1, 'feet': 5, 'name': 'Tiny'},

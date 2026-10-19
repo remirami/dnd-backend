@@ -41,16 +41,30 @@ def has_feat(participant, feat_name: str) -> bool:
     # 2. Check CharacterFeats
     char = getattr(participant, 'character', None)
     if char:
-        if hasattr(char, 'character_feats') and char.character_feats.filter(feat__name__iexact=feat_name).exists():
+        if hasattr(char, '_prefetched_objects_cache') and 'character_feats' in char._prefetched_objects_cache:
+            for cf in char._prefetched_objects_cache['character_feats']:
+                feat = getattr(cf, 'feat', None)
+                if feat and (feat.name or '').strip().lower() == clean:
+                    return True
+        elif hasattr(char, 'character_feats') and char.character_feats.filter(feat__name__iexact=feat_name).exists():
             return True
-        if hasattr(char, 'features') and char.features.filter(name__icontains=feat_name).exists():
+
+        if hasattr(char, '_prefetched_objects_cache') and 'features' in char._prefetched_objects_cache:
+            for f in char._prefetched_objects_cache['features']:
+                if clean in (f.name or '').strip().lower():
+                    return True
+        elif hasattr(char, 'features') and char.features.filter(name__icontains=feat_name).exists():
             return True
 
     # 3. Check enemy traits
     if hasattr(participant, 'resolve_enemy'):
         enemy = participant.resolve_enemy()
         if enemy and hasattr(enemy, 'traits'):
-            if enemy.traits.filter(name__icontains=feat_name).exists():
+            if hasattr(enemy, '_prefetched_objects_cache') and 'traits' in enemy._prefetched_objects_cache:
+                for t in enemy._prefetched_objects_cache['traits']:
+                    if clean in (t.name or '').strip().lower():
+                        return True
+            elif enemy.traits.filter(name__icontains=feat_name).exists():
                 return True
 
     return False
@@ -79,13 +93,21 @@ def has_eldritch_invocation(participant, invocation_name: str) -> bool:
 
     char = getattr(participant, 'character', None)
     if char and hasattr(char, 'features'):
-        if char.features.filter(name__icontains=clean).exists():
+        if hasattr(char, '_prefetched_objects_cache') and 'features' in char._prefetched_objects_cache:
+            for f in char._prefetched_objects_cache['features']:
+                if clean in (f.name or '').strip().lower():
+                    return True
+        elif char.features.filter(name__icontains=clean).exists():
             return True
 
     if hasattr(participant, 'resolve_enemy'):
         enemy = participant.resolve_enemy()
         if enemy and hasattr(enemy, 'traits'):
-            if enemy.traits.filter(name__icontains=clean).exists():
+            if hasattr(enemy, '_prefetched_objects_cache') and 'traits' in enemy._prefetched_objects_cache:
+                for t in enemy._prefetched_objects_cache['traits']:
+                    if clean in (t.name or '').strip().lower():
+                        return True
+            elif enemy.traits.filter(name__icontains=clean).exists():
                 return True
 
     return False

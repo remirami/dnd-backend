@@ -291,13 +291,7 @@ class CombatParticipantSerializer(serializers.ModelSerializer):
 
         
         # Add enemy stat block for enemy participants
-        enemy = None
-        if instance.encounter_enemy:
-            enemy = instance.encounter_enemy.enemy
-        elif instance.participant_type == 'enemy' and instance.name:
-            # Practice mode enemy — try to find by name
-            from bestiary.models import Enemy as EnemyModel
-            enemy = EnemyModel.objects.filter(name=instance.name).first()
+        enemy = instance.resolve_enemy()
         
         if enemy:
             data['creature_type'] = enemy.get_creature_type_display() if hasattr(enemy, 'get_creature_type_display') else getattr(enemy, 'creature_type', '')
