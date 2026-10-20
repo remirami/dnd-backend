@@ -57,7 +57,7 @@ class CombatSession(models.Model):
         participants = list(self.get_initiative_order())
         if participants and 0 <= self.current_turn_index < len(participants):
             p = participants[self.current_turn_index]
-            if p.is_active and p.current_hp > 0:
+            if not p.is_dead() and not p.is_spell_object():
                 return p
         return None
 
@@ -108,9 +108,15 @@ class CombatSession(models.Model):
                         participant.reset_legendary_actions()
                     participant.reset_reaction()
 
+                from combat.summoning import decrement_summon_durations
+                try:
+                    decrement_summon_durations(self)
+                except Exception:
+                    pass
+
             candidate = participants[self.current_turn_index]
-            # Skip dead/defeated participants (both enemies and player characters at 0 hp or inactive)
-            if candidate.current_hp <= 0 or not candidate.is_active:
+            # Skip dead/defeated participants and persistent spell objects (which act on caster's turn)
+            if candidate.is_dead() or candidate.is_spell_object():
                 continue
             found_active = True
             break
@@ -2061,6 +2067,32 @@ class CombatParticipant(models.Model):
                 actual_damage -= cur_thp
                 self.temporary_hp = 0
 
+        # 5e Rules: Damage taken while ALREADY at 0 HP
+        if self.current_hp <= 0 and actual_damage > 0:
+            if self.participant_type == 'character':
+                if not isinstance(self.feature_uses, dict):
+                    self.feature_uses = {}
+                # Taking damage breaks stabilization
+                self.feature_uses['is_stable'] = False
+                
+                # Check instant death from damage at 0 HP:
+                # If damage equals or exceeds max HP, creature dies instantly
+                if actual_damage >= self.max_hp:
+                    self.death_save_failures = 3
+                    self.is_active = False
+                    self.feature_uses['instant_death'] = True
+                    self.feature_uses['is_dead'] = True
+                    self.last_instant_death_triggered = True
+                else:
+                    # Critical hit = 2 failures, normal hit = 1 failure
+                    failures_added = 2 if is_critical else 1
+                    self.death_save_failures = min(3, self.death_save_failures + failures_added)
+                    if self.death_save_failures >= 3:
+                        self.is_active = False
+                        self.feature_uses['is_dead'] = True
+                self.save()
+            return (self.current_hp, concentration_broken)
+
         potential_hp = self.current_hp - actual_damage
         if potential_hp <= 0 and self.current_hp > 0 and hasattr(self, 'has_buff') and self.has_buff('death ward'):
             # 5e Death Ward: First time dropping to 0 HP, drop to 1 HP instead and spell ends
@@ -2086,6 +2118,12 @@ class CombatParticipant(models.Model):
                 else:
                     self.current_hp = 0
                     self.is_active = False
+                    self.death_save_failures = 3
+                    if not isinstance(self.feature_uses, dict):
+                        self.feature_uses = {}
+                    self.feature_uses['instant_death'] = True
+                    self.feature_uses['is_dead'] = True
+                    self.last_instant_death_triggered = True
             else:
                 self.current_hp = 0
                 self.is_active = False
@@ -2110,6 +2148,12 @@ class CombatParticipant(models.Model):
             else:
                 self.current_hp = 0
                 self.is_active = False
+                self.death_save_failures = 3
+                if not isinstance(self.feature_uses, dict):
+                    self.feature_uses = {}
+                self.feature_uses['instant_death'] = True
+                self.feature_uses['is_dead'] = True
+                self.last_instant_death_triggered = True
         elif potential_hp <= 0 and self.current_hp > 0 and self.participant_type == 'enemy' and self.has_trait('undead_fortitude'):
             # 5e Undead Fortitude: DC 5 + damage taken CON save (unless radiant damage or critical hit)
             is_radiant = (dtype_name == 'radiant')
@@ -2136,29 +2180,54 @@ class CombatParticipant(models.Model):
                 self.current_hp = 0
                 self.is_active = False
         else:
-            self.current_hp = max(0, potential_hp)
-            if self.current_hp <= 0:
+            excess_damage = actual_damage - self.current_hp
+            if self.participant_type == 'character' and excess_damage >= self.max_hp:
+                # 5e Massive damage instant death
+                self.current_hp = 0
                 self.is_active = False
-                # Falling unconscious drops Rage
-                if self.is_raging():
-                    self.feature_uses['is_raging'] = False
-                    self.feature_uses['rage_rounds_left'] = 0
-                # Falling unconscious breaks concentration immediately
-                if self.is_concentrating:
-                    self.is_concentrating = False
-                    self.concentration_spell = ""
-                    concentration_broken = True
-                    try:
-                        from combat.spell_rules import remove_caster_concentration_buffs
-                        remove_caster_concentration_buffs(self)
-                    except Exception:
-                        pass
-                # Falling unconscious breaks any active grapple
-                if self.is_grappling or self.grappled_by:
-                    try:
-                        self.release_grapple()
-                    except Exception:
-                        pass
+                self.death_save_failures = 3
+                if not isinstance(self.feature_uses, dict):
+                    self.feature_uses = {}
+                self.feature_uses['instant_death'] = True
+                self.feature_uses['is_dead'] = True
+                self.last_instant_death_triggered = True
+            else:
+                self.current_hp = max(0, potential_hp)
+                if self.current_hp <= 0:
+                    self.is_active = False
+                    if self.participant_type == 'character':
+                        self.death_save_successes = 0
+                        self.death_save_failures = 0
+                        if not isinstance(self.feature_uses, dict):
+                            self.feature_uses = {}
+                        self.feature_uses['is_stable'] = False
+                        try:
+                            unconscious_cond, _ = Condition.objects.get_or_create(name='Unconscious')
+                            self.conditions.add(unconscious_cond)
+                            prone_cond, _ = Condition.objects.get_or_create(name='Prone')
+                            self.conditions.add(prone_cond)
+                        except Exception:
+                            pass
+                    # Falling unconscious drops Rage
+                    if self.is_raging():
+                        self.feature_uses['is_raging'] = False
+                        self.feature_uses['rage_rounds_left'] = 0
+                    # Falling unconscious breaks concentration immediately
+                    if self.is_concentrating:
+                        self.is_concentrating = False
+                        self.concentration_spell = ""
+                        concentration_broken = True
+                        try:
+                            from combat.spell_rules import remove_caster_concentration_buffs
+                            remove_caster_concentration_buffs(self)
+                        except Exception:
+                            pass
+                    # Falling unconscious breaks any active grapple
+                    if self.is_grappling or self.grappled_by:
+                        try:
+                            self.release_grapple()
+                        except Exception:
+                            pass
         
         # Check if target was turned by Turn Undead - taking damage ends the turned effect per 5e rules
         if actual_damage > 0 and self.feature_uses and self.feature_uses.get('is_turned'):
@@ -2566,6 +2635,14 @@ class CombatParticipant(models.Model):
             # Regaining HP resets death save counts (5e PHB rules)
             self.death_save_successes = 0
             self.death_save_failures = 0
+            if isinstance(self.feature_uses, dict):
+                self.feature_uses.pop('is_stable', None)
+                self.feature_uses.pop('instant_death', None)
+                self.feature_uses.pop('is_dead', None)
+            try:
+                self.conditions.filter(name__iexact='unconscious').delete()
+            except Exception:
+                pass
         self.save()
         return self.current_hp
     
@@ -2761,53 +2838,138 @@ class CombatParticipant(models.Model):
 
         return fall_dmg, msg
     
+    def is_dead(self) -> bool:
+        """Check if participant is dead (3 death save failures, instant death, or defeated enemy at 0 HP)."""
+        if self.participant_type == 'enemy':
+            return self.current_hp <= 0 or not self.is_active
+        # For characters
+        if self.death_save_failures >= 3:
+            return True
+        if self.feature_uses and (self.feature_uses.get('instant_death') or self.feature_uses.get('is_dead')):
+            return True
+        return False
+
+    def is_stable(self) -> bool:
+        """Check if 0 HP participant is stabilized (stops rolling death saves until damaged)."""
+        if self.current_hp > 0:
+            return False
+        if self.is_dead():
+            return False
+        if self.death_save_successes >= 3:
+            return True
+        if self.feature_uses and self.feature_uses.get('is_stable'):
+            return True
+        return False
+
+    def is_dying(self) -> bool:
+        """Check if participant is at 0 HP, unconscious, and actively rolling death saves."""
+        return self.participant_type == 'character' and self.current_hp <= 0 and not self.is_dead() and not self.is_stable()
+
+    def stabilize(self):
+        """Stabilize an unconscious character at 0 HP."""
+        if self.current_hp > 0 or self.is_dead():
+            return False
+        if not isinstance(self.feature_uses, dict):
+            self.feature_uses = {}
+        self.feature_uses['is_stable'] = True
+        self.death_save_successes = 0
+        self.death_save_failures = 0
+        self.save(update_fields=['death_save_successes', 'death_save_failures', 'feature_uses'])
+        return True
+
+    def is_summon(self):
+        """Check if this participant is a summoned minion or persistent spell object."""
+        return bool((self.feature_uses or {}).get('is_summon', False))
+
+    def is_spell_object(self):
+        """Check if this participant is an intangible spell object (e.g. Spiritual Weapon, Flaming Sphere)."""
+        return bool(self.is_summon() and (self.feature_uses or {}).get('summon_type') == 'spell_object')
+
+    def get_summoner(self):
+        """Return the CombatParticipant who summoned this entity."""
+        caster_id = (self.feature_uses or {}).get('summoned_by') or (self.feature_uses or {}).get('caster_id')
+        if caster_id and self.combat_session_id:
+            return self.combat_session.participants.filter(id=caster_id).first()
+        return None
+
     def make_death_save(self, roll=None):
         """
-        Make a death saving throw
-        Returns: (success, is_stable, is_dead, message)
+        Make a death saving throw per 5e rules.
+        Returns: (success, is_stable, is_dead, message, roll_total, natural_roll)
         """
         from .utils import roll_d20
         
         if self.current_hp > 0:
-            return False, False, False, "Character is not unconscious"
+            return False, False, False, "Character is not unconscious", 0, 0
+        
+        if self.is_dead():
+            return False, False, True, "Character is dead", 0, 0
+            
+        if self.is_stable():
+            return True, True, False, "Character is already stable", 0, 0
         
         if roll is None:
             roll, _ = roll_d20(lucky=self.has_lucky_trait())
         
-        # Natural 20 = instant success (2 successes) and regain 1 HP
-        if roll == 20:
-            self.death_save_successes = min(3, self.death_save_successes + 2)
-            if self.death_save_successes >= 3:
-                self.current_hp = 1
-                self.is_active = True
-                self.death_save_successes = 0
-                self.death_save_failures = 0
-                self.save()
-                return True, True, False, "Natural 20! Character stabilizes and regains 1 HP!"
+        aura_bonus = self.get_aura_of_protection_bonus() if hasattr(self, 'get_aura_of_protection_bonus') else 0
+        total_roll = roll + aura_bonus
         
-        # Natural 1 = 2 failures
+        if not isinstance(self.feature_uses, dict):
+            self.feature_uses = {}
+
+        # 5e Natural 20: Character regains 1 HP immediately and regains consciousness!
+        if roll == 20:
+            self.current_hp = 1
+            self.is_active = True
+            self.death_save_successes = 0
+            self.death_save_failures = 0
+            self.feature_uses['is_stable'] = False
+            # Remove unconscious condition
+            try:
+                self.conditions.filter(name__iexact='unconscious').delete()
+            except Exception:
+                pass
+            self.save()
+            return True, True, False, "Natural 20! Character stabilizes and regains 1 HP!", total_roll, roll
+        
+        # 5e Natural 1: Counts as two failures
         elif roll == 1:
             self.death_save_failures = min(3, self.death_save_failures + 2)
             if self.death_save_failures >= 3:
+                self.is_active = False
+                self.feature_uses['is_dead'] = True
                 self.save()
-                return False, False, True, "Natural 1! Two failures. Character dies."
-        
-        # Normal roll: 10+ = success, 9- = failure
-        elif roll >= 10:
+                return False, False, True, f"Natural 1! Suffered 2 failures ({self.death_save_failures}/3). Character dies.", total_roll, roll
+            else:
+                self.save()
+                return False, False, False, f"Natural 1! Suffered 2 failures ({self.death_save_failures}/3).", total_roll, roll
+
+        # Normal roll: 10+ is success (Paladin Aura of Protection applies to death saves)
+        elif total_roll >= 10:
             self.death_save_successes += 1
             if self.death_save_successes >= 3:
                 self.death_save_successes = 0
                 self.death_save_failures = 0
+                self.feature_uses['is_stable'] = True
                 self.save()
-                return True, True, False, "Death save succeeded. Character stabilizes."
+                bonus_msg = f" (d20: {roll} + {aura_bonus} Aura)" if aura_bonus > 0 else f" (d20: {roll})"
+                return True, True, False, f"Death save: {total_roll}{bonus_msg} — 3rd Success! Character is now stable.", total_roll, roll
+            else:
+                self.save()
+                bonus_msg = f" (d20: {roll} + {aura_bonus} Aura)" if aura_bonus > 0 else f" (d20: {roll})"
+                return True, False, False, f"Death save: {total_roll}{bonus_msg} (Success {self.death_save_successes}/3).", total_roll, roll
         else:
             self.death_save_failures += 1
             if self.death_save_failures >= 3:
+                self.is_active = False
+                self.feature_uses['is_dead'] = True
                 self.save()
-                return False, False, True, "Death save failed. Character dies."
-        
-        self.save()
-        return (roll >= 10), False, False, f"Death save: {roll} ({'Success' if roll >= 10 else 'Failure'})"
+                bonus_msg = f" (d20: {roll} + {aura_bonus} Aura)" if aura_bonus > 0 else f" (d20: {roll})"
+                return False, False, True, f"Death save: {total_roll}{bonus_msg} — 3rd Failure! Character dies.", total_roll, roll
+            else:
+                self.save()
+                bonus_msg = f" (d20: {roll} + {aura_bonus} Aura)" if aura_bonus > 0 else f" (d20: {roll})"
+                return False, False, False, f"Death save: {total_roll}{bonus_msg} (Failure {self.death_save_failures}/3).", total_roll, roll
     
     def check_concentration(self, damage_amount=0):
         """

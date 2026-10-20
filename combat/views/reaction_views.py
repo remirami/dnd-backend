@@ -9,7 +9,7 @@ from rest_framework import status
 from rest_framework.decorators import action
 from rest_framework.response import Response
 
-from combat.models import CombatAction, CombatParticipant
+from combat.models import CombatAction, CombatParticipant, CombatSession
 from combat.serializers import CombatActionSerializer
 from combat.utils import calculate_attack_roll, calculate_damage, check_hit, roll_d20
 
@@ -24,6 +24,12 @@ class CombatReactionMixin:
         """Make a death saving throw"""
         session = self.get_object()
         participant_id = request.data.get('participant_id')
+        manual_roll = request.data.get('roll')
+        if manual_roll is not None:
+            try:
+                manual_roll = int(manual_roll)
+            except (ValueError, TypeError):
+                manual_roll = None
         
         if not participant_id:
             return Response(
@@ -41,49 +47,23 @@ class CombatReactionMixin:
         
         if participant.current_hp > 0:
             return Response(
-                {"error": "Participant is not at 0 HP"},
+                {"error": f"{participant.get_name()} is not at 0 HP"},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
+        if participant.is_dead():
+            return Response(
+                {"error": f"{participant.get_name()} is dead and cannot make death saves"},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
+        if participant.is_stable():
+            return Response(
+                {"error": f"{participant.get_name()} is already stable"},
                 status=status.HTTP_400_BAD_REQUEST
             )
         
-        # Roll death save manually
-        roll, _ = roll_d20()
-        
-        # Natural 20: regain 1 HP and stabilize
-        if roll == 20:
-            participant.current_hp = 1
-            participant.is_active = True
-            participant.death_save_successes = 0
-            participant.death_save_failures = 0
-            participant.save()
-            success, stabilized, died, message = True, True, False, "Natural 20! Regained 1 HP and stabilized."
-        # Natural 1: two failures
-        elif roll == 1:
-            participant.death_save_failures += 2
-            if participant.death_save_failures >= 3:
-                participant.save()
-                success, stabilized, died, message = False, False, True, "Natural 1! Two failures. Character dies."
-            else:
-                participant.save()
-                success, stabilized, died, message = False, False, False, f"Natural 1! Two failures. {participant.death_save_failures}/3 failures."
-        # Normal roll: 10+ = success, 9- = failure
-        elif roll >= 10:
-            participant.death_save_successes += 1
-            if participant.death_save_successes >= 3:
-                participant.death_save_successes = 0
-                participant.death_save_failures = 0
-                participant.save()
-                success, stabilized, died, message = True, True, False, "Death save succeeded. Character stabilizes."
-            else:
-                participant.save()
-                success, stabilized, died, message = True, False, False, f"Death save: {roll} (Success). {participant.death_save_successes}/3 successes."
-        else:
-            participant.death_save_failures += 1
-            if participant.death_save_failures >= 3:
-                participant.save()
-                success, stabilized, died, message = False, False, True, "Death save failed. Character dies."
-            else:
-                participant.save()
-                success, stabilized, died, message = False, False, False, f"Death save: {roll} (Failure). {participant.death_save_failures}/3 failures."
+        success, stabilized, died, message, total_roll, natural_roll = participant.make_death_save(roll=manual_roll)
         
         # Create combat action
         combat_action = CombatAction.objects.create(
@@ -94,16 +74,23 @@ class CombatReactionMixin:
             turn_number=session.current_turn_index,
             description=message
         )
+
+        from combat.serializers import CombatSessionSerializer, CombatParticipantSerializer
+        fresh_session = CombatSession.objects.prefetch_related('participants', 'actions').get(id=session.id)
         
         return Response({
             "message": message,
             "success": success,
             "is_stable": stabilized,
             "is_dead": died,
+            "roll": total_roll,
+            "natural_roll": natural_roll,
             "death_save_successes": participant.death_save_successes,
             "death_save_failures": participant.death_save_failures,
             "current_hp": participant.current_hp,
-            "action": CombatActionSerializer(combat_action).data
+            "action": CombatActionSerializer(combat_action).data,
+            "participant": CombatParticipantSerializer(participant).data,
+            "session": CombatSessionSerializer(fresh_session).data
         })
 
     @action(detail=True, methods=['post'])

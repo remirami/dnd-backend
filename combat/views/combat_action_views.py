@@ -77,6 +77,12 @@ class CombatActionMixin:
                 {"error": "Target not found in combat"},
                 status=status.HTTP_400_BAD_REQUEST
             )
+
+        if target.is_dead():
+            return Response(
+                {"error": f"{target.get_name()} is dead and cannot be attacked."},
+                status=status.HTTP_400_BAD_REQUEST
+            )
         
         if not attacker.is_active:
             return Response(
@@ -1464,6 +1470,12 @@ class CombatActionMixin:
             'expeditious retreat', 'magic weapon'
         }
         clean_spell_name = spell_name.strip().lower()
+        if clean_spell_name == 'spare the dying':
+            from combat.subclasses import _get_subclass_name, _has_feature_named
+            if 'grave' in _get_subclass_name(caster) or _has_feature_named(caster, 'circle of mortality'):
+                if request.data.get('as_bonus_action') or (caster.action_used and not caster.bonus_action_used):
+                    is_bonus_action = True
+
         if is_bonus_action or 'bonus' in str(casting_time).lower() or clean_spell_name in BONUS_ACTION_SPELLS:
             is_bonus_action = True
 
@@ -1651,11 +1663,35 @@ class CombatActionMixin:
         from combat.spell_rules import SPELL_RULES
 
         rule_def = SPELL_RULES.get(clean_spell_name) or {}
+
+        # Target validation for dead/dying creatures
+        is_resurrection = clean_spell_name in {'revivify', 'raise dead', 'resurrection', 'true resurrection'}
+        if not is_resurrection:
+            for t in targets:
+                if t.is_dead():
+                    return Response(
+                        {"error": f"{t.get_name()} is dead and cannot be targeted by {spell_name}."},
+                        status=status.HTTP_400_BAD_REQUEST
+                    )
+
+        if rule_def.get('requires_zero_hp'):
+            for t in targets:
+                if t.current_hp > 0 or t.is_dead():
+                    return Response(
+                        {"error": f"{spell_name} can only target a dying creature (at 0 HP and not dead). {t.get_name()} is not dying."},
+                        status=status.HTTP_400_BAD_REQUEST
+                    )
+
         if not requires_concentration:
             if rule_def.get('requires_concentration'):
                 requires_concentration = True
-            elif spell_obj and getattr(spell_obj, 'requires_concentration', False):
-                requires_concentration = True
+            elif spell_obj:
+                if hasattr(spell_obj, 'concentration'):
+                    requires_concentration = bool(spell_obj.concentration)
+                elif callable(getattr(spell_obj, 'requires_concentration', None)):
+                    requires_concentration = bool(spell_obj.requires_concentration())
+                else:
+                    requires_concentration = bool(getattr(spell_obj, 'requires_concentration', False))
 
         if 'half_on_save' not in request.data and 'half_on_save' in rule_def:
             half_on_save = rule_def['half_on_save']
@@ -1710,7 +1746,17 @@ class CombatActionMixin:
                         continue
                     dist = caster.get_distance_to(t)
                     if lower_range == 'touch':
-                        if dist > reach:
+                        effective_reach = reach
+                        if clean_spell_name == 'spare the dying':
+                            from combat.subclasses import _get_subclass_name, _has_feature_named
+                            if 'grave' in _get_subclass_name(caster) or _has_feature_named(caster, 'circle of mortality'):
+                                effective_reach = 30
+                        if dist > effective_reach:
+                            if effective_reach > reach:
+                                return Response(
+                                    {"error": f"{spell_name} (Circle of Mortality 30 ft range): {t.get_name()} is {dist} ft away. Move closer first!"},
+                                    status=status.HTTP_400_BAD_REQUEST
+                                )
                             return Response(
                                 {"error": f"{spell_name} is a Touch spell: {t.get_name()} is {dist} ft away (maximum reach is {reach} ft). Move closer first!"},
                                 status=status.HTTP_400_BAD_REQUEST
@@ -2269,17 +2315,33 @@ class CombatActionMixin:
                     c_type = getattr(getattr(t.encounter_enemy, 'enemy', None), 'creature_type', 'undead') if t.encounter_enemy else 'undead'
                     rider_str += f" [No effect on {c_type}]"
                 else:
-                    if hasattr(t, 'has_buff') and t.has_buff('beacon of hope') and damage_string:
+                    has_circle_of_mortality = False
+                    if caster:
+                        from combat.subclasses import _get_subclass_name, _has_feature_named
+                        has_circle_of_mortality = bool('grave' in _get_subclass_name(caster) or _has_feature_named(caster, 'circle of mortality'))
+
+                    is_max_healing = (hasattr(t, 'has_buff') and t.has_buff('beacon of hope')) or (has_circle_of_mortality and t.current_hp == 0)
+                    if is_max_healing and damage_string:
                         m_dice = re.match(r'(\d+)d(\d+)', damage_string.strip())
                         if m_dice:
                             max_val = int(m_dice.group(1)) * int(m_dice.group(2))
-                            t_healing = max_val + (caster.get_ability_modifier('WIS') if caster else 0)
-                            rider_str += " [Beacon of Hope: Max Healing!]"
+                            mod = caster.get_ability_modifier('WIS') if caster else 0
+                            t_healing = max_val + mod
+                            if has_circle_of_mortality and t.current_hp == 0:
+                                rider_str += " [Circle of Mortality: Max Healing on 0 HP target!]"
+                            else:
+                                rider_str += " [Beacon of Hope: Max Healing!]"
                         else:
                             t_healing = max(1, current_base_damage)
                     else:
                         t_healing = max(1, current_base_damage)
                     t.heal(t_healing)
+            elif (rule_def and rule_def.get('stabilizes_dying')) or clean_spell_name == 'spare the dying':
+                if t.current_hp == 0 and not t.is_dead():
+                    t.stabilize()
+                    rider_str += " [Stabilized at 0 HP]"
+                else:
+                    rider_str += " [No effect: Target is not dying]"
             elif save_type and save_dc:
                 # Metamagic: Careful Spell auto-succeeds for chosen/friendly targets
                 is_careful_protected = bool(metamagic == 'careful' and (t.id in careful_target_ids or t.participant_type == caster.participant_type))
@@ -2655,6 +2717,37 @@ class CombatActionMixin:
                 description=f"A 20-ft radius sphere of noxious toxic gas lingers centered at ({effect_origin_x} ft, {effect_origin_y} ft) (Hazard & Heavily Obscured)."
             )
 
+        # 5e Summoning & Persistent Minion / Token Spells
+        from combat.summoning import is_summoning_spell, spawn_summon
+        summoned_entity = None
+        if is_summoning_spell(clean_spell_name):
+            target_pos_x = request.data.get('target_x') if request.data.get('target_x') is not None else request.data.get('position_x')
+            target_pos_y = request.data.get('target_y') if request.data.get('target_y') is not None else request.data.get('position_y')
+            if target_pos_x is None and primary_target and primary_target.id != caster.id:
+                target_pos_x = primary_target.position_x
+                target_pos_y = primary_target.position_y
+            creature_choice = request.data.get('creature_choice')
+            summoned_entity = spawn_summon(
+                session=session,
+                caster=caster,
+                spell_name=clean_spell_name,
+                position_x=target_pos_x,
+                position_y=target_pos_y,
+                creature_choice=creature_choice,
+                spell_level=spell_level
+            )
+            # Spiritual Weapon: In 5e, makes an attack on the turn it is cast!
+            if clean_spell_name == 'spiritual weapon' and primary_target and primary_target.id != caster.id:
+                from combat.summoning import command_summon_action
+                command_summon_action(
+                    session=session,
+                    caster=caster,
+                    summon=summoned_entity,
+                    command_type='attack',
+                    target=primary_target,
+                    is_dm_override=True
+                )
+
         # Mark action economy resource as consumed
         if is_bonus_action:
             caster.bonus_action_used = True
@@ -2734,6 +2827,7 @@ class CombatActionMixin:
             "empowered_annotation": empowered_annotation,
             "sorcery_points": caster.get_sorcery_points(),
             "action": CombatActionSerializer(combat_actions[0]).data if combat_actions else None,
+            "summon": CombatParticipantSerializer(summoned_entity).data if summoned_entity else None,
             "session": session_data
         })
 
@@ -4859,4 +4953,272 @@ class CombatActionMixin:
             "participant": CombatParticipantSerializer(participant).data,
             "session": CombatSessionSerializer(fresh_session).data
         })
+
+    @action(detail=True, methods=['post'])
+    def stabilize(self, request, pk=None):
+        """Administer first aid to stabilize an unconscious, dying participant (DC 10 Medicine check)."""
+        session = self.get_object()
+        if session.status != 'active':
+            return Response(
+                {"error": "Combat is not active"},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
+        data = request.data
+        healer_id = data.get('healer_id') or data.get('actor_id')
+        target_id = data.get('target_id')
+
+        if not healer_id or not target_id:
+            return Response(
+                {"error": "Both healer_id and target_id are required."},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
+        try:
+            healer = session.participants.get(pk=healer_id)
+            target = session.participants.get(pk=target_id)
+        except CombatParticipant.DoesNotExist:
+            return Response(
+                {"error": "Healer or target participant not found in combat."},
+                status=status.HTTP_404_NOT_FOUND
+            )
+
+        if not healer.is_active or healer.current_hp <= 0:
+            return Response(
+                {"error": f"{healer.get_name()} is defeated and cannot stabilize others."},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
+        if healer.is_incapacitated():
+            return Response(
+                {"error": f"{healer.get_name()} is {healer.get_incapacitating_condition()} and cannot take actions."},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
+        is_dm_override = data.get('dm_override', False)
+        current = session.get_current_participant()
+        if not is_dm_override and current != healer:
+            return Response(
+                {"error": f"It is not {healer.get_name()}'s turn."},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
+        if not is_dm_override and healer.action_used:
+            return Response(
+                {"error": f"{healer.get_name()} has already used their action this turn."},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
+        if target.is_dead():
+            return Response(
+                {"error": f"{target.get_name()} is dead and cannot be stabilized."},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
+        if target.current_hp > 0:
+            return Response(
+                {"error": f"{target.get_name()} has {target.current_hp} HP and does not need stabilization."},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
+        if target.is_stable():
+            return Response(
+                {"error": f"{target.get_name()} is already stable."},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
+        # Reach check: Touch/adjacent (5 ft or healer reach)
+        has_coords = (healer.position_x is not None and healer.position_y is not None and
+                      target.position_x is not None and target.position_y is not None and
+                      (healer.position_x != 0 or healer.position_y != 0 or target.position_x != 0 or target.position_y != 0))
+        if has_coords:
+            dist = healer.get_distance_to(target)
+            reach = healer.get_reach() if hasattr(healer, 'get_reach') else 5
+            if dist > reach:
+                return Response(
+                    {"error": f"{target.get_name()} is {dist} ft away. You must be within reach ({reach} ft) to administer first aid."},
+                    status=status.HTTP_400_BAD_REQUEST
+                )
+
+        # Check for Healer's Kit
+        # In 5e SRD, using a Healer's Kit automatically succeeds at stabilizing without rolling a Medicine check.
+        use_healers_kit = data.get('use_healers_kit', False)
+        if use_healers_kit:
+            kit_ci = None
+            if healer.character:
+                kit_ci = healer.character.character_items.filter(item__name__icontains="healer's kit").first()
+                if not kit_ci:
+                    kit_ci = healer.character.character_items.filter(item__name__icontains="healers kit").first()
+            if not kit_ci:
+                return Response(
+                    {"error": f"{healer.get_name()} does not have a Healer's Kit."},
+                    status=status.HTTP_400_BAD_REQUEST
+                )
+            if kit_ci.quantity > 1:
+                kit_ci.quantity -= 1
+                kit_ci.save(update_fields=['quantity'])
+            else:
+                kit_ci.delete()
+
+            if not is_dm_override:
+                healer.action_used = True
+                healer.save(update_fields=['action_used'])
+
+            target.stabilize()
+            desc = (
+                f"🩺 {healer.get_name()} uses a Healer's Kit on {target.get_name()}! "
+                f"Automatic success! {target.get_name()} is stabilized at 0 HP."
+            )
+            CombatAction.objects.create(
+                combat_session=session,
+                actor=healer,
+                target=target,
+                action_type='item',
+                attack_name="Healer's Kit",
+                round_number=session.current_round,
+                turn_number=session.current_turn_index,
+                description=desc
+            )
+            fresh_session = CombatSession.objects.prefetch_related('participants', 'participants__conditions', 'actions').get(id=session.id)
+            return Response({
+                "success": True,
+                "used_healers_kit": True,
+                "message": desc,
+                "healer": CombatParticipantSerializer(healer).data,
+                "target": CombatParticipantSerializer(target).data,
+                "session": CombatSessionSerializer(fresh_session).data
+            }, status=status.HTTP_200_OK)
+
+        # Wisdom (Medicine) check vs DC 10
+        wis_mod = healer.get_ability_modifier('WIS')
+        prof_bonus = 0
+        if healer.character:
+            cp = healer.character.proficiencies.filter(proficiency_type='skill', skill_name__iexact='medicine').first()
+            if cp:
+                base_prof = healer.character.proficiency_bonus or 2
+                prof_mult = 2 if getattr(cp, 'proficiency_level', 'proficient') == 'expertise' else 1
+                prof_bonus = base_prof * prof_mult
+
+        other_mod = 0
+        guidance_str = ""
+        if hasattr(healer, 'has_buff') and healer.has_buff('guidance'):
+            g_val = random.randint(1, 4)
+            other_mod += g_val
+            guidance_str = f" [Guidance (+{g_val})]"
+
+        manual_roll = data.get('manual_roll') or data.get('roll')
+        if manual_roll is not None:
+            try:
+                roll = int(manual_roll)
+            except (ValueError, TypeError):
+                roll, _ = roll_d20()
+        else:
+            roll, _ = roll_d20()
+
+        total = roll + wis_mod + prof_bonus + other_mod
+        dc = 10
+        success = (total >= dc)
+
+        if not is_dm_override:
+            healer.action_used = True
+            healer.save(update_fields=['action_used'])
+
+        mod_sign = f"+{wis_mod + prof_bonus + other_mod}" if (wis_mod + prof_bonus + other_mod) >= 0 else f"{wis_mod + prof_bonus + other_mod}"
+        if success:
+            target.stabilize()
+            desc = (
+                f"🩺 {healer.get_name()} administers first aid to {target.get_name()} "
+                f"(Medicine DC {dc}: rolled {roll} {mod_sign} = {total}{guidance_str}) - Success! "
+                f"{target.get_name()} is stabilized at 0 HP."
+            )
+        else:
+            desc = (
+                f"🩺 {healer.get_name()} attempts first aid on {target.get_name()} "
+                f"(Medicine DC {dc}: rolled {roll} {mod_sign} = {total}{guidance_str}) - Failed."
+            )
+
+        CombatAction.objects.create(
+            combat_session=session,
+            actor=healer,
+            target=target,
+            action_type='skill_check',
+            round_number=session.current_round,
+            turn_number=session.current_turn_index,
+            description=desc
+        )
+
+        fresh_session = CombatSession.objects.prefetch_related('participants', 'participants__conditions', 'actions').get(id=session.id)
+        return Response({
+            "success": success,
+            "roll": roll,
+            "total": total,
+            "dc": dc,
+            "message": desc,
+            "healer": CombatParticipantSerializer(healer).data,
+            "target": CombatParticipantSerializer(target).data,
+            "session": CombatSessionSerializer(fresh_session).data
+        }, status=status.HTTP_200_OK)
+
+    @action(detail=True, methods=['post'])
+    def command_summon(self, request, pk=None):
+        """Command a summoned minion or persistent spell object (e.g. Spiritual Weapon, Flaming Sphere, Animate Dead, Familiar)."""
+        session = self.get_object()
+        if session.status != 'active':
+            return Response({"error": "Combat is not active"}, status=status.HTTP_400_BAD_REQUEST)
+
+        data = request.data
+        caster_id = data.get('caster_id') or data.get('actor_id')
+        summon_id = data.get('summon_id')
+        command_type = data.get('command_type') or data.get('action_type') or 'attack'
+        target_id = data.get('target_id')
+        dest_x = data.get('destination_x') if data.get('destination_x') is not None else data.get('x')
+        dest_y = data.get('destination_y') if data.get('destination_y') is not None else data.get('y')
+        attack_index = data.get('attack_index', 0)
+        manual_roll = data.get('manual_roll') or data.get('roll')
+        is_dm_override = data.get('dm_override', False)
+
+        if not caster_id or not summon_id:
+            return Response({"error": "Both caster_id and summon_id are required."}, status=status.HTTP_400_BAD_REQUEST)
+
+        try:
+            caster = session.participants.get(pk=caster_id)
+            summon = session.participants.get(pk=summon_id)
+        except CombatParticipant.DoesNotExist:
+            return Response({"error": "Caster or summon participant not found in combat."}, status=status.HTTP_404_NOT_FOUND)
+
+        target = None
+        if target_id:
+            try:
+                target = session.participants.get(pk=target_id)
+            except CombatParticipant.DoesNotExist:
+                return Response({"error": "Target participant not found in combat."}, status=status.HTTP_404_NOT_FOUND)
+
+        from combat.summoning import command_summon_action
+        result = command_summon_action(
+            session=session,
+            caster=caster,
+            summon=summon,
+            command_type=command_type,
+            target=target,
+            dest_x=dest_x,
+            dest_y=dest_y,
+            attack_index=attack_index,
+            manual_roll=manual_roll,
+            is_dm_override=is_dm_override
+        )
+
+        if not result.get('success'):
+            return Response({"error": result.get('error', 'Command failed.')}, status=status.HTTP_400_BAD_REQUEST)
+
+        fresh_session = CombatSession.objects.prefetch_related('participants', 'participants__conditions', 'actions').get(id=session.id)
+        return Response({
+            "success": True,
+            "message": result.get('message', ''),
+            "command_result": result,
+            "caster": CombatParticipantSerializer(caster).data,
+            "summon": CombatParticipantSerializer(summon).data,
+            "target": CombatParticipantSerializer(target).data if target else None,
+            "session": CombatSessionSerializer(fresh_session).data
+        }, status=status.HTTP_200_OK)
+
 

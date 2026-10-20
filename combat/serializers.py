@@ -32,11 +32,17 @@ class CombatParticipantSerializer(serializers.ModelSerializer):
         data['is_dodging'] = bool(instance.feature_uses and (instance.feature_uses.get('dodging') or instance.feature_uses.get('dodge_active')))
         # Add death save status
         if instance.current_hp <= 0:
+            is_stable = instance.is_stable() if hasattr(instance, 'is_stable') else (
+                bool(instance.feature_uses and instance.feature_uses.get('is_stable')) or instance.death_save_successes >= 3
+            )
+            is_dead = instance.is_dead() if hasattr(instance, 'is_dead') else (
+                instance.death_save_failures >= 3 or bool(instance.feature_uses and (instance.feature_uses.get('instant_death') or instance.feature_uses.get('is_dead')))
+            )
             data['death_save_status'] = {
                 'successes': instance.death_save_successes,
                 'failures': instance.death_save_failures,
-                'is_stable': instance.death_save_successes >= 3,
-                'is_dead': instance.death_save_failures >= 3
+                'is_stable': is_stable,
+                'is_dead': is_dead
             }
         
         # Effective AC including buffs, armor, magic items, and dynamic cover props
@@ -74,6 +80,27 @@ class CombatParticipantSerializer(serializers.ModelSerializer):
         data['fly_speed'] = instance.get_fly_speed()
         data['has_hover'] = instance.has_hover()
         data['can_fly'] = instance.can_fly()
+
+        # Summoning & persistent minion metadata
+        is_summon = instance.is_summon() if hasattr(instance, 'is_summon') else bool((instance.feature_uses or {}).get('is_summon'))
+        data['is_summon'] = is_summon
+        data['is_spell_object'] = instance.is_spell_object() if hasattr(instance, 'is_spell_object') else False
+        if is_summon:
+            fu = instance.feature_uses or {}
+            data['summon_details'] = {
+                'summon_type': fu.get('summon_type', 'minion'),
+                'summoned_by': fu.get('summoned_by') or fu.get('caster_id'),
+                'caster_name': fu.get('caster_name', ''),
+                'spell_name': fu.get('spell_name', ''),
+                'remaining_rounds': fu.get('remaining_rounds', 10),
+                'duration_rounds': fu.get('duration_rounds', 10),
+                'requires_concentration': fu.get('requires_concentration', False),
+                'speed': fu.get('speed', 30),
+                'damage_formula': fu.get('damage_formula', ''),
+                'damage_type': fu.get('damage_type', ''),
+                'attacks': fu.get('attacks', []),
+                'is_bonus_action_command': fu.get('is_bonus_action_command', True),
+            }
 
         # Grapple & Grappler feat mechanics
         data['is_grappling'] = bool(instance.is_grappling)

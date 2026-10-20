@@ -1673,5 +1673,12 @@ def remove_caster_concentration_buffs(caster):
                     removed_from.append(p)
     except Exception:
         pass
+
+    try:
+        from combat.summoning import dismiss_concentration_summons_by_caster
+        dismiss_concentration_summons_by_caster(caster)
+    except Exception:
+        pass
+
     return removed_from
 

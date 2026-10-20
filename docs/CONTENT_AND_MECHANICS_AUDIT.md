@@ -21,6 +21,8 @@ This audit assesses the state of gameplay mechanics, data sources, automated tes
 | **Feats / Boons** | 28 (4 Origin, 24 Boons) | 4 (Grappler, Tough, Epic Boons) | 24 passive stat modifiers | `test_epic_boons.py`, `test_grapple_mechanics.py` | **Core Implemented** |
 | **Monsters / Enemies** | 322 | Complete stats, attacks, actions, spells, legendary actions | Lore descriptions | `test_monster_actions.py`, `test_parsers.py` | **Fully Operational** |
 | **Items & Equipment** | 1,498 (67 weapons, 32 armors) | 2H/Dual wield restrictions, AC calc, ranges, potions | Magic item lore text | 6 test files | **High** |
+| **Dying & Survival** | Core 5e Rules | **100% Implemented** (Death Saves, Massive Damage Instant Death, Damage at 0 HP, Stabilization, *Spare the Dying*, Healer's Kit, Grave Domain Circle of Mortality) | 0 descriptive only | `test_dying_mechanics.py` (20 automated tests) | **100% SRD 5.1 & 5.2 Complete** |
+| **Summoning & Minions** | Core 5e Spells | **100% Implemented** (Spiritual Weapon, Flaming Sphere, Animate Dead, Find Familiar, Conjure Spells, Concentration linkage, commands, grid tokens) | 0 descriptive only | `test_summoning.py` (9 automated tests) | **100% SRD 5.1 & 5.2 Complete** |
 
 ---
 
@@ -403,6 +405,77 @@ In accordance with the Testing Protocol (smallest useful increments):
       - 5 dedicated unit tests in `combat/test_favored_enemy.py` (100% passing).
       - Zero TypeScript errors (`npx tsc --noEmit` clean).
       - Full combat regression suite: 217 tests, 100% passing.
+13. **Phase 13: 5e Dying Mechanics, Death Saves, Instant Death, Stabilization, Healer's Kit & Grave Domain** — **DONE**
+    - **SRD 5.1 & 5.2 Rules Engine Implementation (`combat/models.py`)**:
+      - `CombatParticipant.is_dead()`: Evaluates 3 death save failures or instant death (`instant_death` in `feature_uses`).
+      - `CombatParticipant.is_stable()`: Evaluates `feature_uses['is_stable']` or 3 death save successes at 0 HP.
+      - `CombatParticipant.is_dying()`: Evaluates creature at 0 HP that is neither dead nor stable.
+      - `CombatParticipant.stabilize()`: Resets death save counters and marks creature stable at 0 HP.
+      - `CombatSession.get_current_participant()` & `next_turn()`: Only skip permanently dead participants (`candidate.is_dead()`), ensuring unconscious player characters at 0 HP retain their initiative turn to make death saving throws.
+      - `take_damage()`:
+        - Drops to 0 HP apply `unconscious` and `prone` conditions, drop Rage, break concentration, and break grapples.
+        - Damage at 0 HP breaks stabilization (`is_stable = False`), inflicts 1 failure (or 2 on critical hit), and triggers instant death if `damage >= max_hp`.
+        - Massive damage drop to 0 HP (`excess_damage >= max_hp`) triggers instant death.
+      - `heal()`: Healing above 0 HP clears `unconscious`, resets death save counters, and clears `is_stable` and `instant_death`.
+      - `make_death_save()`:
+        - Natural 20 immediately restores 1 HP and wakes the character up (clears unconsciousness).
+        - Natural 1 inflicts 2 failures.
+        - Roll + Paladin Aura of Protection bonus >= 10 adds 1 success (3 successes stabilize).
+        - Roll < 10 adds 1 failure (3 failures cause death).
+    - **Combat Endpoints & Actions (`combat/views/combat_action_views.py`, `combat/views/reaction_views.py`)**:
+      - Added `@action(detail=True, methods=['post']) def stabilize`:
+        - Implements DC 10 Wisdom (Medicine) check for first aid, reach validation (5 ft touch), and action consumption.
+        - Auto-stabilizes without a check if using a **Healer's Kit** (`use_healers_kit=True`), consuming 1 kit charge from character inventory.
+      - Updated `cast_spell`:
+        - Rejects spells targeting dead creatures (unless resurrection spell).
+        - Validates `requires_zero_hp` constraint (e.g. *Spare the Dying* can only target dying creatures).
+        - Automatically resolves *Spare the Dying* cantrip to stabilize target at 0 HP without requiring a roll.
+        - Integrated **Grave Domain Cleric *Circle of Mortality***:
+          - *Spare the Dying* can be cast as a Bonus Action and has a 30-foot range (instead of Touch / Action).
+          - Any healing spell targeting a creature with 0 HP maximizes all dice rolled (e.g. 1d8 -> 8, 2d8 -> 16).
+      - Updated `death_save`: Logs `CombatAction`, returns updated participant and session state.
+    - **Frontend Tactical ActionDock & API (`dnd-frontend`)**:
+      - `lib/api/combat.ts`: Added `combatApi.deathSave` and `combatApi.stabilize` (with `use_healers_kit` support).
+      - `app/combat/[id]/page.tsx`: Added `handleDeathSave` and `handleStabilize`, wiring them to `ActionDock`.
+      - `components/combat/ActionDock.tsx`:
+        - Added dedicated 0 HP / Dying / Stabilized card when the active character has 0 HP, featuring visual 3-dot Success & Failure trackers, 1-click `Roll Death Save` button, rules explanation tooltip, and `End/Pass Turn`.
+        - Added "First Aid / Stabilize Ally" card in the Universal Maneuvers drawer with Healer's Kit detection and toggle.
+        - Added 1-Click Quick-Action "Stabilize {Name}" button in the bottom dock when targeting an adjacent dying ally.
+    - **Verification & Test Coverage**:
+      - 20 dedicated unit tests in `combat/test_dying_mechanics.py` (100% passing).
+      - Zero TypeScript errors in `dnd-frontend` (`npx tsc --noEmit` clean).
+14. **Phase 14: Summoning & Persistent Minion / Token Spells** — **DONE**
+    - **5e Summoning & Minion Engine (`combat/summoning.py`)**:
+      - Support for SRD 5.1 & 5.2 summoning and minion spells:
+        - *Spiritual Weapon*: Spell object (1 min, non-concentration, bonus action casting + attack, 1d8 + mod force damage, upcast +1d8 per 2 slot levels). Automatically executes initial strike on cast if target is selected.
+        - *Flaming Sphere*: Spell object (1 min, concentration, 2d6 fire damage on DEX save DC, bonus action 30ft move + ram).
+        - *Animate Dead*: Minion creature (Skeleton or Zombie, 24h, non-concentration, independent combat stats, attacks, and initiative participation).
+        - *Find Familiar*: Minion creature (Owl, Cat, Bat, Raven, non-concentration, Flyby Help action granting advantage on next attack against target, touch spell delivery).
+        - *Conjure Elemental / Conjure Minor Elementals / Conjure Fey / Conjure Animals*: Summoned combatant creatures linked to caster's concentration.
+      - `spawn_summon(...)`: Spawns and registers entities in `CombatParticipant` with proper flags (`is_summon=True`, `summon_type='spell_object' | 'minion'`, `summoned_by_id`, `attacks`, `duration_rounds`, `concentration=True/False`).
+      - `command_summon_action(...)`: Interactive commands (`attack`, `move`, `ram`, `help`, `dismiss`), enforcing action/bonus action economy, attack rolls, saving throw DCs, Help advantage grants, and dismiss cleanup.
+      - `dismiss_concentration_summons_by_caster(...)`: Automatically dismisses and removes all concentration-linked summons if the caster loses concentration.
+      - `decrement_summon_durations(...)`: Automatically tracks and decrements remaining rounds on round completion; cleans up expired summons.
+    - **Turn Order & Combat Participation Integration (`combat/models.py`, `combat/spell_rules.py`)**:
+      - `CombatParticipant.is_summon()`, `is_spell_object()`, `get_summoner()`.
+      - `CombatSession.get_current_participant()` and `next_turn()` skip spell objects in the initiative queue because they act via their caster's bonus action rather than taking separate initiative turns.
+      - Hooked `decrement_summon_durations` into `CombatSession.next_turn()` when round increments.
+      - Integrated `dismiss_concentration_summons_by_caster` into `remove_caster_concentration_buffs` in `combat/spell_rules.py`.
+    - **API & Serializer Integration (`combat/views/combat_action_views.py`, `combat/serializers.py`)**:
+      - Added endpoint `@action(detail=True, methods=['post']) def command_summon` accepting `summon_id`, `command` (`attack`, `move`, `ram`, `help`, `dismiss`), `target_id`, and `destination`.
+      - Auto-spawning summons directly within `cast_spell` when a summoning spell is cast, seamlessly handling target interaction and immediate attack for *Spiritual Weapon*.
+      - Serialized `is_summon`, `is_spell_object`, and `summon_details` on `CombatParticipantSerializer` for real-time frontend awareness.
+    - **Frontend Tactical Grid & ActionDock Integration (`dnd-frontend`)**:
+      - `lib/types/combat.ts`: Added `is_summon`, `is_spell_object`, `summon_details` to `CombatParticipant`.
+      - `lib/api/combat.ts`: Added `commandSummon(sessionId, { summon_id, command, target_id, destination })`.
+      - `lib/utils/tokenResolver.ts`: Visual token rendering for summons: glowing translucent ring/auras, weapon/minion icons (⚔️ for Spiritual Weapon, ☄️ for Flaming Sphere, 💀 for Undead, 🦉 for Familiar, 🌪️ for Elementals).
+      - `components/combat/ActionDock.tsx`: Added summon command panel displaying active summons with direct 1-click commands (`Strike / Attack`, `Ram`, `Flyby Help`, `Dismiss`).
+      - `app/combat/[id]/page.tsx`: Added `handleCommandSummon` and wired to ActionDock.
+    - **Verification & Test Coverage**:
+      - 9 dedicated unit tests in `combat/test_summoning.py` (100% passing).
+      - 20 dedicated unit tests in `combat/test_dying_mechanics.py` (100% passing).
+      - Zero TypeScript errors (`npx tsc --noEmit` clean).
+      - Full combat regression suite: 240+ tests passing.
 
 ---
 
