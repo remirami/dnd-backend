@@ -11,7 +11,7 @@ from rest_framework.response import Response
 
 from .management.commands.import_monsters import Command as ImportCommand
 from .models import Enemy, Language
-from .serializers import EnemySerializer, LanguageSerializer
+from .serializers import EnemySerializer, EnemySummarySerializer, LanguageSerializer
 
 
 class LanguageViewSet(viewsets.ReadOnlyModelViewSet):
@@ -24,8 +24,24 @@ class EnemyViewSet(viewsets.ModelViewSet):
     serializer_class = EnemySerializer
     parser_classes = [MultiPartParser, FormParser]
 
+    def get_serializer_class(self):
+        if self.action == 'list':
+            return EnemySummarySerializer
+        return EnemySerializer
+
     def get_queryset(self):
-        queryset = Enemy.objects.all().order_by('name')
+        if self.action == 'list':
+            queryset = Enemy.objects.select_related('stats').prefetch_related(
+                'actions', 'legendary_actions', 'multiattack', 'abilities', 'attacks'
+            ).order_by('name')
+        else:
+            queryset = Enemy.objects.select_related('stats').prefetch_related(
+                'actions', 'actions__damage_rolls', 'actions__conditions_inflicted',
+                'multiattack', 'traits', 'attacks', 'abilities', 'spells',
+                'resistances', 'languages', 'condition_immunities',
+                'legendary_actions', 'environments', 'treasure'
+            ).order_by('name')
+
         params = self.request.query_params
 
         search_query = params.get('search', None)

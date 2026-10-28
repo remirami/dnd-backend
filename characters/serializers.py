@@ -191,6 +191,9 @@ class CharacterItemSerializer(serializers.ModelSerializer):
         elif hasattr(item, 'consumable'):
             from items.serializers import ConsumableSerializer
             return ConsumableSerializer(item.consumable).data
+        elif hasattr(item, 'magicitem'):
+            from items.serializers import MagicItemSerializer
+            return MagicItemSerializer(item.magicitem).data
         
         return ItemSerializer(item).data
 
@@ -214,6 +217,13 @@ class CharacterStatsSerializer(serializers.ModelSerializer):
     intelligence_modifier = serializers.ReadOnlyField()
     wisdom_modifier = serializers.ReadOnlyField()
     charisma_modifier = serializers.ReadOnlyField()
+    effective_strength = serializers.ReadOnlyField()
+    effective_dexterity = serializers.ReadOnlyField()
+    effective_constitution = serializers.ReadOnlyField()
+    effective_intelligence = serializers.ReadOnlyField()
+    effective_wisdom = serializers.ReadOnlyField()
+    effective_charisma = serializers.ReadOnlyField()
+    effective_max_hit_points = serializers.ReadOnlyField()
     ki_points_max = serializers.ReadOnlyField()
     ki_points_current = serializers.ReadOnlyField()
     martial_arts_die = serializers.ReadOnlyField()
@@ -295,11 +305,21 @@ class CharacterSerializer(serializers.ModelSerializer):
                 if p.proficiency_type == 'saving_throw' and p.ability_score
             }
             
+            # Calculate magic save bonus from equipped and attuned items
+            magic_saves_bonus = 0
+            if hasattr(obj, 'character_items'):
+                for ci in obj.character_items.all():
+                    if ci.is_equipped and hasattr(ci.item, 'magicitem'):
+                        m = ci.item.magicitem
+                        req = getattr(ci.item, 'requires_attunement', False) or m.attunement_required
+                        if not req or ci.is_attuned:
+                            magic_saves_bonus += m.bonus_to_saves
+
             for ability in abilities:
                 # Get modifier
                 mod = getattr(stats, f"{ability}_modifier", 0)
                 is_proficient = ability in proficient_saves
-                bonus = mod + (prof_bonus if is_proficient else 0)
+                bonus = mod + (prof_bonus if is_proficient else 0) + magic_saves_bonus
                 
                 saves[ability] = {
                     'modifier': mod,

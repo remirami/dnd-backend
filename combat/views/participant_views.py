@@ -288,7 +288,8 @@ class CombatParticipantViewSet(viewsets.ModelViewSet):
                 if participant.character and hasattr(participant.character, 'saving_throw_proficiencies') and participant.character.saving_throw_proficiencies:
                     prof = save_type.lower() in [s.lower() for s in participant.character.saving_throw_proficiencies]
                 aura_bon = getattr(participant, 'get_aura_of_protection_bonus', lambda: 0)()
-                save_total, _ = calculate_saving_throw(save_roll, ability_mod, proficiency_bonus, prof, other_modifiers=aura_bon)
+                magic_saves_bonus = participant.get_magic_item_bonuses().get('to_saves', 0) if hasattr(participant, 'get_magic_item_bonuses') else 0
+                save_total, _ = calculate_saving_throw(save_roll, ability_mod, proficiency_bonus, prof, other_modifiers=aura_bon + magic_saves_bonus)
                 
                 if save_total >= save_dc:
                     damage_amount = damage_amount // 2  # Half damage on successful save

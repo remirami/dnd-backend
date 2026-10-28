@@ -1679,6 +1679,7 @@ class CombatParticipant(models.Model):
             }
         
         from characters.models import CharacterItem
+        from characters.inventory_management import get_equipped_armor, get_equipped_shield
         
         bonuses = {
             'to_hit': 0,
@@ -1693,8 +1694,18 @@ class CombatParticipant(models.Model):
             item__magicitem__isnull=False
         ).select_related('item__magicitem')
         
+        has_armor = bool(get_equipped_armor(self.character))
+        has_shield = bool(get_equipped_shield(self.character))
+        
         for char_item in equipped_magic_items:
             magic_item = char_item.item.magicitem
+            requires_attune = getattr(char_item.item, 'requires_attunement', False) or magic_item.attunement_required
+            if requires_attune and not char_item.is_attuned:
+                continue
+
+            if 'bracers of defense' in magic_item.name.lower() and (has_armor or has_shield):
+                continue
+
             bonuses['to_hit'] += magic_item.bonus_to_hit
             bonuses['to_damage'] += magic_item.bonus_to_damage
             bonuses['to_ac'] += magic_item.bonus_to_ac

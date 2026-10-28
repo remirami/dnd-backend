@@ -357,19 +357,66 @@ class Command(BaseCommand):
         """Create or update a magic item"""
         name = item_data['name']
         
+        # Parse attunement
+        raw_attune = data.get('requires_attunement', False)
+        desc = item_data.get('description', '')
+        text = f"{name} {desc}".lower()
+        import re
+        attune = self._parse_bool(raw_attune) or bool(
+            re.search(r'requires attunement|attunement required|while you are attuned|when you attune|attuned to this', text)
+        )
         magic_data = {
             **item_data,
-            'attunement_required': self._parse_bool(data.get('requires_attunement', False)),
+            'attunement_required': attune,
+            'requires_attunement': attune,
+            'bonus_to_ac': 0,
+            'bonus_to_saves': 0,
+            'bonus_to_hit': 0,
+            'bonus_to_damage': 0,
         }
-        
-        # Try to parse magical properties from description
-        desc = item_data.get('description', '').lower()
-        if 'bonus to attack' in desc or '+1' in desc or '+2' in desc or '+3' in desc:
-            # Try to extract bonus
-            import re
-            bonus_match = re.search(r'\+(\d+)', desc)
-            if bonus_match:
-                bonus = int(bonus_match.group(1))
+
+        # AC Bonus
+        m_ac = re.search(r'\+(\d+)\s+bonus to (?:your\s+)?(?:armor class|ac)', text)
+        if not m_ac:
+            m_ac = re.search(r'bonus to (?:your\s+)?(?:armor class|ac)(?: increases by)?\s+\+(\d+)', text)
+        if not m_ac:
+            m_ac = re.search(r'(?:shield|armor)\s+\+(\d+)', name.lower())
+        if m_ac:
+            magic_data['bonus_to_ac'] = int(m_ac.group(1))
+        elif 'ring of protection' in text or 'cloak of protection' in text:
+            magic_data['bonus_to_ac'] = 1
+        elif 'bracers of defense' in text:
+            magic_data['bonus_to_ac'] = 2
+
+        # Saves Bonus
+        m_saves = re.search(r'\+(\d+)\s+bonus to (?:all\s+)?saving throws', text)
+        if not m_saves:
+            m_saves = re.search(r'bonus to (?:all\s+)?saving throws\s+\+(\d+)', text)
+        if m_saves:
+            magic_data['bonus_to_saves'] = int(m_saves.group(1))
+        elif 'ring of protection' in text or 'cloak of protection' in text or 'stone of good luck' in text:
+            magic_data['bonus_to_saves'] = 1
+
+        # Hit and Damage Bonus
+        is_pure_defense = (
+            ('shield' in name.lower() and 'striking' not in name.lower())
+            or any(k in name.lower() for k in ['armor', 'mail', 'plate', 'cuirass', 'breastplate'])
+            or 'ring of protection' in name.lower()
+            or 'cloak of protection' in name.lower()
+            or 'bracers of defense' in name.lower()
+        )
+        if not is_pure_defense:
+            clean_text = re.sub(r'[_*`]', '', text)
+            m_atk_dmg = re.search(r'\+(\d+)\s+bonus to (?:attack and damage rolls|attack rolls and damage rolls|damage rolls)', clean_text)
+            if not m_atk_dmg:
+                m_atk_dmg = re.search(r'\+(\d+)\s+bonus to attack rolls', clean_text)
+            if not m_atk_dmg:
+                m_atk_dmg = re.search(
+                    r'(?:sword|blade|dagger|bow|axe|spear|mace|hammer|staff|glaive|halberd|scythe|whip|flail|trident|lance|pike|crossbow|dart|sling|rapier|scimitar|greatsword|longsword|shortsword|warhammer|morningstar|weapon)\s+\+(\d+)',
+                    name.lower(),
+                )
+            if m_atk_dmg:
+                bonus = int(m_atk_dmg.group(1))
                 magic_data['bonus_to_hit'] = bonus
                 magic_data['bonus_to_damage'] = bonus
         

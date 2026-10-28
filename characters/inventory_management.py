@@ -125,8 +125,8 @@ def can_equip_item(character, item, slot):
              return False, "Shield must be equipped in off_hand"
     
     else:
-        # Other items can go in various slots
-        valid_slots = ['ring', 'ring_2', 'amulet', 'boots', 'gloves', 'helmet', 'cloak']
+        # Other items and Magic items can go in any equipment slot
+        valid_slots = ['main_hand', 'off_hand', 'armor', 'ring', 'ring_2', 'amulet', 'boots', 'gloves', 'helmet', 'cloak', 'belt']
         if slot not in valid_slots and slot != 'inventory':
             return False, f"Item cannot be equipped in {slot}"
     
@@ -422,37 +422,38 @@ def get_equipped_armor(character):
 
 
 def get_equipped_shield(character):
-    """Get equipped shield"""
+    """Get equipped shield (base armor or magic shield)"""
     try:
-        char_item = CharacterItem.objects.get(
+        char_item = CharacterItem.objects.filter(
             character=character,
-            equipment_slot='off_hand', # Shield uses off_hand slot
+            equipment_slot='off_hand',
             is_equipped=True
-        )
+        ).first()
+        if not char_item:
+            return None
         if hasattr(char_item.item, 'armor') and char_item.item.armor.armor_type == 'shield':
             return char_item.item.armor
-    except CharacterItem.DoesNotExist:
+        if 'shield' in char_item.item.name.lower():
+            return char_item.item
+    except Exception:
         pass
     return None
 
 
 def apply_item_effects(character):
     """
-    Apply effects from equipped magic items.
+    Apply effects from equipped magic items (stat overrides, AC recalculation).
     Returns dict of stat modifications.
     """
-    modifications = {}
-    equipped_items = get_equipped_items(character)
-    
-    for char_item in equipped_items:
-        item = char_item.item
-        
-        # Apply magic item bonuses
-        if item.is_magical:
-            # This would be expanded based on item properties
-            # For now, just a placeholder structure
-            pass
-    
+    if hasattr(character, 'stats') and character.stats:
+        if hasattr(character.stats, '_cached_effective_scores'):
+            del character.stats._cached_effective_scores
+
+    ac = recalculate_armor_class(character)
+    modifications = {'armor_class': ac}
+    if hasattr(character, 'stats') and character.stats:
+        modifications['effective_abilities'] = character.stats.get_ability_score_modifiers()
+
     return modifications
 
 
@@ -462,13 +463,13 @@ def recalculate_armor_class(character):
     - Base: 10 + DEX mod
     - Armor: Base AC + DEX mod (capped if medium, ignored if heavy)
     - Shield: +2 AC
+    - Magic Items: Ring/Cloak of Protection, +1/2/3 Armor & Shields, Bracers of Defense, etc.
     """
     if not character.stats:
         return
         
     stats = character.stats
     dex_mod = stats.dexterity_modifier
-    
     
     # 1. Determine Base AC from Armor
     equipped_armor = get_equipped_armor(character)
@@ -543,8 +544,29 @@ def recalculate_armor_class(character):
     if equipped_shield:
         ac += 2  # Standard shield bonus
         
-    # 3. Add Magic Item Bonuses (placeholder)
-    # Check for Ring of Protection, etc.
+    # 3. Add Magic Item Bonuses (Ring of Protection, +1/2/3 Armors & Shields, etc.)
+    from .models import CharacterItem
+    equipped_magic_items = CharacterItem.objects.filter(
+        character=character,
+        is_equipped=True,
+        item__magicitem__isnull=False
+    ).select_related('item__magicitem')
+
+    magic_ac_bonus = 0
+    for char_item in equipped_magic_items:
+        magic_item = char_item.item.magicitem
+        requires_attune = getattr(char_item.item, 'requires_attunement', False) or magic_item.attunement_required
+        if requires_attune and not char_item.is_attuned:
+            continue
+
+        # Bracers of Defense: only applies if no armor and no shield equipped
+        if 'bracers of defense' in magic_item.name.lower():
+            if equipped_armor or equipped_shield:
+                continue
+
+        magic_ac_bonus += magic_item.bonus_to_ac
+
+    ac += magic_ac_bonus
     
     # Update stats
     if stats.armor_class != ac:

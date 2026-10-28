@@ -54,7 +54,11 @@ class CombatPracticeMixin:
         # Add characters
         for char_id in character_ids:
             try:
-                character = Character.objects.get(pk=char_id)
+                if request.user and request.user.is_authenticated and not request.user.is_staff:
+                    from django.db.models import Q
+                    character = Character.objects.filter(pk=char_id).filter(Q(user=request.user) | Q(user__isnull=True)).get()
+                else:
+                    character = Character.objects.get(pk=char_id)
                 if not hasattr(character, 'stats'):
                     continue
                 

@@ -285,7 +285,11 @@ class CombatSessionViewSet(
                 )
             
             try:
-                character = Character.objects.get(pk=character_id)
+                if request.user and request.user.is_authenticated and not request.user.is_staff:
+                    from django.db.models import Q
+                    character = Character.objects.filter(pk=character_id).filter(Q(user=request.user) | Q(user__isnull=True)).get()
+                else:
+                    character = Character.objects.get(pk=character_id)
             except Character.DoesNotExist:
                 return Response(
                     {"error": "Character not found"},

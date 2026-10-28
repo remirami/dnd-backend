@@ -372,35 +372,169 @@ class CharacterStats(models.Model):
             return '1d4'
         return None
 
+    def get_ability_score_modifiers(self):
+        """Calculates effective ability scores considering equipped and attuned magic items."""
+        if hasattr(self, '_cached_effective_scores'):
+            return self._cached_effective_scores
+
+        effective = {
+            'strength': self.strength,
+            'dexterity': self.dexterity,
+            'constitution': self.constitution,
+            'intelligence': self.intelligence,
+            'wisdom': self.wisdom,
+            'charisma': self.charisma,
+        }
+        if not self.character_id:
+            self._cached_effective_scores = effective
+            return effective
+
+        try:
+            from .models import CharacterItem
+            if hasattr(self.character, '_prefetched_objects_cache') and 'character_items' in self.character._prefetched_objects_cache:
+                equipped = [ci for ci in self.character.character_items.all() if ci.is_equipped]
+            else:
+                equipped = list(CharacterItem.objects.filter(
+                    character_id=self.character_id,
+                    is_equipped=True
+                ).select_related('item', 'item__magicitem'))
+
+            for ci in equipped:
+                item = ci.item
+                magic_item = getattr(item, 'magicitem', None)
+                requires_attune = getattr(item, 'requires_attunement', False)
+                if magic_item:
+                    requires_attune = requires_attune or magic_item.attunement_required
+
+                if requires_attune and not ci.is_attuned:
+                    continue
+
+                item_name = item.name.lower()
+                desc = (item.description or '').lower()
+
+                # 1. Named 5E items (with variant support and fallback if description is missing)
+                if 'gauntlets of ogre power' in item_name:
+                    effective['strength'] = max(effective['strength'], 19)
+                elif 'headband of intellect' in item_name:
+                    effective['intelligence'] = max(effective['intelligence'], 19)
+                elif 'amulet of health' in item_name:
+                    effective['constitution'] = max(effective['constitution'], 19)
+                elif 'belt of dwarvenkind' in item_name:
+                    effective['constitution'] = min(20, effective['constitution'] + 2)
+                elif 'belt of giant strength' in item_name:
+                    if 'frost' in item_name or 'stone' in item_name:
+                        effective['strength'] = max(effective['strength'], 23)
+                    elif 'fire' in item_name:
+                        effective['strength'] = max(effective['strength'], 25)
+                    elif 'cloud' in item_name:
+                        effective['strength'] = max(effective['strength'], 27)
+                    elif 'storm' in item_name:
+                        effective['strength'] = max(effective['strength'], 29)
+                    else:
+                        effective['strength'] = max(effective['strength'], 21)
+                else:
+                    # 2. Universal 5E parsing for any item setting ability scores (e.g. Aurochs Bracers, Crown of the Pharaoh, Celestial Aegis)
+                    import re
+                    set_matches = re.finditer(
+                        r'(?:(?:your\s+)?(strength|dexterity|constitution|intelligence|wisdom|charisma)\s+(?:score\s+)?(?:is|increases?\s+to)\s+(\d+)|increases?\s+(?:your\s+)?(strength|dexterity|constitution|intelligence|wisdom|charisma)\s+(?:score\s+)?to\s+(\d+))',
+                        desc,
+                        re.IGNORECASE
+                    )
+                    for m in set_matches:
+                        stat = (m.group(1) or m.group(3)).lower()
+                        val = int(m.group(2) or m.group(4))
+                        if stat in effective:
+                            effective[stat] = max(effective[stat], val)
+
+                    # 3. Universal 5E parsing for any item adding bonuses to ability scores (e.g. Hammer of Thunderbolts, Ioun Stones, Hopeful Slippers)
+                    plus_matches = re.finditer(
+                        r'(?:(?:your\s+)?(strength|dexterity|constitution|intelligence|wisdom|charisma)\s+(?:score\s+)?increases?\s+by\s+(\d+)|increases?\s+(?:your\s+)?(strength|dexterity|constitution|intelligence|wisdom|charisma)\s+(?:score\s+)?by\s+(\d+))',
+                        desc,
+                        re.IGNORECASE
+                    )
+                    for m in plus_matches:
+                        stat = (m.group(1) or m.group(3)).lower()
+                        val = int(m.group(2) or m.group(4))
+                        if stat in effective:
+                            cap = 30 if ('hammer of thunderbolts' in item_name or 'artifact' in desc) else 20
+                            effective[stat] = min(cap, effective[stat] + val)
+        except Exception:
+            pass
+
+        self._cached_effective_scores = effective
+        return effective
+
+    @property
+    def effective_strength(self):
+        return self.get_ability_score_modifiers()['strength']
+
+    @property
+    def effective_dexterity(self):
+        return self.get_ability_score_modifiers()['dexterity']
+
+    @property
+    def effective_constitution(self):
+        return self.get_ability_score_modifiers()['constitution']
+
+    @property
+    def effective_intelligence(self):
+        return self.get_ability_score_modifiers()['intelligence']
+
+    @property
+    def effective_wisdom(self):
+        return self.get_ability_score_modifiers()['wisdom']
+
+    @property
+    def effective_charisma(self):
+        return self.get_ability_score_modifiers()['charisma']
+
     @property
     def strength_modifier(self):
         from core.dnd_utils import calculate_ability_modifier
-        return calculate_ability_modifier(self.strength)
+        return calculate_ability_modifier(self.effective_strength)
     
     @property
     def dexterity_modifier(self):
         from core.dnd_utils import calculate_ability_modifier
-        return calculate_ability_modifier(self.dexterity)
+        return calculate_ability_modifier(self.effective_dexterity)
     
     @property
     def constitution_modifier(self):
         from core.dnd_utils import calculate_ability_modifier
-        return calculate_ability_modifier(self.constitution)
+        return calculate_ability_modifier(self.effective_constitution)
     
     @property
     def intelligence_modifier(self):
         from core.dnd_utils import calculate_ability_modifier
-        return calculate_ability_modifier(self.intelligence)
+        return calculate_ability_modifier(self.effective_intelligence)
     
     @property
     def wisdom_modifier(self):
         from core.dnd_utils import calculate_ability_modifier
-        return calculate_ability_modifier(self.wisdom)
+        return calculate_ability_modifier(self.effective_wisdom)
     
     @property
     def charisma_modifier(self):
         from core.dnd_utils import calculate_ability_modifier
-        return calculate_ability_modifier(self.charisma)
+        return calculate_ability_modifier(self.effective_charisma)
+
+    @property
+    def effective_max_hit_points(self):
+        """
+        Calculate effective max hit points including CON modifier bonus from magic items
+        (e.g., Amulet of Health setting CON to 19 or Belt of Dwarvenkind +2 CON).
+        In 5e, each +1 CON modifier gives +1 max HP per character level.
+        """
+        try:
+            base_con_mod = (self.constitution - 10) // 2
+            eff_con_mod = self.constitution_modifier
+            diff = eff_con_mod - base_con_mod
+            if diff != 0 and self.character_id:
+                level = getattr(self.character, 'level', 1) or 1
+                return max(1, self.max_hit_points + (diff * level))
+        except Exception:
+            pass
+        return self.max_hit_points
 
 
 class CharacterProficiency(models.Model):

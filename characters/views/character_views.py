@@ -88,6 +88,7 @@ class CharacterViewSet(viewsets.ModelViewSet):
             'character_items__item',
             'character_items__item__weapon',
             'character_items__item__armor',
+            'character_items__item__magicitem',
         ).order_by('-created_at')
     
     MAX_CHARACTERS_PER_USER = 20
@@ -1738,9 +1739,9 @@ class CharacterViewSet(viewsets.ModelViewSet):
                 {"error": "Item not found in character's inventory"},
                 status=status.HTTP_404_NOT_FOUND
             )
-
         # Check item requires attunement
-        if not char_item.item.requires_attunement:
+        requires_attune = char_item.item.requires_attunement or (hasattr(char_item.item, 'magicitem') and char_item.item.magicitem.attunement_required)
+        if not requires_attune:
             return Response(
                 {"error": f"{char_item.item.name} does not require attunement"},
                 status=status.HTTP_400_BAD_REQUEST
@@ -1757,6 +1758,7 @@ class CharacterViewSet(viewsets.ModelViewSet):
         attuned_count = CharacterItem.objects.filter(
             character=character, is_attuned=True
         ).count()
+
         if attuned_count >= 3:
             return Response(
                 {"error": "Cannot attune to more than 3 items at once (D&D 5e rule)"},
@@ -1765,6 +1767,9 @@ class CharacterViewSet(viewsets.ModelViewSet):
 
         char_item.is_attuned = True
         char_item.save(update_fields=['is_attuned'])
+
+        from ..inventory_management import apply_item_effects
+        apply_item_effects(character)
 
         return Response({
             "message": f"Attuned to {char_item.item.name}",
@@ -1809,6 +1814,9 @@ class CharacterViewSet(viewsets.ModelViewSet):
 
         char_item.is_attuned = False
         char_item.save(update_fields=['is_attuned'])
+
+        from ..inventory_management import apply_item_effects
+        apply_item_effects(character)
 
         attuned_count = CharacterItem.objects.filter(
             character=character, is_attuned=True

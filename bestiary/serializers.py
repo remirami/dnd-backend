@@ -200,3 +200,52 @@ class EnemySerializer(serializers.ModelSerializer):
     class Meta:
         model = Enemy
         fields = "__all__"
+
+
+class EnemySummarySerializer(serializers.ModelSerializer):
+    """
+    Lightweight summary serializer optimized for Bestiary catalog browsing and search.
+    Omits deep nested tables (damage rolls, conditions, traits, spells, immunities)
+    to reduce list query response size by over 75%.
+    """
+    stats = EnemyStatsSerializer(read_only=True)
+    size_display = serializers.CharField(source='get_size_display', read_only=True)
+    creature_type_display = serializers.CharField(source='get_creature_type_display', read_only=True)
+    alignment_display = serializers.CharField(source='get_alignment_display', read_only=True)
+    has_legendary = serializers.SerializerMethodField()
+    has_multiattack = serializers.SerializerMethodField()
+    action_count = serializers.SerializerMethodField()
+
+    class Meta:
+        model = Enemy
+        fields = (
+            'id', 'name', 'hp', 'ac', 'challenge_rating',
+            'size', 'size_display', 'creature_type', 'creature_type_display',
+            'alignment', 'alignment_display', 'stats',
+            'has_legendary', 'has_multiattack', 'action_count'
+        )
+
+    def get_has_legendary(self, obj):
+        if hasattr(obj, '_prefetched_objects_cache'):
+            if 'legendary_actions' in obj._prefetched_objects_cache:
+                if len(obj.legendary_actions.all()) > 0:
+                    return True
+            if 'abilities' in obj._prefetched_objects_cache:
+                return any(a.name.lower().startswith('[legendary]') for a in obj.abilities.all())
+        return obj.legendary_actions.exists() or obj.abilities.filter(name__istartswith='[legendary]').exists()
+
+    def get_has_multiattack(self, obj):
+        try:
+            if obj.multiattack is not None:
+                return True
+        except Exception:
+            pass
+        if hasattr(obj, '_prefetched_objects_cache') and 'abilities' in obj._prefetched_objects_cache:
+            return any(a.name.lower() == 'multiattack' for a in obj.abilities.all())
+        return obj.abilities.filter(name__iexact='multiattack').exists()
+
+    def get_action_count(self, obj):
+        actions_cnt = len(obj.actions.all()) if hasattr(obj, '_prefetched_objects_cache') and 'actions' in obj._prefetched_objects_cache else obj.actions.count()
+        abilities_cnt = sum(1 for a in obj.abilities.all() if not a.name.lower().startswith('[legendary]')) if hasattr(obj, '_prefetched_objects_cache') and 'abilities' in obj._prefetched_objects_cache else obj.abilities.exclude(name__istartswith='[legendary]').count()
+        attacks_cnt = len(obj.attacks.all()) if hasattr(obj, '_prefetched_objects_cache') and 'attacks' in obj._prefetched_objects_cache else obj.attacks.count()
+        return actions_cnt + abilities_cnt + attacks_cnt

@@ -89,28 +89,28 @@ class CharacterSheetSerializer(serializers.ModelSerializer):
         
         return {
             'strength': {
-                'score': stats.strength,
-                'modifier': calc_mod(stats.strength)
+                'score': stats.effective_strength,
+                'modifier': stats.strength_modifier
             },
             'dexterity': {
-                'score': stats.dexterity,
-                'modifier': calc_mod(stats.dexterity)
+                'score': stats.effective_dexterity,
+                'modifier': stats.dexterity_modifier
             },
             'constitution': {
-                'score': stats.constitution,
-                'modifier': calc_mod(stats.constitution)
+                'score': stats.effective_constitution,
+                'modifier': stats.constitution_modifier
             },
             'intelligence': {
-                'score': stats.intelligence,
-                'modifier': calc_mod(stats.intelligence)
+                'score': stats.effective_intelligence,
+                'modifier': stats.intelligence_modifier
             },
             'wisdom': {
-                'score': stats.wisdom,
-                'modifier': calc_mod(stats.wisdom)
+                'score': stats.effective_wisdom,
+                'modifier': stats.wisdom_modifier
             },
             'charisma': {
-                'score': stats.charisma,
-                'modifier': calc_mod(stats.charisma)
+                'score': stats.effective_charisma,
+                'modifier': stats.charisma_modifier
             }
         }
     
@@ -120,20 +120,20 @@ class CharacterSheetSerializer(serializers.ModelSerializer):
             return None
         
         stats = obj.stats
-        dex_mod = (stats.dexterity - 10) // 2
-        wis_mod = (stats.wisdom - 10) // 2
+        dex_mod = stats.dexterity_modifier
+        wis_mod = stats.wisdom_modifier
         
         return {
             'hit_points': {
                 'current': stats.hit_points,
-                'maximum': stats.max_hit_points,
+                'maximum': stats.effective_max_hit_points,
                 'temporary': 0  # TODO: Add temp HP field if needed
             },
             'armor_class': stats.armor_class,
             'initiative': dex_mod,
             'speed': stats.speed,
             'passive_perception': 10 + wis_mod,
-            'passive_investigation': 10 + ((stats.intelligence - 10) // 2),
+            'passive_investigation': 10 + stats.intelligence_modifier,
             'passive_insight': 10 + wis_mod
         }
     
@@ -154,8 +154,7 @@ class CharacterSheetSerializer(serializers.ModelSerializer):
         if obj.character_class and obj.character_class.saving_throw_proficiencies:
             proficient_saves = [s.strip().lower() for s in obj.character_class.saving_throw_proficiencies.split(',')]
         
-        def calc_save(ability, ability_score):
-            mod = (ability_score - 10) // 2
+        def calc_save(ability, mod):
             is_proficient = ability.lower() in proficient_saves
             bonus = mod + (prof_bonus if is_proficient else 0)
             return {
@@ -164,12 +163,12 @@ class CharacterSheetSerializer(serializers.ModelSerializer):
             }
         
         return {
-            'strength': calc_save('STR', stats.strength),
-            'dexterity': calc_save('DEX', stats.dexterity),
-            'constitution': calc_save('CON', stats.constitution),
-            'intelligence': calc_save('INT', stats.intelligence),
-            'wisdom': calc_save('WIS', stats.wisdom),
-            'charisma': calc_save('CHA', stats.charisma)
+            'strength': calc_save('STR', stats.strength_modifier),
+            'dexterity': calc_save('DEX', stats.dexterity_modifier),
+            'constitution': calc_save('CON', stats.constitution_modifier),
+            'intelligence': calc_save('INT', stats.intelligence_modifier),
+            'wisdom': calc_save('WIS', stats.wisdom_modifier),
+            'charisma': calc_save('CHA', stats.charisma_modifier)
         }
     
     def get_skills(self, obj):

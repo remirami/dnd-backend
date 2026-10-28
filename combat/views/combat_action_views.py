@@ -2378,7 +2378,8 @@ class CombatActionMixin:
                     if t.character and hasattr(t.character, 'saving_throw_proficiencies') and t.character.saving_throw_proficiencies:
                         prof = save_type.lower() in [s.lower() for s in t.character.saving_throw_proficiencies]
                     aura_bonus = getattr(t, 'get_aura_of_protection_bonus', lambda: 0)()
-                    save_other_mods = aura_bonus
+                    magic_saves_bonus = t.get_magic_item_bonuses().get('to_saves', 0) if hasattr(t, 'get_magic_item_bonuses') else 0
+                    save_other_mods = aura_bonus + magic_saves_bonus
                     if hasattr(t, 'has_buff') and t.has_buff('bless'):
                         b_val = random.randint(1, 4)
                         save_other_mods += b_val
@@ -2884,8 +2885,9 @@ class CombatActionMixin:
         if participant.character and hasattr(participant.character, 'saving_throw_proficiencies') and participant.character.saving_throw_proficiencies:
             proficiency = save_type.lower() in [s.lower() for s in participant.character.saving_throw_proficiencies]
         aura_bonus = getattr(participant, 'get_aura_of_protection_bonus', lambda: 0)()
+        magic_saves_bonus = participant.get_magic_item_bonuses().get('to_saves', 0) if hasattr(participant, 'get_magic_item_bonuses') else 0
         proficiency_bonus = participant.character.proficiency_bonus if participant.character else 2
-        save_total, save_breakdown = calculate_saving_throw(roll, ability_mod, proficiency_bonus, proficiency, other_modifiers=aura_bonus)
+        save_total, save_breakdown = calculate_saving_throw(roll, ability_mod, proficiency_bonus, proficiency, other_modifiers=aura_bonus + magic_saves_bonus)
 
         # Bless buff: add +1d4 to saving throws
         bless_save_bonus = 0
@@ -4153,7 +4155,8 @@ class CombatActionMixin:
             is_2024 = bool(actor.character and getattr(actor.character, 'ruleset_version', '') == '2024')
             fighter_bonus = char_lvl if is_2024 else 0
             aura_bonus = getattr(actor, 'get_aura_of_protection_bonus', lambda: 0)()
-            new_total, breakdown = calculate_saving_throw(r, save_mod, prof_bonus, prof, other_modifiers=fighter_bonus + aura_bonus)
+            magic_saves_bonus = actor.get_magic_item_bonuses().get('to_saves', 0) if hasattr(actor, 'get_magic_item_bonuses') else 0
+            new_total, breakdown = calculate_saving_throw(r, save_mod, prof_bonus, prof, other_modifiers=fighter_bonus + aura_bonus + magic_saves_bonus)
             
             actor.feature_uses['indomitable_used_count'] = used_count + 1
             actor.save(update_fields=['feature_uses'])
