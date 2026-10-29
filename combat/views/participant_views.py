@@ -457,3 +457,31 @@ class CombatParticipantViewSet(viewsets.ModelViewSet):
             "message": f"{participant.get_name()} loses concentration on {spell_name}",
             "participant": serializer.data
         })
+
+    @action(detail=True, methods=['post'])
+    def set_exhaustion(self, request, pk=None):
+        """Set or adjust 2024 cumulative exhaustion level (0-10) for this combat participant"""
+        participant = self.get_object()
+        
+        if 'level' in request.data:
+            try:
+                new_level = int(request.data['level'])
+            except (ValueError, TypeError):
+                return Response({"error": "level must be an integer"}, status=status.HTTP_400_BAD_REQUEST)
+        elif 'delta' in request.data:
+            try:
+                delta = int(request.data['delta'])
+                new_level = participant.get_exhaustion_level() + delta
+            except (ValueError, TypeError):
+                return Response({"error": "delta must be an integer"}, status=status.HTTP_400_BAD_REQUEST)
+        else:
+            return Response({"error": "Must provide 'level' or 'delta'"}, status=status.HTTP_400_BAD_REQUEST)
+
+        final_level = participant.set_exhaustion_level(new_level)
+        serializer = self.get_serializer(participant)
+        return Response({
+            "message": f"{participant.get_name()} exhaustion set to Level {final_level}",
+            "exhaustion_level": final_level,
+            "is_active": participant.is_active,
+            "participant": serializer.data
+        })

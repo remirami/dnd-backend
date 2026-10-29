@@ -208,6 +208,8 @@ def sync_participant_after_rest(character, is_long_rest: bool = False):
             p.death_save_failures = 0
             p.feature_uses['arcane_recovery_used'] = False
             p.feature_uses['indomitable_used'] = False
+            if hasattr(p, 'set_exhaustion_level'):
+                p.set_exhaustion_level(getattr(character.stats, 'exhaustion_level', 0) or 0)
             loh_max = calculate_lay_on_hands_max(character)
             if loh_max > 0:
                 p.feature_uses['lay_on_hands_pool'] = loh_max
@@ -423,13 +425,20 @@ def execute_long_rest(character, sync_combat: bool = True) -> Dict[str, Any]:
     stats.ki_points_used = 0
     stats.sorcery_points_used = 0
 
+    # 5. Clear Exhaustion by 1 level if present (2024 D&D Rules)
+    old_exhaustion = getattr(stats, 'exhaustion_level', 0) or 0
+    stats.exhaustion_level = max(0, old_exhaustion - 1)
+    exhaustion_recovered = 1 if old_exhaustion > stats.exhaustion_level else 0
+
     stats.save()
 
-    # 5. Sync active combat participants & feature pools
+    # 6. Sync active combat participants & feature pools
     if sync_combat:
         sync_participant_after_rest(character, is_long_rest=True)
 
     msg = f"Long rest completed. HP and Spell Slots fully restored. Regained {actual_hd_recovered} Hit Dice."
+    if exhaustion_recovered > 0:
+        msg += f" Recovered 1 level of Exhaustion (Current: Level {stats.exhaustion_level})."
 
     return {
         "message": msg,
@@ -445,4 +454,6 @@ def execute_long_rest(character, sync_combat: bool = True) -> Dict[str, Any]:
         "expended_spell_slots": stats.expended_spell_slots,
         "ki_points_used": stats.ki_points_used,
         "sorcery_points_used": stats.sorcery_points_used,
+        "exhaustion_recovered": exhaustion_recovered,
+        "exhaustion_level": stats.exhaustion_level,
     }

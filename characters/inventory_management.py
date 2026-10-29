@@ -239,6 +239,34 @@ def equip_item(character, item, slot='main_hand'):
             except WeaponModel.DoesNotExist:
                 pass  # Not a weapon — leave slot as main_hand
     
+    # Auto-resolve two-handed weapon conflicts:
+    # 1. If equipping a 2H weapon to main_hand, unequip off_hand
+    item_is_two_handed = getattr(item, 'two_handed', False) or getattr(getattr(item, 'weapon', None), 'two_handed', False)
+    stowed_item_name = None
+    if item_is_two_handed and slot == 'main_hand':
+        off_hand_equipped = CharacterItem.objects.filter(
+            character=character,
+            equipment_slot='off_hand',
+            is_equipped=True
+        ).first()
+        if off_hand_equipped:
+            stowed_item_name = off_hand_equipped.item.name
+            off_hand_equipped.is_equipped = False
+            off_hand_equipped.save(update_fields=['is_equipped'])
+    # 2. If equipping into off_hand, unequip main_hand if it holds a 2H weapon
+    elif slot == 'off_hand':
+        main_hand_weapon = get_equipped_weapon(character, 'main_hand')
+        if main_hand_weapon and getattr(main_hand_weapon, 'two_handed', False):
+            main_hand_equipped = CharacterItem.objects.filter(
+                character=character,
+                equipment_slot='main_hand',
+                is_equipped=True
+            ).first()
+            if main_hand_equipped:
+                stowed_item_name = main_hand_equipped.item.name
+                main_hand_equipped.is_equipped = False
+                main_hand_equipped.save(update_fields=['is_equipped'])
+
     # Check if can equip
     can_equip, error_msg = can_equip_item(character, item, slot)
     if not can_equip:
@@ -285,7 +313,10 @@ def equip_item(character, item, slot='main_hand'):
     # Recalculate stats (AC)
     recalculate_armor_class(character)
     
-    return True, f"Equipped {item.name} in {slot}", char_item
+    msg = f"Equipped {item.name} in {slot}"
+    if stowed_item_name:
+        msg += f" (stowed {stowed_item_name})"
+    return True, msg, char_item
 
 
 def unequip_item(character, char_item_or_item):

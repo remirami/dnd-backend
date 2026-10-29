@@ -295,7 +295,28 @@ class CharacterStats(models.Model):
     sorcery_points_used = models.IntegerField(default=0, help_text="Number of Sorcery points spent")
     created_spell_slots = models.JSONField(default=dict, blank=True, help_text="Bonus spell slots created via Font of Magic")
     temp_hp = models.IntegerField(default=0, help_text="Temporary Hit Points")
+    exhaustion_level = models.IntegerField(
+        default=0,
+        validators=[MinValueValidator(0), MaxValueValidator(10)],
+        help_text="2024 Cumulative Exhaustion level (0-10)"
+    )
     
+    def apply_exhaustion(self, amount: int = 1) -> int:
+        """Increase exhaustion level (up to 10). At 10, HP drops to 0 (death)."""
+        self.exhaustion_level = min(10, max(0, (self.exhaustion_level or 0) + amount))
+        if self.exhaustion_level >= 10:
+            self.hit_points = 0
+            self.save(update_fields=['exhaustion_level', 'hit_points'])
+        else:
+            self.save(update_fields=['exhaustion_level'])
+        return self.exhaustion_level
+
+    def recover_exhaustion(self, amount: int = 1) -> int:
+        """Decrease exhaustion level down to 0."""
+        self.exhaustion_level = max(0, (self.exhaustion_level or 0) - amount)
+        self.save(update_fields=['exhaustion_level'])
+        return self.exhaustion_level
+
     def __str__(self):
         return f"{self.character.name} - Stats"
     

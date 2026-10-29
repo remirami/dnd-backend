@@ -495,6 +495,9 @@ class CharacterViewSet(viewsets.ModelViewSet):
             
             # Calculate HP increase for this class level
             hp_gain = 0
+            roll = 0
+            con_mod = 0
+            die_size = 8
             if hasattr(character, 'stats'):
                 hit_dice_type = target_class.hit_dice
                 if 'd' in hit_dice_type:
@@ -503,7 +506,18 @@ class CharacterViewSet(viewsets.ModelViewSet):
                 else:
                     die_size = 8
                 
-                roll = random.randint(1, die_size)
+                hp_mode = request.data.get('hp_mode', 'rolled')
+                custom_roll = request.data.get('roll')
+                if custom_roll is not None:
+                    try:
+                        roll = max(1, min(die_size, int(custom_roll)))
+                    except (ValueError, TypeError):
+                        roll = (die_size // 2) + 1 if hp_mode == 'fixed' else random.randint(1, die_size)
+                elif hp_mode == 'fixed':
+                    roll = (die_size // 2) + 1
+                else:
+                    roll = random.randint(1, die_size)
+                
                 from core.dnd_utils import calculate_ability_modifier
                 con_mod = calculate_ability_modifier(character.stats.constitution)
                 hp_gain = max(1, roll + con_mod)
@@ -568,7 +582,7 @@ class CharacterViewSet(viewsets.ModelViewSet):
             elif total_level == 20 and 20 not in character.pending_asi_levels:
                 character.pending_asi_levels.append(20)
             
-            # Check if subclass selection is needed
+            # Check if subclass selection is needed or provided
             subclass_levels_2014 = {
                 'Cleric': 1,
                 'Druid': 2,
@@ -597,7 +611,31 @@ class CharacterViewSet(viewsets.ModelViewSet):
                 if c_name not in subclass_levels_2014 and c_name.title() in subclass_levels_2014:
                     trigger_level = subclass_levels_2014[c_name.title()]
                 
-            if new_class_level == trigger_level and not class_level.subclass:
+            subclass_param = request.data.get('subclass')
+            if subclass_param:
+                class_level.subclass = subclass_param
+                class_level.save()
+                character.subclass = subclass_param
+                character.pending_subclass_selection = False
+                subclass_features = get_subclass_features(subclass_param, new_class_level, ruleset=character.ruleset_version)
+                for feature_data in subclass_features:
+                    CharacterFeature.objects.get_or_create(
+                        character=character,
+                        name=feature_data['name'],
+                        defaults={
+                            'feature_type': 'class',
+                            'description': feature_data['description'],
+                            'source': f"{subclass_param} Level {new_class_level}",
+                            'options': feature_data.get('options', []),
+                            'choice_limit': feature_data.get('choice_limit', 1)
+                        }
+                    )
+                    features_gained.append({
+                        'level': new_class_level,
+                        'name': feature_data['name'],
+                        'type': 'subclass'
+                    })
+            elif new_class_level == trigger_level and not class_level.subclass:
                 character.pending_subclass_selection = True
                 
             # Explicitly save character validation flags
@@ -629,7 +667,13 @@ class CharacterViewSet(viewsets.ModelViewSet):
                 "class_levels": self._get_class_levels_data(character),
                 "features_gained": features_gained,
                 "hp_gain": hp_gain if hasattr(character, 'stats') else None,
-                "spell_slots": new_slots
+                "hp_roll": roll if hasattr(character, 'stats') else None,
+                "hp_con_mod": con_mod if hasattr(character, 'stats') else None,
+                "hp_die_size": die_size if hasattr(character, 'stats') else None,
+                "spell_slots": new_slots,
+                "pending_asi": new_class_level in asi_levels,
+                "pending_subclass": character.pending_subclass_selection,
+                "pending_asi_levels": character.pending_asi_levels
             })
         
         # Single-class level-up
@@ -654,6 +698,9 @@ class CharacterViewSet(viewsets.ModelViewSet):
         
         # Calculate HP increase
         hp_gain = 0
+        roll = 0
+        con_mod = 0
+        die_size = 8
         if hasattr(character, 'stats'):
             hit_dice_type = primary_class.hit_dice
             if 'd' in hit_dice_type:
@@ -662,7 +709,18 @@ class CharacterViewSet(viewsets.ModelViewSet):
             else:
                 die_size = 8
             
-            roll = random.randint(1, die_size)
+            hp_mode = request.data.get('hp_mode', 'rolled')
+            custom_roll = request.data.get('roll')
+            if custom_roll is not None:
+                try:
+                    roll = max(1, min(die_size, int(custom_roll)))
+                except (ValueError, TypeError):
+                    roll = (die_size // 2) + 1 if hp_mode == 'fixed' else random.randint(1, die_size)
+            elif hp_mode == 'fixed':
+                roll = (die_size // 2) + 1
+            else:
+                roll = random.randint(1, die_size)
+            
             from core.dnd_utils import calculate_ability_modifier
             con_mod = calculate_ability_modifier(character.stats.constitution)
             hp_gain = max(1, roll + con_mod)
@@ -713,7 +771,13 @@ class CharacterViewSet(viewsets.ModelViewSet):
             if class_name not in subclass_levels_2014 and class_name.title() in subclass_levels_2014:
                  subclass_level = subclass_levels_2014[class_name.title()]
         
-        if new_level >= subclass_level and not character.subclass:
+        subclass_param = request.data.get('subclass')
+        if subclass_param:
+            character.subclass = subclass_param
+            character.pending_subclass_selection = False
+            class_level.subclass = subclass_param
+            class_level.save()
+        elif new_level >= subclass_level and not character.subclass:
             character.pending_subclass_selection = True
         
         # Apply class features
@@ -783,6 +847,9 @@ class CharacterViewSet(viewsets.ModelViewSet):
             "class_levels": self._get_class_levels_data(character),
             "features_gained": features_gained,
             "hp_gain": hp_gain,
+            "hp_roll": roll,
+            "hp_con_mod": con_mod,
+            "hp_die_size": die_size,
             "spell_slots": new_slots if hasattr(character, 'stats') else None,
             "pending_asi": new_level in asi_levels,
             "pending_subclass": character.pending_subclass_selection,
@@ -1073,38 +1140,41 @@ class CharacterViewSet(viewsets.ModelViewSet):
         }
         
         # Find which class needs a subclass
-        target_class_name = None
-        
-        # Check all class levels
-        for class_level in character.class_levels.all():
-            c_name = class_level.character_class.name
-            # Handle casing
-            level_trigger = subclass_levels.get(c_name, 3)
-            # Try title case if not found
-            if c_name not in subclass_levels:
-                c_title = c_name.title()
-                if c_title in subclass_levels:
-                    level_trigger = subclass_levels[c_title]
-                    c_name = c_title # Use title case for lookup
+        query_class = request.query_params.get('class_name')
+        if query_class:
+            target_class_name = query_class
+        else:
+            target_class_name = None
+            # Check all class levels
+            for class_level in character.class_levels.all():
+                c_name = class_level.character_class.name
+                # Handle casing
+                level_trigger = subclass_levels.get(c_name, 3)
+                # Try title case if not found
+                if c_name not in subclass_levels:
+                    c_title = c_name.title()
+                    if c_title in subclass_levels:
+                        level_trigger = subclass_levels[c_title]
+                        c_name = c_title # Use title case for lookup
 
-            if class_level.level >= level_trigger and not class_level.subclass:
-                target_class_name = c_name
-                break
-        
-        if not target_class_name:
-            # Fallback to primary if nothing specific found (though this shouldn't happen if pending_subclass_selection is true)
-            # This case might occur if the character has no class levels yet, or if all classes already have subclasses
-            # or if pending_subclass_selection is false.
-            # If character.character_class is None (e.g., new character), this will fail.
-            # Let's ensure we have a class to fall back on.
-            if character.character_class:
-                target_class_name = character.character_class.name.title()
-            else:
-                return Response({
-                    "available_subclasses": [],
-                    "class_name": None,
-                    "message": "Character has no class to select a subclass for."
-                }, status=status.HTTP_400_BAD_REQUEST)
+                if class_level.level >= level_trigger and not class_level.subclass:
+                    target_class_name = c_name
+                    break
+            
+            if not target_class_name:
+                # Fallback to primary if nothing specific found (though this shouldn't happen if pending_subclass_selection is true)
+                # This case might occur if the character has no class levels yet, or if all classes already have subclasses
+                # or if pending_subclass_selection is false.
+                # If character.character_class is None (e.g., new character), this will fail.
+                # Let's ensure we have a class to fall back on.
+                if character.character_class:
+                    target_class_name = character.character_class.name.title()
+                else:
+                    return Response({
+                        "available_subclasses": [],
+                        "class_name": None,
+                        "message": "Character has no class to select a subclass for."
+                    }, status=status.HTTP_400_BAD_REQUEST)
 
 
         # Normalize lookup
@@ -2722,5 +2792,54 @@ class CharacterViewSet(viewsets.ModelViewSet):
             "ki_points_current": stats.ki_points_current,
             "ki_points_max": max_ki,
             "ki_points_used": stats.ki_points_used
+        })
+
+    @action(detail=True, methods=['post'])
+    def adjust_exhaustion(self, request, pk=None):
+        """
+        Adjust or set 2024 cumulative exhaustion level (0-10) for this character.
+        Accepts:
+          - level: int (explicitly set exhaustion level to 0-10)
+          - delta: int (increment/decrement by delta, e.g. +1 or -1)
+        """
+        character = self.get_object()
+        if not hasattr(character, 'stats') or not character.stats:
+            return Response({"error": "Character stats not found"}, status=status.HTTP_400_BAD_REQUEST)
+
+        stats = character.stats
+        old_level = stats.exhaustion_level or 0
+
+        if 'level' in request.data:
+            try:
+                new_level = int(request.data['level'])
+            except (ValueError, TypeError):
+                return Response({"error": "level must be an integer"}, status=status.HTTP_400_BAD_REQUEST)
+        elif 'delta' in request.data:
+            try:
+                delta = int(request.data['delta'])
+                new_level = old_level + delta
+            except (ValueError, TypeError):
+                return Response({"error": "delta must be an integer"}, status=status.HTTP_400_BAD_REQUEST)
+        else:
+            return Response({"error": "Must provide 'level' or 'delta'"}, status=status.HTTP_400_BAD_REQUEST)
+
+        new_level = min(10, max(0, new_level))
+        stats.exhaustion_level = new_level
+        if new_level >= 10:
+            stats.hit_points = 0
+            stats.save(update_fields=['exhaustion_level', 'hit_points'])
+        else:
+            stats.save(update_fields=['exhaustion_level'])
+
+        # Sync active combat participant if present
+        from combat.models import CombatParticipant
+        for p in CombatParticipant.objects.filter(character=character, is_active=True):
+            p.set_exhaustion_level(new_level)
+
+        return Response({
+            "message": f"Exhaustion level set to {new_level}.",
+            "exhaustion_level": new_level,
+            "hit_points": stats.hit_points,
+            "is_dead": new_level >= 10
         })
 

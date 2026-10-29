@@ -320,14 +320,10 @@ def calculate_effective_speed(participant, base_speed):
     if participant.conditions.filter(name='grappled').exists() or participant.conditions.filter(name='restrained').exists() or participant.conditions.filter(name='paralyzed').exists() or participant.conditions.filter(name='unconscious').exists() or participant.conditions.filter(name='petrified').exists():
         speed = 0
     
-    # Exhaustion level 2: half speed
-    exhaustion_level = participant.conditions.filter(name='exhaustion').count()
-    if exhaustion_level >= 2:
-        speed = int(speed * 0.5)
-    
-    # Exhaustion level 5: speed 0
-    if exhaustion_level >= 5:
-        speed = 0
+    # 2024 Cumulative Exhaustion: -5 ft per exhaustion level
+    ex_level = getattr(participant, 'get_exhaustion_level', lambda: 0)()
+    if ex_level > 0:
+        speed = max(0, speed - (5 * ex_level))
 
     # Haste buff: walking speed is doubled
     if hasattr(participant, 'has_buff') and participant.has_buff('haste'):

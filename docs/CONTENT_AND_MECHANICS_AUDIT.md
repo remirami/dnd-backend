@@ -23,6 +23,7 @@ This audit assesses the state of gameplay mechanics, data sources, automated tes
 | **Items & Equipment** | 1,498 (67 weapons, 32 armors) | 2H/Dual wield restrictions, AC calc, ranges, potions | Magic item lore text | 6 test files | **High** |
 | **Dying & Survival** | Core 5e Rules | **100% Implemented** (Death Saves, Massive Damage Instant Death, Damage at 0 HP, Stabilization, *Spare the Dying*, Healer's Kit, Grave Domain Circle of Mortality) | 0 descriptive only | `test_dying_mechanics.py` (20 automated tests) | **100% SRD 5.1 & 5.2 Complete** |
 | **Summoning & Minions** | Core 5e Spells | **100% Implemented** (Spiritual Weapon, Flaming Sphere, Animate Dead, Find Familiar, Conjure Spells, Concentration linkage, commands, grid tokens) | 0 descriptive only | `test_summoning.py` (9 automated tests) | **100% SRD 5.1 & 5.2 Complete** |
+| **Cumulative Exhaustion (2024)** | 2024 Core Rules | **100% Implemented** (Levels 1–10, d20 Tests penalty, Spell DC penalty, Speed reduction, Lethal threshold death at 10, Long Rest recovery, M2M condition sync) | 0 descriptive only | `test_exhaustion_engine.py` (10 automated tests) | **100% 2024 Complete** |
 
 ---
 
@@ -267,21 +268,32 @@ The backend suite currently runs **73 test modules** comprising **135 automated 
    - *Fighter Indomitable*: Executable feature via `/use_feature/` rerolling failed saving throws and adding the 2024 Fighter level bonus.
    - *Test Coverage*: 7 automated tests in `combat/test_high_tier_passives.py` (100% passing).
 
-7. **Combat Feats & Warlock Invocations Automation** (OPEN GAP):
-   - *Core Combat Feats*:
-     - *Sentinel*: Opportunity attack triggered when an enemy within 5 ft Disengages or attacks an ally; reduces target speed to 0 on hit.
-     - *Sharpshooter / Great Weapon Master*: Optional toggle taking -5 on attack roll to gain +10 on damage roll; ignores half/three-quarters cover (*Sharpshooter*).
-     - *Polearm Master*: Opportunity attack when an enemy enters reach; bonus action 1d4 bludgeoning butt strike.
-     - *War Caster*: Advantage on concentration saving throws; allows casting a single-target spell as an opportunity attack reaction.
-   - *Warlock Eldritch Invocations*:
-     - *Agonizing Blast*: Automatically adds Charisma modifier to each beam hit of *Eldritch Blast*.
-     - *Repelling Blast*: Automatically pushes target 10 ft away per beam hit without saving throw.
-     - *Devil's Sight*: Negates disadvantage / line of sight penalties in magical darkness (*Darkness* spell).
+7. **Combat Feats & Warlock Invocations Automation** (**DONE** in Phase 9):
+   - Implemented Sentinel, Sharpshooter, Great Weapon Master, Polearm Master, War Caster, and Warlock Invocations (Agonizing Blast, Repelling Blast, Devil's Sight). 8 dedicated tests in `combat/test_feats_and_invocations.py`.
 
-8. **Out-of-Combat Rest & Resource Systems** (OPEN GAP):
-   - *Short Rest Hit Dice Spending*: Interactive dialog allowing characters to roll individual Hit Dice (d6/d8/d10/d12 + CON mod) to regain hit points up to their maximum pool.
-   - *Exhaustion Mechanics*: Automated rule tracking for 2024 cumulative -1 per exhaustion level (up to 10) vs 2014 tiered penalties (disadvantage, halved speed, death).
-   - *Magic Item Attunement*: Enforcement of the 3-item attunement limit in inventory paperdolls.
+8. **Rest & Hit Dice Systems** (**DONE** in Phase 10):
+   - Implemented short rest hit dice spending, Pact Magic recovery, Ki points, Sorcery points, and full long rest resets. 8 dedicated tests in `characters/test_rest_mechanics.py`.
+
+9. **Inventory & Equipment Mechanics Polish** (**DONE** in Phase 11):
+   - *Attunement Capacity Guard*: Enforced proactive UI disabling of "Attune" buttons with `🔒 Attune (3/3 Slots Used)` and explanatory tooltip when at 3/3 capacity.
+   - *Two-Handed Conflict Resolution*: Implemented automated stowing of off-hand shields or weapons when equipping a 2H weapon (and stowing 2H weapons when equipping an off-hand item) with contextual feedback `(stowed X)`.
+   - *Dynamic Strength-Based Encumbrance*: Dynamic `Strength * 15 lb` capacity with 5e progressive thresholds (`STR * 5` encumbered, `STR * 10` heavily encumbered, `STR * 15` overloaded) and animated capacity meter.
+
+10. **Integrated Level-Up Wizard** (**DONE** in Phase 12):
+    - Replaced disconnected dialogs with a unified 3-step Level-Up Wizard (`LevelUpDialog.tsx`).
+    - *Step 1 (Class & HP)*: Class selection (advancement or multiclass), Hit Die detection, 5e Fixed Average vs interactive animated 3D Hit Die rolling with CON modifier computation and live Max HP preview bar.
+    - *Step 2 (Milestones)*: Dynamic milestone detection for Subclass selection (Level 3) with official SRD subclass cards, Ability Score Improvements (+2/+1/+1 with live score preview) or Feat selection (searchable SRD feats with prerequisite badges).
+    - *Step 3 (Review & Ascend)*: Consolidated Ascension Review card displaying level gains, HP increase, chosen subclass or feat, and celebratory Ascension Complete modal.
+    - Backend API enhancement in `characters/views/character_views.py` (`level_up` & `eligible_subclasses`) supporting `hp_mode`, custom `roll`, and `subclass` selection directly.
+
+11. **Lair Actions Engine** (OPEN GAP):
+    - Initiative Count 20 environmental trigger for legendary boss monsters (Dragons, Beholders, Liches, Aboleths) executing thematic lair actions at the top of each round.
+
+12. **2024 Cumulative Exhaustion Engine** (**DONE** in Phase 15):
+    - Stages 1–10 automated tracking applying cumulative -1 penalty per level to all d20 tests (attack rolls, ability checks, saving throws), -1 to spell save DCs, and -5 ft speed reduction per level, recovering 1 level per Long Rest, with death at Level 10. Fully integrated across DB schema, calculations, rest mechanics, and frontend UI.
+
+13. **Interactive AoE Grid Selection Overlay** (**DONE**):
+    - Centralized tactical grid targeting overlay across all 69 database AoE spells. Allows players to aim and position spheres (e.g. 20-ft *Fireball*), cones (e.g. 15-ft *Burning Hands*), lines (e.g. 100-ft *Lightning Bolt*), and cubes (*Thunderwave*) in real-time. Features live SVG vector overlays, friendly fire warnings, target filtering (undead, fiends, allies, enemies), ActionDock hover footprint previews, and thematic shaders per damage type.
 
 ---
 
@@ -476,6 +488,46 @@ In accordance with the Testing Protocol (smallest useful increments):
       - 20 dedicated unit tests in `combat/test_dying_mechanics.py` (100% passing).
       - Zero TypeScript errors (`npx tsc --noEmit` clean).
       - Full combat regression suite: 240+ tests passing.
+15. **Phase 15: 2024 Cumulative Exhaustion Engine (Levels 1–10, d20 Penalty, DC, Speed, Death, Long Rest Recovery)** — **DONE**
+    - **D&D 2024 Rules Standard**:
+      - Cumulative 10-level scale replacing the 2014 tiered system.
+      - **d20 Tests Penalty**: Subtracts Exhaustion level from all Attack Rolls, Ability Checks, and Saving Throws.
+      - **Spell Save DC**: Subtracts Exhaustion level from caster's Spell Save DC.
+      - **Speed Reduction**: Subtracts 5 ft × Exhaustion level from Speed (minimum 0 ft).
+      - **Lethal Threshold**: Reaching Level 10 Exhaustion is fatal (creature drops to 0 HP and dies).
+      - **Long Rest Recovery**: Completing a Long Rest removes 1 level of Exhaustion; clears `exhaustion` condition at Level 0.
+    - **Database Models & State Synchronization (`characters/models.py`, `combat/models.py`)**:
+      - Added `exhaustion_level = models.IntegerField(default=0, validators=[MinValueValidator(0), MaxValueValidator(10)])` to `CharacterStats` and `CombatParticipant`.
+      - Migrations: `characters.0036_characterstats_exhaustion_level` and `combat.0019_combatparticipant_exhaustion_level_and_more`.
+      - Synchronized `CharacterStats.apply_exhaustion()` and `recover_exhaustion()`.
+      - `CombatParticipant.get_exhaustion_level()`, `set_exhaustion_level()`, `apply_exhaustion()`, `recover_exhaustion()` with automatic condition tagging (`conditions.add(exhaustion_condition)`) and bidirectional sync to linked character stats.
+    - **Engine Mechanics & Dice Roll Calculations (`combat/utils.py`, `combat/models.py`, `combat/condition_effects.py`, `combat/views/combat_action_views.py`)**:
+      - Subtracted `5 * exhaustion_level` in `CombatParticipant.speed` and `calculate_effective_speed`.
+      - Subtracted `exhaustion_level` in `CombatParticipant.get_spell_save_dc()`.
+      - Added `exhaustion_level` parameter and breakdown annotations (`"Exhaustion: -X"`) in `calculate_attack_roll`, `calculate_saving_throw`, and `calculate_ability_check`.
+      - Updated combat actions in `combat_action_views.py` (`attack`, saving throws, spell saving throws) to pass attacker and target exhaustion levels.
+    - **Long Rest Mechanics (`characters/rest_mechanics.py`)**:
+      - `execute_long_rest` decrements `exhaustion_level` by 1 down to 0, syncs to active `CombatParticipant`, and returns `exhaustion_recovered` and updated `exhaustion_level`.
+    - **REST API Endpoints**:
+      - Added `POST /api/characters/{id}/adjust_exhaustion/` (accepting `level` or `delta`).
+      - Added `POST /api/combat/participants/{id}/set_exhaustion/` (accepting `level` or `delta`).
+    - **Frontend UI & Visual Integration (`dnd-frontend`)**:
+      - `lib/types/character.ts` & `combat.ts`: Added `exhaustion_level` to interfaces.
+      - `lib/api/characters.ts`: Added `charactersApi.adjustExhaustion`.
+      - `lib/data/conditions.ts`: Added 2024 cumulative exhaustion rules to `CONDITIONS_REGISTRY`.
+      - `HPManagementDialog.tsx`: Added dedicated "Exhaustion" tab with interactive 0–10 level selector pills, live penalty breakdown (-X d20, -X DC, -5X ft speed), severity gauge, quick -1/+1 buttons, and rules guide.
+      - `app/characters/[id]/page.tsx`:
+        - Header: Prominent animated status badge when `exhaustion_level > 0` linking to dialog.
+        - Speed Card: Live effective speed calculation displaying `(-5X ft Exhaustion)` in amber, clickable to open Exhaustion manager.
+        - Attack Card: To Hit bonus incorporates exhaustion test penalty with `(-X Exhaustion)` note.
+        - Long Rest button: Confirms exhaustion reduction on rest.
+      - `SkillsAndSaves.tsx`: Live display of exhaustion penalties on both Saving Throws and Skills.
+      - `ShortRestDialog.tsx`: Clarified rest note regarding long rest recovery.
+    - **Verification & Test Coverage**:
+      - 10 dedicated automated tests in `combat/test_exhaustion_engine.py` (100% passing).
+      - `characters.test_rest_mechanics` (8 tests passing).
+      - Zero TypeScript errors (`npx tsc --noEmit` clean).
+      - Visual and interactive verification verified via browser subagent.
 
 ---
 

@@ -75,16 +75,19 @@ def calculate_attack_roll(
     ability_modifier: int,
     proficiency_bonus: int = 0,
     proficiency: bool = False,
-    other_modifiers: int = 0
+    other_modifiers: int = 0,
+    exhaustion_level: int = 0
 ) -> tuple[int, str]:
     """
-    Calculate total attack roll
+    Calculate total attack roll (supports 2024 cumulative exhaustion)
     Returns: (total, breakdown_string)
     """
     attack_modifier = ability_modifier
     if proficiency:
         attack_modifier += proficiency_bonus
     attack_modifier += other_modifiers
+    if exhaustion_level > 0:
+        attack_modifier -= exhaustion_level
     
     total = base_roll + attack_modifier
     
@@ -95,6 +98,8 @@ def calculate_attack_roll(
         parts.append(f"Proficiency: +{proficiency_bonus}")
     if other_modifiers != 0:
         parts.append(f"Other: {other_modifiers:+d}")
+    if exhaustion_level > 0:
+        parts.append(f"Exhaustion: -{exhaustion_level}")
     parts.append(f"Total: {total}")
     
     breakdown = " + ".join(parts)
@@ -180,16 +185,19 @@ def calculate_saving_throw(
     ability_modifier: int,
     proficiency_bonus: int = 0,
     proficiency: bool = False,
-    other_modifiers: int = 0
+    other_modifiers: int = 0,
+    exhaustion_level: int = 0
 ) -> tuple[int, str]:
     """
-    Calculate total saving throw
+    Calculate total saving throw (supports 2024 cumulative exhaustion)
     Returns: (total, breakdown_string)
     """
     save_modifier = ability_modifier
     if proficiency:
         save_modifier += proficiency_bonus
     save_modifier += other_modifiers
+    if exhaustion_level > 0:
+        save_modifier -= exhaustion_level
     
     total = base_roll + save_modifier
     
@@ -200,6 +208,8 @@ def calculate_saving_throw(
         parts.append(f"Proficiency: +{proficiency_bonus}")
     if other_modifiers != 0:
         parts.append(f"Other: {other_modifiers:+d}")
+    if exhaustion_level > 0:
+        parts.append(f"Exhaustion: -{exhaustion_level}")
     parts.append(f"Total: {total}")
     
     breakdown = " + ".join(parts)
@@ -214,10 +224,11 @@ def calculate_ability_check(
     half_proficiency: bool = False,
     other_modifiers: int = 0,
     reliable_talent: bool = False,
-    indomitable_might_score: int = 0
+    indomitable_might_score: int = 0,
+    exhaustion_level: int = 0
 ) -> tuple[int, str]:
     """
-    Calculate total ability check roll (supports Remarkable Athlete, Rogue Reliable Talent, and Barbarian Indomitable Might).
+    Calculate total ability check roll (supports Remarkable Athlete, Rogue Reliable Talent, Barbarian Indomitable Might, and 2024 exhaustion).
     Returns: (total, breakdown_string)
     """
     import math
@@ -234,6 +245,8 @@ def calculate_ability_check(
     elif half_proficiency:
         check_modifier += math.ceil(proficiency_bonus / 2)
     check_modifier += other_modifiers
+    if exhaustion_level > 0:
+        check_modifier -= exhaustion_level
 
     total = effective_roll + check_modifier
     parts = [f"Roll: {effective_roll}{rt_note}"]
@@ -245,6 +258,8 @@ def calculate_ability_check(
         parts.append(f"Remarkable Athlete: +{math.ceil(proficiency_bonus / 2)}")
     if other_modifiers != 0:
         parts.append(f"Other: {other_modifiers:+d}")
+    if exhaustion_level > 0:
+        parts.append(f"Exhaustion: -{exhaustion_level}")
 
     if indomitable_might_score > 0 and total < indomitable_might_score:
         parts.append(f"Indomitable Might: adjusted {total} -> {indomitable_might_score}")

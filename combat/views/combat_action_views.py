@@ -822,8 +822,10 @@ class CombatActionMixin:
             other_modifiers += pa_atk_mod
             adv_reasons.append(pa_note)
 
+        attacker_exhaustion = attacker.get_exhaustion_level() if hasattr(attacker, 'get_exhaustion_level') else 0
         attack_total, attack_breakdown = calculate_attack_roll(
-            roll, ability_mod, proficiency_bonus, proficiency, other_modifiers
+            roll, ability_mod, proficiency_bonus, proficiency, other_modifiers,
+            exhaustion_level=attacker_exhaustion
         )
         
         # Get target's effective AC (including armor, magic items, and cover)
@@ -1338,6 +1340,7 @@ class CombatActionMixin:
             "message": f"{attacker.get_name()} attacks {target.get_name()}{msg_suffix}",
             "attack_roll": roll,
             "attack_total": attack_total,
+            "attack_breakdown": attack_breakdown,
             "target_ac": target_ac,
             "cover_bonus": cover_bonus,
             "weapon_used": attack_name if equipped_weapon else None,
@@ -2388,7 +2391,12 @@ class CombatActionMixin:
                         bane_val = random.randint(1, 4)
                         save_other_mods -= bane_val
                         rider_str += f" [Bane (-{bane_val})]"
-                    t_save_total, _ = calculate_saving_throw(t_save_roll, save_mod, prof_bonus, prof, other_modifiers=save_other_mods)
+                    t_exhaustion = getattr(t, 'get_exhaustion_level', lambda: 0)()
+                    t_save_total, _ = calculate_saving_throw(
+                        t_save_roll, save_mod, prof_bonus, prof,
+                        other_modifiers=save_other_mods,
+                        exhaustion_level=t_exhaustion
+                    )
                     t_save_success = (t_save_total >= save_dc)
                     if not t_save_success and hasattr(t, 'check_legendary_resistance'):
                         used_lr, t_save_success, lr_msg = t.check_legendary_resistance(save_type, save_dc, t_save_total)
@@ -2887,7 +2895,12 @@ class CombatActionMixin:
         aura_bonus = getattr(participant, 'get_aura_of_protection_bonus', lambda: 0)()
         magic_saves_bonus = participant.get_magic_item_bonuses().get('to_saves', 0) if hasattr(participant, 'get_magic_item_bonuses') else 0
         proficiency_bonus = participant.character.proficiency_bonus if participant.character else 2
-        save_total, save_breakdown = calculate_saving_throw(roll, ability_mod, proficiency_bonus, proficiency, other_modifiers=aura_bonus + magic_saves_bonus)
+        p_exhaustion = getattr(participant, 'get_exhaustion_level', lambda: 0)()
+        save_total, save_breakdown = calculate_saving_throw(
+            roll, ability_mod, proficiency_bonus, proficiency,
+            other_modifiers=aura_bonus + magic_saves_bonus,
+            exhaustion_level=p_exhaustion
+        )
 
         # Bless buff: add +1d4 to saving throws
         bless_save_bonus = 0
@@ -4156,7 +4169,12 @@ class CombatActionMixin:
             fighter_bonus = char_lvl if is_2024 else 0
             aura_bonus = getattr(actor, 'get_aura_of_protection_bonus', lambda: 0)()
             magic_saves_bonus = actor.get_magic_item_bonuses().get('to_saves', 0) if hasattr(actor, 'get_magic_item_bonuses') else 0
-            new_total, breakdown = calculate_saving_throw(r, save_mod, prof_bonus, prof, other_modifiers=fighter_bonus + aura_bonus + magic_saves_bonus)
+            actor_exhaustion = getattr(actor, 'get_exhaustion_level', lambda: 0)()
+            new_total, breakdown = calculate_saving_throw(
+                r, save_mod, prof_bonus, prof,
+                other_modifiers=fighter_bonus + aura_bonus + magic_saves_bonus,
+                exhaustion_level=actor_exhaustion
+            )
             
             actor.feature_uses['indomitable_used_count'] = used_count + 1
             actor.save(update_fields=['feature_uses'])

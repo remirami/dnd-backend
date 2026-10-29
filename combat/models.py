@@ -639,6 +639,11 @@ class CombatParticipant(models.Model):
     
     # Conditions (many-to-many for multiple conditions)
     conditions = models.ManyToManyField(Condition, blank=True, related_name='combat_participants')
+    exhaustion_level = models.IntegerField(
+        default=0,
+        validators=[MinValueValidator(0), MaxValueValidator(10)],
+        help_text="2024 Cumulative Exhaustion level (0-10)"
+    )
     
     # Death saves (for characters)
     death_save_successes = models.IntegerField(default=0, validators=[MinValueValidator(0), MaxValueValidator(3)])
@@ -1388,8 +1393,66 @@ class CombatParticipant(models.Model):
                 if v_rank > g_rank - 2:
                     base = base // 2
 
+        # 2024 Cumulative Exhaustion: -5 ft per exhaustion level
+        ex_level = self.get_exhaustion_level()
+        if ex_level > 0:
+            base = max(0, base - (5 * ex_level))
+
         speed_penalty = (self.feature_uses or {}).get('speed_penalty', 0) + (self.feature_uses or {}).get('slowed_speed_reduction', 0)
         return max(0, base - speed_penalty)
+
+    def get_exhaustion_level(self) -> int:
+        """Return active 2024 exhaustion level (0-10)."""
+        if self.exhaustion_level is not None and self.exhaustion_level > 0:
+            return self.exhaustion_level
+        if self.character and hasattr(self.character, 'stats') and self.character.stats:
+            return getattr(self.character.stats, 'exhaustion_level', 0) or 0
+        return 0
+
+    def set_exhaustion_level(self, level: int) -> int:
+        """Set exhaustion level, synchronize exhaustion condition, and handle 10-level death."""
+        lvl = min(10, max(0, int(level)))
+        self.exhaustion_level = lvl
+        
+        # Synchronize conditions M2M
+        from bestiary.models import Condition
+        exhaustion_cond, _ = Condition.objects.get_or_create(
+            name='exhaustion',
+            defaults={'description': 'Levels of exhaustion have cumulative effects'}
+        )
+        if lvl > 0:
+            if not self.conditions.filter(name='exhaustion').exists():
+                self.conditions.add(exhaustion_cond)
+        else:
+            self.conditions.remove(exhaustion_cond)
+
+        # 2024 D&D Rules: Level 10 Exhaustion is fatal
+        if lvl >= 10:
+            self.current_hp = 0
+            self.is_active = False
+            if not self.feature_uses:
+                self.feature_uses = {}
+            self.feature_uses['is_dead'] = True
+
+        # Sync to linked character stats
+        if self.character and hasattr(self.character, 'stats') and self.character.stats:
+            self.character.stats.exhaustion_level = lvl
+            if lvl >= 10:
+                self.character.stats.hit_points = 0
+                self.character.stats.save(update_fields=['exhaustion_level', 'hit_points'])
+            else:
+                self.character.stats.save(update_fields=['exhaustion_level'])
+
+        self.save()
+        return lvl
+
+    def apply_exhaustion(self, amount: int = 1) -> int:
+        """Increase exhaustion by amount (clamps 0-10)."""
+        return self.set_exhaustion_level(self.get_exhaustion_level() + amount)
+
+    def recover_exhaustion(self, amount: int = 1) -> int:
+        """Decrease exhaustion by amount (clamps 0-10)."""
+        return self.set_exhaustion_level(self.get_exhaustion_level() - amount)
 
     @property
     def movement_remaining(self):
@@ -2499,24 +2562,30 @@ class CombatParticipant(models.Model):
             return 0.0
 
     def get_spell_save_dc(self, ability=None):
-        """Calculate spell save DC: 8 + proficiency + ability modifier"""
+        """Calculate spell save DC: 8 + proficiency + ability modifier, adjusted by 2024 exhaustion"""
         if not self.character:
-            return 13
-        if hasattr(self.character, 'stats') and self.character.stats and self.character.stats.spell_save_dc:
-            return self.character.stats.spell_save_dc
+            base_dc = 13
+        elif hasattr(self.character, 'stats') and self.character.stats and self.character.stats.spell_save_dc:
+            base_dc = self.character.stats.spell_save_dc
+        else:
+            prof = self.character.proficiency_bonus
+            if not ability:
+                if self.is_cleric() or self.is_druid() or self.is_ranger() or self.is_monk():
+                    ability = 'WIS'
+                elif self.is_paladin() or self.is_bard() or self.is_sorcerer() or self.is_warlock():
+                    ability = 'CHA'
+                elif self.is_wizard():
+                    ability = 'INT'
+                else:
+                    ability = 'WIS'
+            mod = self.get_ability_modifier(ability)
+            base_dc = 8 + prof + mod
         
-        prof = self.character.proficiency_bonus
-        if not ability:
-            if self.is_cleric() or self.is_druid() or self.is_ranger() or self.is_monk():
-                ability = 'WIS'
-            elif self.is_paladin() or self.is_bard() or self.is_sorcerer() or self.is_warlock():
-                ability = 'CHA'
-            elif self.is_wizard():
-                ability = 'INT'
-            else:
-                ability = 'WIS'
-        mod = self.get_ability_modifier(ability)
-        return 8 + prof + mod
+        # 2024 D&D Rules: Subtract exhaustion level from spell save DC
+        ex_level = self.get_exhaustion_level()
+        if ex_level > 0:
+            base_dc = max(1, base_dc - ex_level)
+        return base_dc
 
     def get_channel_divinity_max_uses(self):
         """
