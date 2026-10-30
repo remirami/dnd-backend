@@ -1,5 +1,5 @@
 """
-Automated seeder command for D&D 5e SRD monsters from Open5e API v1.
+Automated seeder command for SRD 5.2 5e SRD monsters from Open5e API v1.
 Parses stats, actions, recharge mechanics, multiattack, traits, resistances, and saving throws
 into relational models while ensuring full backwards compatibility.
 """
@@ -34,7 +34,7 @@ from bestiary.parsers.action_parser import (
 
 
 class Command(BaseCommand):
-    help = 'Import and update official D&D 5e SRD monsters from Open5e API with structured actions'
+    help = 'Import and update official SRD 5.2 5e SRD monsters from Open5e API with structured actions'
 
     def add_arguments(self, parser):
         parser.add_argument('--limit', type=int, default=None, help='Limit number of monsters to import')
@@ -54,7 +54,7 @@ class Command(BaseCommand):
         url = base_url
         page = 1
 
-        headers = {'User-Agent': 'D&D-5e-Campaign-Manager/1.8'}
+        headers = {'User-Agent': 'SRD 5.2-5e-Campaign-Manager/1.8'}
 
         while url:
             self.stdout.write(f"  Fetching page {page}...")

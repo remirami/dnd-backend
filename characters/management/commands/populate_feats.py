@@ -1,5 +1,5 @@
 """
-Populate D&D 5e feats database
+Populate SRD 5.2 5e feats database
 """
 
 from django.core.management.base import BaseCommand
@@ -8,7 +8,7 @@ from characters.models import Feat
 
 
 class Command(BaseCommand):
-    help = 'Populate D&D 5e feats database'
+    help = 'Populate SRD 5.2 5e feats database'
 
     def handle(self, *args, **options):
         feats = [

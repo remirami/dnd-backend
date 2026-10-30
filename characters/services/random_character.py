@@ -125,7 +125,7 @@ BACKGROUND_STARTING_GOLD = {
 
 def calculate_starting_gold(background: CharacterBackground | None = None) -> int:
     """
-    Calculate starting gold based on D&D 5e background pouch wealth.
+    Calculate starting gold based on SRD 5.2 5e background pouch wealth.
     Since random characters already receive complete starting equipment
     (weapons, armor, class packs), starting gold represents their background purse.
     Includes a slight pocket change variation (+0 to 5 gp).

@@ -119,43 +119,6 @@ def seed_species():
                 {"name": "Large Form", "description": "Starting at level 5, you can grow to Large size for 10 minutes, gaining advantage on Strength checks and +10 ft speed."},
                 {"name": "Powerful Build", "description": "You count as one size larger when determining carrying capacity and the weight you can push, drag, or lift."}
             ]
-        },
-        {
-            "name": "Aasimar (2024)",
-            "description": "Aasimar are placed in the world to serve as guardians of law and good, bearing the spark of Mount Celestia.",
-            "speed": 30,
-            "size": "M",
-            "traits": [
-                {"name": "Celestial Resistance", "description": "You have resistance to both Necrotic and Radiant damage."},
-                {"name": "Darkvision", "description": "You have superior vision in dark and dim conditions (60 ft.)."},
-                {"name": "Healing Hands", "description": "As an action, touch a creature to restore hit points equal to a roll of d4s equal to your proficiency bonus."},
-                {"name": "Light Bearer", "description": "You know the Light cantrip."},
-                {"name": "Celestial Revelation", "description": "At level 3, unleash celestial power for 1 minute as a bonus action (Necrotic Shroud, Radiant Consumption, or Heavenly Flight)."}
-            ]
-        },
-        {
-            "name": "Half-Elf (2024)",
-            "description": "Half-elves combine what some say are the best qualities of their elf and human parents, walking between two worlds with grace and adaptability.",
-            "speed": 30,
-            "size": "M",
-            "traits": [
-                {"name": "Darkvision", "description": "Thanks to your elf blood, you have superior vision in dark and dim conditions (60 ft.)."},
-                {"name": "Fey Ancestry", "description": "You have advantage on saving throws against being charmed, and magic can't put you to sleep."},
-                {"name": "Skill Versatility", "description": "You gain proficiency in two skills of your choice."}
-            ]
-        },
-        {
-            "name": "Half-Orc (2024)",
-            "description": "Half-orcs' grayish pigmentation, sloping foreheads, jutting jaws, prominent teeth, and towering builds make their orcish heritage plain for all to see.",
-            "speed": 30,
-            "size": "M",
-            "skill_proficiencies": "Intimidation",
-            "traits": [
-                {"name": "Darkvision", "description": "Thanks to your orc blood, you have superior vision in dark and dim conditions (60 ft.)."},
-                {"name": "Menacing", "description": "You gain proficiency in the Intimidation skill."},
-                {"name": "Relentless Endurance", "description": "When you are reduced to 0 hit points but not killed outright, you can drop to 1 hit point instead (once per long rest)."},
-                {"name": "Savage Attacks", "description": "When you score a critical hit with a melee weapon attack, you can roll one of the weapon's damage dice one additional time and add it to the extra damage of the critical hit."}
-            ]
         }
     ]
 

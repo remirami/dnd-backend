@@ -29,6 +29,9 @@ FEAT_DATA = {
          'options': [],
          'repeatable': True
     },
+    'Ability Score Improvement': {
+        'repeatable': True
+    },
     'Elemental Adept': {
         'repeatable': True
     }

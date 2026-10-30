@@ -1,5 +1,5 @@
 """
-Feat Models for D&D 5e
+Feat Models for SRD 52
 
 Feats are special abilities that characters can take instead of Ability Score Improvements
 at levels 4, 8, 12, 16, and 19.
@@ -10,7 +10,7 @@ from django.db import models
 
 
 class Feat(models.Model):
-    """D&D 5e feats that can be taken instead of ASI"""
+    """SRD 5e feats that can be taken instead of ASI"""
     
     name = models.CharField(max_length=100, unique=True)
     description = models.TextField()

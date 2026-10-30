@@ -63,7 +63,7 @@ class Enemy(models.Model):
 
 
 class EnemyStats(models.Model):
-    """Comprehensive D&D 5e stat block for enemies"""
+    """Comprehensive SRD 5.2 5e stat block for enemies"""
     enemy = models.OneToOneField(Enemy, on_delete=models.CASCADE, related_name="stats")
     
     # Core Stats (ability scores)
@@ -160,7 +160,7 @@ class EnemyStats(models.Model):
 
 
 class DamageType(models.Model):
-    """Damage types in D&D 5e"""
+    """Damage types in SRD 5.2 5e"""
     name = models.CharField(max_length=200, unique=True)
     
     def __str__(self):
@@ -188,7 +188,7 @@ class EnemyResistance(models.Model):
 
 
 class Language(models.Model):
-    """Languages in D&D 5e"""
+    """Languages in SRD 5.2 5e"""
     name = models.CharField(max_length=200, unique=True)
     
     def __str__(self):
@@ -208,7 +208,7 @@ class EnemyLanguage(models.Model):
 
 
 class Condition(models.Model):
-    """D&D 5e conditions"""
+    """SRD 5.2 5e conditions"""
     CONDITION_CHOICES = [
         ('blinded', 'Blinded'),
         ('charmed', 'Charmed'),

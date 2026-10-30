@@ -162,7 +162,7 @@ class EnemyViewSet(viewsets.ModelViewSet):
 
     @action(detail=False, methods=['post'])
     def import_srd(self, request):
-        """Import monsters from D&D 5e SRD"""
+        """Import monsters from SRD 5.2 5e SRD"""
         update_existing = request.data.get('update_existing', False)
         
         try:

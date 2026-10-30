@@ -1,11 +1,11 @@
 """
-Starting Equipment Data for D&D 5e Classes
+Starting Equipment Data for SRD 5.2 5e Classes
 
 This module defines the starting equipment choices for each class,
 including equipment packs and individual item choices.
 """
 
-# Equipment Packs (standard D&D 5e packs)
+# Equipment Packs (standard SRD 5.2 5e packs)
 EQUIPMENT_PACKS = {
     "Explorer's Pack": {
         'cost': 10,

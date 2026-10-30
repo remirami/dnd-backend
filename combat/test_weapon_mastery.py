@@ -12,7 +12,7 @@ from items.models import Weapon
 
 class WeaponMasteryCombatTests(TestCase):
     """
-    Test suite validating official 2024 D&D Weapon Masteries:
+    Test suite validating official 2024 SRD 5.2 Weapon Masteries:
     - Graze (Glaive, Greatsword)
     - Vex (Shortsword, Rapier, Handaxe, etc.)
     - Topple (Battleaxe, Maul, Quarterstaff, etc.)

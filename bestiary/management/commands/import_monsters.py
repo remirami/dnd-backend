@@ -24,7 +24,7 @@ from bestiary.models import (
 
 
 class Command(BaseCommand):
-    help = 'Import monsters from various sources (JSON, CSV, D&D Beyond API)'
+    help = 'Import monsters from various sources (JSON, CSV, SRD 5.2 Beyond API)'
 
     def add_arguments(self, parser):
         parser.add_argument(
@@ -42,7 +42,7 @@ class Command(BaseCommand):
         parser.add_argument(
             '--url',
             type=str,
-            help='URL for D&D Beyond API or other web sources'
+            help='URL for SRD 5.2 Beyond API or other web sources'
         )
         parser.add_argument(
             '--dry-run',
@@ -105,7 +105,7 @@ class Command(BaseCommand):
         self.process_monsters(monsters, dry_run, update_existing)
 
     def import_from_dndbeyond(self, url, dry_run, update_existing):
-        """Import monsters from D&D Beyond API (if available)"""
+        """Import monsters from SRD 5.2 Beyond API (if available)"""
         if not REQUESTS_AVAILABLE:
             raise CommandError('Requests library not available. Install with: pip install requests')
         
@@ -114,14 +114,14 @@ class Command(BaseCommand):
             response.raise_for_status()
             data = response.json()
         except requests.RequestException as e:
-            raise CommandError(f'Failed to fetch from D&D Beyond: {e!s}')
+            raise CommandError(f'Failed to fetch from SRD 5.2 Beyond: {e!s}')
 
-        # Parse D&D Beyond format
+        # Parse SRD 5.2 Beyond format
         monsters = self.parse_dndbeyond_format(data)
         self.process_monsters(monsters, dry_run, update_existing)
 
     def import_srd_monsters(self, dry_run, update_existing):
-        """Import monsters from D&D 5e SRD (System Reference Document)"""
+        """Import monsters from SRD 5.2 5e SRD (System Reference Document)"""
         from bestiary.importers import SRDMonsterData
         srd_monsters = SRDMonsterData.get_srd_monsters()
         self.process_monsters(srd_monsters, dry_run, update_existing)
@@ -364,7 +364,7 @@ class Command(BaseCommand):
                 self.stdout.write(f'Warning: Language "{lang_name}" not found')
 
     def parse_dndbeyond_format(self, data):
-        """Parse D&D Beyond specific format"""
+        """Parse SRD 5.2 Beyond specific format"""
         from bestiary.importers import DnDBeyondAPI
         api = DnDBeyondAPI()
         return api.parse_monster_data(data)

@@ -32,9 +32,11 @@ from ..models import (
 )
 from ..multiclassing import (
     MULTICLASS_PREREQUISITES,
+    apply_multiclass_proficiencies,
     calculate_multiclass_spell_slots,
     can_multiclass_into,
     get_multiclass_hit_dice,
+    get_multiclass_prerequisites,
     get_multiclass_spellcasting_ability,
     get_total_level,
 )
@@ -446,6 +448,10 @@ class CharacterViewSet(viewsets.ModelViewSet):
                     level=1
                 )
                 new_class_level = 1
+                
+                # Apply multiclass proficiencies if this is gaining a new secondary class
+                if not is_primary:
+                    apply_multiclass_proficiencies(character, target_class.name)
                 
                 # If this was a primary class restore, we might want to catch up?
                 # But safe usage is just treating it as level 1 gain.
@@ -1439,7 +1445,7 @@ class CharacterViewSet(viewsets.ModelViewSet):
                 'class_name': char_class.get_name_display(),
                 'can_multiclass': can_multiclass,
                 'reason': reason if not can_multiclass else None,
-                'prerequisites': MULTICLASS_PREREQUISITES.get(char_class.name, {})
+                'prerequisites': get_multiclass_prerequisites(char_class.name, ruleset=character.ruleset_version)
             })
         
         return Response({
@@ -1484,7 +1490,7 @@ class CharacterViewSet(viewsets.ModelViewSet):
             'class_name': target_class.get_name_display(),
             'can_multiclass': can_multiclass,
             'reason': reason,
-            'prerequisites': MULTICLASS_PREREQUISITES.get(target_class.name, {})
+            'prerequisites': get_multiclass_prerequisites(target_class.name, ruleset=character.ruleset_version)
         })
     
     @action(detail=True, methods=['post'])
@@ -1831,7 +1837,7 @@ class CharacterViewSet(viewsets.ModelViewSet):
 
         if attuned_count >= 3:
             return Response(
-                {"error": "Cannot attune to more than 3 items at once (D&D 5e rule)"},
+                {"error": "Cannot attune to more than 3 items at once (SRD 5.2 5e rule)"},
                 status=status.HTTP_400_BAD_REQUEST
             )
 
@@ -2490,7 +2496,7 @@ class CharacterViewSet(viewsets.ModelViewSet):
         total_level = get_total_level(character)
         
         # Determine max spell level based on character level
-        # This follows the standard D&D 5e spell slot progression
+        # This follows the standard SRD 5.2 5e spell slot progression
         max_spell_level = 0
         if total_level >= 17:
             max_spell_level = 9

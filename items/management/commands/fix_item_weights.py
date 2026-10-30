@@ -4,10 +4,10 @@ from items.models import Armor, Weapon
 
 
 class Command(BaseCommand):
-    help = 'Updates missing weight data for standard D&D items'
+    help = 'Updates missing weight data for standard SRD 5.2 items'
 
     def handle(self, *args, **options):
-        # Standard D&D 5e armor weights (in pounds)
+        # Standard SRD 5.2 5e armor weights (in pounds)
         armor_weights = {
             'Padded': 8,
             'Leather': 10,
@@ -24,7 +24,7 @@ class Command(BaseCommand):
             'Shield': 6,
         }
 
-        # Standard D&D 5e weapon weights (in pounds)
+        # Standard SRD 5.2 5e weapon weights (in pounds)
         weapon_weights = {
             'Club': 2,
             'Dagger': 1,

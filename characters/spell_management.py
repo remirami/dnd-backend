@@ -1,5 +1,5 @@
 """
-Spell Management Utilities for D&D 5e Characters
+Spell Management Utilities for SRD 5.2 5e Characters
 
 Handles spell preparation, learning, and spellbook management.
 """

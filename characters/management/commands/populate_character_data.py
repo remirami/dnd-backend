@@ -4,10 +4,10 @@ from characters.models import CharacterBackground, CharacterClass, CharacterRace
 
 
 class Command(BaseCommand):
-    help = 'Populate D&D 5e character classes, races, and backgrounds'
+    help = 'Populate SRD 5.2 5e character classes, races, and backgrounds'
 
     def handle(self, *args, **options):
-        # D&D 5e Character Classes
+        # SRD 5.2 5e Character Classes
         classes = [
             {
                 'name': 'barbarian',
@@ -133,7 +133,7 @@ class Command(BaseCommand):
             )
             self.stdout.write(f'Created/updated class: {class_data["name"]}')
         
-        # D&D 5e Character Races
+        # SRD 5.2 5e Character Races
         races = [
             {
                 'name': 'human',
@@ -266,7 +266,7 @@ class Command(BaseCommand):
             )
             self.stdout.write(f'Created/updated race: {race_data["name"]}')
         
-        # D&D 5e Character Backgrounds
+        # SRD 5.2 5e Character Backgrounds
         backgrounds = [
             {
                 'name': 'acolyte',

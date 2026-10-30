@@ -1,5 +1,5 @@
 """
-D&D 5e Background Features
+SRD 5.2 5e Background Features
 
 This module contains background feature data for automatic application during character creation.
 Features are organized by background name.

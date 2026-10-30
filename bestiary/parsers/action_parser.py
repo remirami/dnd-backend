@@ -1,5 +1,5 @@
 """
-Action Parser for D&D 5e Monster Actions, Multiattacks, Traits, and Saving Throws.
+Action Parser for SRD 5.2 5e Monster Actions, Multiattacks, Traits, and Saving Throws.
 Extracts structured game mechanics from SRD descriptive text.
 """
 import re

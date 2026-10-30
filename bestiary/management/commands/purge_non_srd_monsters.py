@@ -116,6 +116,12 @@ SRD_MONSTER_NAMES = {
     "Young White Dragon",
     # Z
     "Zombie",
+    # SRD 5.2 Added Monsters
+    "Allosaurus", "Ankylosaurus", "Archelon", "Bugbear Stalker",
+    "Goblin Boss", "Goblin Minion", "Guard Captain", "Hippopotamus",
+    "Hobgoblin Captain", "Pirate", "Pirate Captain", "Pteranodon",
+    "Sphinx of Wonder", "Swarm of Crawling Claws", "Tough Boss",
+    "Troll Limb", "Vampire Familiar",
 }
 
 

@@ -1,6 +1,6 @@
 #!/usr/bin/env python
 """
-D&D 5e Combat Simulator Backend Setup Script
+SRD 5.2 5e Combat Simulator Backend Setup Script
 """
 
 import os
@@ -21,7 +21,7 @@ def run_command(command, description):
 
 def main():
     """Main setup function"""
-    print("🎲 Setting up D&D 5e Combat Simulator Backend...")
+    print("🎲 Setting up SRD 5.2 5e Combat Simulator Backend...")
     
     # Check if we're in the right directory
     if not os.path.exists('manage.py'):
@@ -39,8 +39,8 @@ def main():
         sys.exit(1)
     
     # Populate base data
-    if not run_command("python manage.py populate_dnd_data", "Populating D&D data"):
-        print("⚠️  Warning: Failed to populate D&D data. You can run this manually later.")
+    if not run_command("python manage.py populate_dnd_data", "Populating SRD 5.2 data"):
+        print("⚠️  Warning: Failed to populate SRD 5.2 data. You can run this manually later.")
     
     if not run_command("python manage.py populate_conditions_environments", "Populating conditions and environments"):
         print("⚠️  Warning: Failed to populate conditions and environments. You can run this manually later.")

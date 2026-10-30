@@ -1,5 +1,5 @@
 """
-Battlefield Grid & Tactical Pathfinding Engine for D&D 5e Combat.
+Battlefield Grid & Tactical Pathfinding Engine for SRD 5.2 5e Combat.
 
 Handles:
 - Procedural battlefield terrain layouts (identical seed matching frontend)

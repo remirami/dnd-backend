@@ -352,7 +352,7 @@ def has_attack_advantage_against(participant):
 
 def evaluate_attack_roll_conditions(attacker, target, is_melee=True):
     """
-    Evaluates both attacker and target conditions and active buffs for attack rolls according to D&D 5e rules.
+    Evaluates both attacker and target conditions and active buffs for attack rolls according to SRD 5.2 5e rules.
     Returns: (advantage, disadvantage, reasons)
     """
     advantage = False
@@ -428,7 +428,7 @@ def evaluate_attack_roll_conditions(attacker, target, is_melee=True):
 
 def is_auto_critical(attacker, target, is_melee=True):
     """
-    In D&D 5e, any attack that hits a paralyzed or unconscious creature is an automatic
+    In SRD 5.2 5e, any attack that hits a paralyzed or unconscious creature is an automatic
     critical hit if the attacker is within 5 feet (melee).
     """
     if not is_melee:

@@ -5,7 +5,7 @@ import random
 
 from django.db import transaction
 
-# D&D 5e Spell Slot Tables
+# SRD 5.2 5e Spell Slot Tables
 # Format: {class_name: {level: {slot_level: count}}}
 SPELL_SLOT_TABLES = {
     # Full Casters (Cleric, Druid, Wizard, Sorcerer, Bard)
@@ -141,7 +141,7 @@ def get_spellcasting_ability(character_class_name):
     return spellcasting_abilities.get(character_class_name, None)
 
 
-# XP values by Challenge Rating (D&D 5e)
+# XP values by Challenge Rating (SRD 5.2 5e)
 CR_TO_XP = {
     "0": 0,
     "1/8": 25,

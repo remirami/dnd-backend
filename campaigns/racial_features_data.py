@@ -1,5 +1,5 @@
 """
-D&D 5e Racial Features
+SRD 5.2 5e Racial Features
 
 This module contains racial feature data for automatic application during character creation.
 Features are organized by race name.

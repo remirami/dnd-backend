@@ -6,7 +6,7 @@ from bestiary.models import DamageType, Language
 
 
 class CharacterClass(models.Model):
-    """D&D 5e character classes"""
+    """SRD 5.2 5e character classes"""
     CLASS_CHOICES = [
         ('barbarian', 'Barbarian'),
         ('bard', 'Bard'),
@@ -46,7 +46,7 @@ class CharacterClass(models.Model):
 
 
 class CharacterRace(models.Model):
-    """D&D 5e character races"""
+    """SRD 5.2 5e character races"""
     RACE_CHOICES = [
         ('human', 'Human'),
         ('elf', 'Elf'),
@@ -80,7 +80,7 @@ class CharacterRace(models.Model):
 
 
 class CharacterBackground(models.Model):
-    """D&D 5e character backgrounds"""
+    """SRD 5.2 5e character backgrounds"""
     BACKGROUND_CHOICES = [
         ('acolyte', 'Acolyte'),
         ('criminal', 'Criminal'),
@@ -169,7 +169,7 @@ class Character(models.Model):
     # Experience points
     experience_points = models.IntegerField(default=0, validators=[MinValueValidator(0)])
     
-    # Currency (D&D standard denominations)
+    # Currency (SRD 5.2 standard denominations)
     gold_pieces = models.IntegerField(default=0, validators=[MinValueValidator(0)], help_text="Gold pieces (gp)")
     silver_pieces = models.IntegerField(default=0, validators=[MinValueValidator(0)], help_text="Silver pieces (sp)")
     copper_pieces = models.IntegerField(default=0, validators=[MinValueValidator(0)], help_text="Copper pieces (cp)")
@@ -187,7 +187,7 @@ class Character(models.Model):
     description = models.TextField(blank=True, null=True)
     backstory = models.TextField(blank=True, null=True)
     
-    # Personality traits (from D&D 5e backgrounds)
+    # Personality traits (from SRD 5.2 5e backgrounds)
     bonds = models.TextField(blank=True, null=True, help_text="Character's bonds (connections to people, places, or ideals)")
     flaws = models.TextField(blank=True, null=True, help_text="Character's flaws or weaknesses")
     ideals = models.TextField(blank=True, null=True, help_text="Character's ideals or beliefs")
@@ -252,7 +252,7 @@ class Character(models.Model):
 
 
 class CharacterStats(models.Model):
-    """Comprehensive D&D 5e stat block for player characters"""
+    """Comprehensive SRD 5.2 5e stat block for player characters"""
     character = models.OneToOneField(Character, on_delete=models.CASCADE, related_name="stats")
     
     # Core Stats (ability scores)
@@ -722,7 +722,7 @@ class CharacterItem(models.Model):
 
 
 class Feat(models.Model):
-    """D&D 5e feats that can be taken instead of ASI"""
+    """SRD 5.2 5e feats that can be taken instead of ASI"""
     
     name = models.CharField(max_length=100, unique=True)
     description = models.TextField()

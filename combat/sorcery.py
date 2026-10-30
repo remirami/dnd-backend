@@ -1,5 +1,5 @@
 """
-Sorcery Points and Metamagic System (D&D 5e Rules).
+Sorcery Points and Metamagic System (SRD 5.2 5e Rules).
 Implements Font of Magic (Sorcerer Level 2+) and Metamagic (Sorcerer Level 3+):
 - Font of Magic:
   - Converting Spell Slots to Sorcery Points (Bonus Action)

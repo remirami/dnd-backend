@@ -315,7 +315,7 @@ class CampaignCharacter(models.Model):
             return 0, "No hit dice of that type remaining"
         
         # Roll hit die (simplified: average of die + CON mod)
-        # In D&D 5e, you roll the die and add CON modifier
+        # In SRD 5.2 5e, you roll the die and add CON modifier
         import random
         die_size = int(dice_type[1:])  # Extract number from "d8" -> 8
         roll = random.randint(1, die_size)
@@ -472,7 +472,7 @@ class CharacterXP(models.Model):
         }
     
     def _calculate_level(self, xp):
-        """Calculate character level based on XP (D&D 5e progression)"""
+        """Calculate character level based on XP (SRD 5.2 5e progression)"""
         XP_THRESHOLDS = {
             1: 0,
             2: 300,

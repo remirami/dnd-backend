@@ -1,9 +1,9 @@
 #!/usr/bin/env python
-"""Filter the Open5e subclasses to only include official D&D 5e core subclasses"""
+"""Filter the Open5e subclasses to only include official SRD 5.2 5e core subclasses"""
 
 import re
 
-# Official D&D 5e core subclasses (from "5e Core Rules")
+# Official SRD 5.2 5e core subclasses (from "5e Core Rules")
 OFFICIAL_SUBCLASSES = {
     'Path of the Berserker',  # Barbarian
     'College of Lore',       # Bard
@@ -44,7 +44,7 @@ def filter_official_subclasses():
                 filtered_blocks.append(block)
 
     # Combine filtered blocks
-    result = "# Official D&D 5e Core Subclasses from Open5e\n"
+    result = "# Official SRD 5.2 5e Core Subclasses from Open5e\n"
     result += "# Only includes subclasses from '5e Core Rules'\n\n"
     result += ''.join(filtered_blocks)
 

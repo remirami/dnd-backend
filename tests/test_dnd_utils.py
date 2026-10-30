@@ -1,7 +1,7 @@
 """
-Tests for D&D 5e utility functions in core.dnd_utils
+Tests for SRD 5.2 5e utility functions in core.dnd_utils
 
-This test suite verifies that all D&D 5e game mechanic calculations
+This test suite verifies that all SRD 5.2 5e game mechanic calculations
 are implemented correctly according to the official rules.
 """
 

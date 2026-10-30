@@ -2,7 +2,7 @@
 
 ## 🎯 Overview
 
-Build a modern, responsive frontend for the D&D 5e Roguelike Gauntlet Backend using React and TypeScript.
+Build a modern, responsive frontend for the SRD 5.2 5e Roguelike Gauntlet Backend using React and TypeScript.
 
 ## 🛠️ Technology Stack Recommendation
 
@@ -336,7 +336,7 @@ apiClient.interceptors.response.use(
 ## 🎨 UI/UX Design Principles
 
 ### Visual Design
-- **Dark Mode First**: D&D aesthetic with dark backgrounds
+- **Dark Mode First**: SRD 5.2 aesthetic with dark backgrounds
 - **Fantasy Theme**: Medieval/fantasy-inspired UI elements
 - **Color Palette**:
   - Primary: Deep purple/blue (#4C1D95)

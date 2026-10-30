@@ -1,5 +1,5 @@
 """
-Logging configuration for D&D Backend API
+Logging configuration for SRD 5.2 Backend API
 
 Provides structured logging with file rotation and different log levels
 for various application components.

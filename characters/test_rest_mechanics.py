@@ -1,5 +1,5 @@
 """
-Automated Test Suite for D&D 5e Rest Mechanics & Hit Dice Recovery (Phase 10)
+Automated Test Suite for SRD 5.2 5e Rest Mechanics & Hit Dice Recovery (Phase 10)
 Rulesets Evaluated: SRD 5.1 & 2024 SRD 5.2
 """
 

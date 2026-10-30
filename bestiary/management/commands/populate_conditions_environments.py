@@ -4,10 +4,10 @@ from bestiary.models import Condition, Environment
 
 
 class Command(BaseCommand):
-    help = 'Populate D&D 5e conditions and environments'
+    help = 'Populate SRD 5.2 5e conditions and environments'
 
     def handle(self, *args, **options):
-        # D&D 5e Conditions
+        # SRD 5.2 5e Conditions
         conditions = [
             ('blinded', 'A blinded creature can\'t see and automatically fails any ability check that requires sight.'),
             ('charmed', 'A charmed creature can\'t attack the charmer or target the charmer with harmful abilities or magical effects.'),
@@ -33,7 +33,7 @@ class Command(BaseCommand):
             )
             self.stdout.write(f'Created condition: {condition_name}')
         
-        # D&D 5e Environments
+        # SRD 5.2 5e Environments
         environments = [
             'arctic', 'coastal', 'desert', 'forest', 'grassland', 
             'hill', 'mountain', 'swamp', 'underdark', 'underwater', 

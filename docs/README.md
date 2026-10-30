@@ -1,6 +1,6 @@
-# D&D Backend Documentation
+# SRD 5.2 Backend Documentation
 
-This directory contains essential documentation for the D&D 5e Backend system.
+This directory contains essential documentation for the SRD 5.2 5e Backend system.
 
 ## 📚 Documentation Structure
 

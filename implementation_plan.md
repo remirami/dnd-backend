@@ -385,8 +385,8 @@ Currently, development operates on a local file-based SQLite database (`db.sqlit
 1. **High Concurrency & Combat Turn Collisions**:
    - In real-time tactical combat, multiple combatants (players and AI threads), reactions, and background WebSocket sync loops make simultaneous writes.
    - SQLite uses file-level locking, resulting in `OperationalError: database is locked` during concurrent combat updates. Production systems require **row-level locking** (`select_for_update`) so atomic HP changes, spell slot deductions, and reaction prompts occur without race conditions or locks.
-2. **Dynamic JSON Schemas & Deep D&D Data Structures**:
-   - D&D 5e features complex nested schemas: spell slot trackers (`{"1": {"total": 4, "used": 1}}`), paperdoll equipment slots, dynamic ability bonuses, and environmental hazard coordinates.
+2. **Dynamic JSON Schemas & Deep SRD 5.2 Data Structures**:
+   - SRD 5.2 5e features complex nested schemas: spell slot trackers (`{"1": {"total": 4, "used": 1}}`), paperdoll equipment slots, dynamic ability bonuses, and environmental hazard coordinates.
    - Requires native binary JSON indexing (`JSONB` with GIN indexes) for rapid querying, filtering, and atomic field modifications without pulling the entire record into Python memory.
 3. **Massive Relational Catalog**:
    - Over 3,200+ Bestiary monsters, 300+ spells, items, feats, and character progression trees require strict ACID foreign keys, cascade safety, and fast relational joins (`select_related` / `prefetch_related`).
@@ -466,7 +466,7 @@ graph TD
 
 ## 9. Frontend Architecture & Master Layout Overhaul Plan
 
-Based on the verified UI mockups and design references, a full layout overhaul is specified with an antique dark-and-gold D&D 5e theme:
+Based on the verified UI mockups and design references, a full layout overhaul is specified with an antique dark-and-gold SRD 5.2 5e theme:
 
 ### 1. Official Color Palette & Design Tokens
 - **Background (`#0c0d12`)**: Deep obsidian midnight backdrop.
@@ -1020,7 +1020,7 @@ Phase 2: Bestiary & Monster Abilities Import [COMPLETED]
 ├── High-precision regex parsing engine (bestiary/parsers/action_parser.py)
 ├── 2,321 SRD monsters parsed and migrated in Neon PostgreSQL (7,522 actions, 7,384 damages, 6,617 traits)
 ├── Start-of-turn d6 recharge rolls, breath weapon saving throws, and Pack Tactics advantage
-└── Authentic D&D 5e MonsterStatblockModal.tsx with live recharge indicators
+└── Authentic SRD 5.2 5e MonsterStatblockModal.tsx with live recharge indicators
 
 Phase 3: Gauntlet Mode v0.1 (Wave Survival) [COMPLETED]
 ├── Procedural Wave Escalation engine across Waves 1–10 + Endless Overtime (CR scaling by party level)

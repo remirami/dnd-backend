@@ -217,7 +217,7 @@ def main():
     print("""
     ============================================================
     
-         D&D API Integration Test
+         SRD 5.2 API Integration Test
     
          This script tests the integration between:
          - Open5e API imports
@@ -244,11 +244,11 @@ def main():
     test_integration()
     
     print_section("[SUCCESS] All Tests Complete!")
-    print("Your treasure and encounter systems are now using real D&D content!")
+    print("Your treasure and encounter systems are now using real SRD 5.2 content!")
     print("\nNext steps:")
     print("  1. Create a campaign via the API")
     print("  2. Start encounters")
-    print("  3. Collect treasure with real D&D items!")
+    print("  3. Collect treasure with real SRD 5.2 items!")
     print()
 
 

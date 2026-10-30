@@ -1,6 +1,6 @@
 """
-Automated Test Suite for D&D 2024 Cumulative Exhaustion Engine (Phase 13)
-Ruleset: 2024 D&D Rules (Cumulative Levels 1-10)
+Automated Test Suite for SRD 5.2 2024 Cumulative Exhaustion Engine (Phase 13)
+Ruleset: 2024 SRD 5.2 Rules (Cumulative Levels 1-10)
 """
 
 from unittest import mock

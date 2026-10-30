@@ -4,10 +4,10 @@ from bestiary.models import DamageType, Language
 
 
 class Command(BaseCommand):
-    help = 'Populate basic D&D 5e damage types and languages'
+    help = 'Populate basic SRD 5.2 5e damage types and languages'
 
     def handle(self, *args, **options):
-        # D&D 5e Damage Types
+        # SRD 5.2 5e Damage Types
         damage_types = [
             'Acid', 'Bludgeoning', 'Cold', 'Fire', 'Force', 'Lightning',
             'Necrotic', 'Piercing', 'Poison', 'Psychic', 'Radiant', 'Slashing',
@@ -18,7 +18,7 @@ class Command(BaseCommand):
             DamageType.objects.get_or_create(name=damage_type)
             self.stdout.write(f'Created damage type: {damage_type}')
         
-        # Common D&D 5e Languages
+        # Common SRD 5.2 5e Languages
         languages = [
             'Common', 'Dwarvish', 'Elvish', 'Giant', 'Gnomish', 'Goblin',
             'Halfling', 'Orc', 'Abyssal', 'Celestial', 'Draconic', 'Deep Speech',

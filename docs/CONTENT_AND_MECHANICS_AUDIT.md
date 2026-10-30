@@ -1,7 +1,7 @@
 # 5E Project — Content and Mechanics Audit Report
 
 **Date:** October 2026  
-**Rulesets Evaluated:** D&D 5e (2014 SRD 5.1 & 2024 SRD 5.2 / PHB)  
+**Rulesets Evaluated:** SRD 5.2 5e (2014 SRD 5.1 & 2024 SRD 5.2 / PHB)  
 **System Architecture:** Django REST Framework (Backend) + Next.js Turbopack (Frontend)  
 **Testing Protocol Reference:** [AGENT_INSTRUCTIONS.md](file:///c:/dnd-backend/dnd-backend/AGENT_INSTRUCTIONS.md)
 
@@ -88,12 +88,11 @@ This audit assesses the state of gameplay mechanics, data sources, automated tes
 | **Halfling** | 2014 & 2024 | Lucky (automatic reroll on d20 natural 1), Halfling Nimbleness (move through larger creatures), Brave (advantage vs frightened). |
 | **Dragonborn** | 2014 & 2024 | Breath Weapon (elemental save damage), Damage Resistance (draconic element), Darkvision. |
 | **Gnome** | 2014 & 2024 | Darkvision, Gnome Cunning (advantage on INT/WIS/CHA magic saving throws). |
-| **Half-Elf** | 2014 & 2024 | Darkvision, Fey Ancestry, Skill Versatility (two bonus skills). |
-| **Half-Orc** | 2014 & 2024 | Darkvision, Menacing (Intimidation), Relentless Endurance (drop to 1 HP instead of 0 once/long rest), Savage Attacks (extra weapon die on crit). |
+| **Half-Elf** | 2014 Only (Legacy) | Darkvision, Fey Ancestry, Skill Versatility (two bonus skills). Removed in 2024 / SRD 5.2. |
+| **Half-Orc** | 2014 Only (Legacy) | Darkvision, Menacing (Intimidation), Relentless Endurance (drop to 1 HP instead of 0 once/long rest), Savage Attacks (extra weapon die on crit). Removed in 2024 / SRD 5.2. |
 | **Tiefling** | 2014 & 2024 | Darkvision, Hellish Resistance (fire damage resistance), Infernal Legacy / Thaumaturgy. |
-| **Orc** | 2024 | Darkvision (120 ft.), Relentless Endurance, Adrenaline Rush (bonus action dash + temp HP). |
-| **Goliath** | 2024 | 35 ft. base speed, Powerful Build, Giant Ancestry, Large Form (level 5). |
-| **Aasimar** | 2024 | Darkvision, Celestial Resistance (Necrotic & Radiant resistance), Healing Hands, Light Bearer, Celestial Revelation. |
+| **Orc** | 2024 | Darkvision (120 ft.), Relentless Endurance, Adrenaline Rush (bonus action dash + temp HP). Added in SRD 5.2. |
+| **Goliath** | 2024 | 35 ft. base speed, Powerful Build, Giant Ancestry, Large Form (level 5). Added in SRD 5.2. |
 
 ---
 
@@ -205,7 +204,7 @@ The backend suite currently runs **73 test modules** comprising **135 automated 
    - *Summoning / Companion Spells*: Spells such as *Conjure Animals*, *Animate Dead*, and *Spiritual Weapon* (independent bonus-action movement attack) require automated minion / token participant generation on the initiative tracker.
 
 5. **Subclass Combat Specialization (SRD 5.2 Reference Alignment)**:
-   - *Reference Scope Boundary*: Under the official D&D 5E System Reference Document (SRD 5.1 and 2024 SRD 5.2), **only exactly 12 official subclasses** (one for each core class) are included. Commercial Player's Handbook subclasses (such as *Battle Master*, *Eldritch Knight*, *Assassin*, *Divination*, *Wild Magic*, etc.) are closed-content outside the SRD and were completely removed to maintain clean legal compliance.
+   - *Reference Scope Boundary*: Under the official SRD 5.2 5E System Reference Document (SRD 5.1 and 2024 SRD 5.2), **only exactly 12 official subclasses** (one for each core class) are included. Commercial Player's Handbook subclasses (such as *Battle Master*, *Eldritch Knight*, *Assassin*, *Divination*, *Wild Magic*, etc.) are closed-content outside the SRD and were completely removed to maintain clean legal compliance.
    - *Official SRD 5.2 Subclass List*:
      1. **Barbarian**: *Path of the Berserker*
      2. **Bard**: *College of Lore*
@@ -489,7 +488,7 @@ In accordance with the Testing Protocol (smallest useful increments):
       - Zero TypeScript errors (`npx tsc --noEmit` clean).
       - Full combat regression suite: 240+ tests passing.
 15. **Phase 15: 2024 Cumulative Exhaustion Engine (Levels 1–10, d20 Penalty, DC, Speed, Death, Long Rest Recovery)** — **DONE**
-    - **D&D 2024 Rules Standard**:
+    - **SRD 5.2 2024 Rules Standard**:
       - Cumulative 10-level scale replacing the 2014 tiered system.
       - **d20 Tests Penalty**: Subtracts Exhaustion level from all Attack Rolls, Ability Checks, and Saving Throws.
       - **Spell Save DC**: Subtracts Exhaustion level from caster's Spell Save DC.

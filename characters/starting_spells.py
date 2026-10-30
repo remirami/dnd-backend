@@ -1,5 +1,5 @@
 """
-Starting Spell Selection Rules for D&D 5e Classes
+Starting Spell Selection Rules for SRD 5.2 5e Classes
 
 Defines how many cantrips and spells each class gets at level 1,
 and the rules for spell selection (prepared vs. known casters).

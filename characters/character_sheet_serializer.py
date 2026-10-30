@@ -185,7 +185,7 @@ class CharacterSheetSerializer(serializers.ModelSerializer):
             .values_list('skill_name', flat=True)
         )
         
-        # D&D 5e skill list with ability associations
+        # SRD 5.2 5e skill list with ability associations
         skills_list = {
             'Acrobatics': ('dexterity', stats.dexterity),
             'Animal Handling': ('wisdom', stats.wisdom),

@@ -1,5 +1,5 @@
 """
-D&D 5e / SRD 5.2 Summoning & Persistent Minion / Token Spells Engine
+SRD 5.2 5e / SRD 5.2 Summoning & Persistent Minion / Token Spells Engine
 
 Supports:
 - Persistent Spell Objects:

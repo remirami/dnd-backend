@@ -109,7 +109,7 @@ class AbilityScoreValidator:
 
 
 def calculate_ability_modifier(score):
-    """Calculate D&D ability modifier from score."""
+    """Calculate SRD 5.2 ability modifier from score."""
     return (score - 10) // 2
 
 

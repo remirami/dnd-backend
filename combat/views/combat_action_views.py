@@ -1415,7 +1415,7 @@ class CombatActionMixin:
         casting_time = data.get('casting_time', '') or request.data.get('casting_time', '')
         half_on_save = data.get('half_on_save', True)
         
-        # Metamagic handling (D&D 5e Sorcerer feature)
+        # Metamagic handling (SRD 5.2 5e Sorcerer feature)
         metamagic = (data.get('metamagic') or request.data.get('metamagic') or '').strip().lower()
         twinned_target_id = data.get('twinned_target_id') or request.data.get('twinned_target_id')
         careful_target_ids = data.get('careful_target_ids') or request.data.get('careful_target_ids') or []
@@ -2186,7 +2186,9 @@ class CombatActionMixin:
             targets = [t for t in targets if t.id != caster.id]
 
         # Resolve fallbacks for save_type, damage_string, and damage_type from spell rules if not provided
-        rule_def = rule_def or SPELL_RULES.get(clean_spell_name) or {}
+        from combat.spell_rules import get_spell_rule
+        caster_ruleset = getattr(getattr(caster, 'character', None), 'ruleset_version', '2014')
+        rule_def = rule_def or get_spell_rule(clean_spell_name, ruleset=caster_ruleset)
 
         # 5e Cantrip scaling based on character level / CR & Leveled Spell Upcasting
         from combat.spell_rules import is_cantrip, scale_cantrip_damage, scale_upcast_spell_damage, get_spell_base_level
@@ -2452,7 +2454,7 @@ class CombatActionMixin:
                     dx, dy, dist = 1, 0, 1
                 dir_x = 1 if dx > 0 else (-1 if dx < 0 else 0)
                 dir_y = 1 if dy > 0 else (-1 if dy < 0 else 0)
-                # D&D 5E: pushed 10 feet away (2 squares)
+                # SRD 5.2 5E: pushed 10 feet away (2 squares)
                 if abs(dx) > abs(dy) * 1.5:
                     step_x = dir_x * 10
                     step_y = 0

@@ -1192,7 +1192,7 @@ class CantripScalingTests(TestCase):
 
 class SpellUpcastingTests(TestCase):
     """
-    D&D 5e Upcasting Tests ('At Higher Levels'):
+    SRD 5.2 5e Upcasting Tests ('At Higher Levels'):
     Verifies that leveled spells scale appropriately when cast with higher-level spell slots.
     """
     def setUp(self):

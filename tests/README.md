@@ -39,7 +39,7 @@ tests/
   - Database content verification
 
 ### Character System
-- **test_all_classes.py** - Verifies all 12 D&D classes have features defined
+- **test_all_classes.py** - Verifies all 12 SRD 5.2 classes have features defined
   
 - **test_subclass_and_racial_features.py** - Character features testing
   - Racial feature application

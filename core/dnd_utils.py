@@ -1,7 +1,7 @@
 """
-D&D 5e calculation utilities
+SRD 5.2 5e calculation utilities
 
-This module provides standard D&D 5e game mechanics calculations
+This module provides standard SRD 5.2 5e game mechanics calculations
 that are used throughout the application.
 """
 

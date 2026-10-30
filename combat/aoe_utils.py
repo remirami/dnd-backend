@@ -51,7 +51,7 @@ def get_targets_in_cone(participants, caster_x, caster_y, target_x, target_y, le
         target_x: X coordinate of cone direction
         target_y: Y coordinate of cone direction
         length: Length of cone in feet (15, 30, 60)
-        width: Width at end (defaults to length for standard D&D cones)
+        width: Width at end (defaults to length for standard SRD 5.2 cones)
     
     Returns:
         List of (participant, distance) tuples

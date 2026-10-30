@@ -1,5 +1,5 @@
 """
-Multiclassing System for D&D 5e Characters
+Multiclassing System for SRD 5.2 5e Characters
 
 Handles multiclass prerequisites, spell slot calculation, and feature progression.
 """
@@ -7,7 +7,8 @@ Handles multiclass prerequisites, spell slot calculation, and feature progressio
 
 
 # Multiclass prerequisites (ability score requirements)
-MULTICLASS_PREREQUISITES = {
+# 2014 Rules
+MULTICLASS_PREREQUISITES_2014 = {
     'Barbarian': {'strength': 13},
     'Bard': {'charisma': 13},
     'Cleric': {'wisdom': 13},
@@ -21,6 +22,151 @@ MULTICLASS_PREREQUISITES = {
     'Warlock': {'charisma': 13},
     'Wizard': {'intelligence': 13},
 }
+
+# 2024 Rules (SRD 5.2): Paladin & Ranger can qualify via STR or DEX
+MULTICLASS_PREREQUISITES_2024 = {
+    'Barbarian': {'strength': 13},
+    'Bard': {'charisma': 13},
+    'Cleric': {'wisdom': 13},
+    'Druid': {'wisdom': 13},
+    'Fighter': {'strength': 13, 'dexterity': 13},  # STR or DEX
+    'Monk': {'dexterity': 13, 'wisdom': 13},
+    'Paladin': {'strength': 13, 'dexterity': 13, 'charisma': 13},  # (STR or DEX) and CHA
+    'Ranger': {'strength': 13, 'dexterity': 13, 'wisdom': 13},     # (STR or DEX) and WIS
+    'Rogue': {'dexterity': 13},
+    'Sorcerer': {'charisma': 13},
+    'Warlock': {'charisma': 13},
+    'Wizard': {'intelligence': 13},
+}
+
+MULTICLASS_PREREQUISITES = MULTICLASS_PREREQUISITES_2014
+
+
+def get_multiclass_prerequisites(class_name, ruleset='2014'):
+    """Get prerequisites dictionary for a class by name and ruleset"""
+    norm = class_name.title() if class_name else ''
+    prereqs_dict = MULTICLASS_PREREQUISITES_2024 if ruleset == '2024' else MULTICLASS_PREREQUISITES_2014
+    return prereqs_dict.get(norm, {})
+
+
+def check_class_prerequisites(stats, class_name, ruleset='2014'):
+    """
+    Check if a set of stats meets the multiclass prerequisites for a specific class.
+    Returns: (meets_prereqs, missing_requirements_list)
+    """
+    if not stats or not class_name:
+        return False, ["Missing stats or class"]
+
+    norm = class_name.title()
+    missing = []
+
+    if norm == 'Fighter':
+        if stats.strength < 13 and stats.dexterity < 13:
+            missing.append("STR 13 or DEX 13")
+    elif norm == 'Monk':
+        if stats.dexterity < 13:
+            missing.append("DEX 13")
+        if stats.wisdom < 13:
+            missing.append("WIS 13")
+    elif norm == 'Paladin':
+        if ruleset == '2024':
+            if stats.strength < 13 and stats.dexterity < 13:
+                missing.append("STR 13 or DEX 13")
+        else:
+            if stats.strength < 13:
+                missing.append("STR 13")
+        if stats.charisma < 13:
+            missing.append("CHA 13")
+    elif norm == 'Ranger':
+        if ruleset == '2024':
+            if stats.strength < 13 and stats.dexterity < 13:
+                missing.append("STR 13 or DEX 13")
+        else:
+            if stats.dexterity < 13:
+                missing.append("DEX 13")
+        if stats.wisdom < 13:
+            missing.append("WIS 13")
+    else:
+        prereqs = get_multiclass_prerequisites(norm, ruleset)
+        if not prereqs:
+            return False, [f"No prerequisites defined for {norm}"]
+        for ability, minimum in prereqs.items():
+            val = getattr(stats, ability, 0)
+            if val < minimum:
+                missing.append(f"{ability.upper()} {minimum}")
+
+    return (len(missing) == 0), missing
+
+
+# Multiclass proficiencies granted upon taking 1st level in a multiclass
+MULTICLASS_PROFICIENCIES = {
+    'barbarian': {
+        'armor': ['Shields'],
+        'weapon': ['Simple Weapons', 'Martial Weapons']
+    },
+    'bard': {
+        'armor': ['Light Armor'],
+        'tool': ['Musical Instrument']
+    },
+    'cleric': {
+        'armor': ['Light Armor', 'Medium Armor', 'Shields']
+    },
+    'druid': {
+        'armor': ['Light Armor', 'Medium Armor', 'Shields']
+    },
+    'fighter': {
+        'armor': ['Light Armor', 'Medium Armor', 'Shields'],
+        'weapon': ['Simple Weapons', 'Martial Weapons']
+    },
+    'monk': {
+        'weapon': ['Simple Weapons', 'Shortswords']
+    },
+    'paladin': {
+        'armor': ['Light Armor', 'Medium Armor', 'Shields'],
+        'weapon': ['Simple Weapons', 'Martial Weapons']
+    },
+    'ranger': {
+        'armor': ['Light Armor', 'Medium Armor', 'Shields'],
+        'weapon': ['Simple Weapons', 'Martial Weapons']
+    },
+    'rogue': {
+        'armor': ['Light Armor'],
+        'tool': ["Thieves' Tools"]
+    },
+    'sorcerer': {},
+    'warlock': {
+        'armor': ['Light Armor'],
+        'weapon': ['Simple Weapons']
+    },
+    'wizard': {},
+}
+
+
+def apply_multiclass_proficiencies(character, new_class_name):
+    """
+    Grant multiclass proficiencies when gaining the first level in a new class.
+    Returns list of granted CharacterProficiency instances.
+    """
+    from .models import CharacterProficiency
+
+    key = new_class_name.lower()
+    profs_data = MULTICLASS_PROFICIENCIES.get(key, {})
+    granted = []
+
+    for category, items in profs_data.items():
+        for item in items:
+            prof, created = CharacterProficiency.objects.get_or_create(
+                character=character,
+                proficiency_type=category,
+                item_name=item,
+                defaults={
+                    'source': f"Multiclass ({new_class_name.title()})"
+                }
+            )
+            if created:
+                granted.append(prof)
+
+    return granted
 
 
 # Spellcasting classes and their spellcasting ability
@@ -54,6 +200,8 @@ PACT_MAGIC = ['Warlock']
 def can_multiclass_into(character, target_class_name):
     """
     Check if character meets prerequisites to multiclass into target class.
+    Under 5e rules, a character must meet the ability score prerequisites
+    for BOTH their current class(es) AND the new target class.
     Returns: (can_multiclass, reason)
     """
     if not character.stats:
@@ -61,53 +209,28 @@ def can_multiclass_into(character, target_class_name):
     
     # Check if already has this class
     from .models import CharacterClassLevel
-    if CharacterClassLevel.objects.filter(character=character, character_class__name=target_class_name).exists():
+    if CharacterClassLevel.objects.filter(character=character, character_class__name__iexact=target_class_name).exists():
         return False, f"Already has levels in {target_class_name}"
     
-    # Normalize class name to title case for lookup (models store lowercase, dict uses Title Case)
-    normalized_class_name = target_class_name.title()
-    
-    # Get prerequisites
-    prerequisites = MULTICLASS_PREREQUISITES.get(normalized_class_name, {})
-    
-    if not prerequisites:
-        return False, f"No prerequisites defined for {normalized_class_name}"
-    
-    # Check ability score requirements
+    ruleset = getattr(character, 'ruleset_version', '2014')
     stats = character.stats
-    missing_requirements = []
     
-    # Fighter can use STR or DEX
-    if normalized_class_name == 'Fighter':
-        if stats.strength < 13 and stats.dexterity < 13:
-            missing_requirements.append("STR 13 or DEX 13")
-    # Monk needs DEX and WIS
-    elif normalized_class_name == 'Monk':
-        if stats.dexterity < 13:
-            missing_requirements.append("DEX 13")
-        if stats.wisdom < 13:
-            missing_requirements.append("WIS 13")
-    # Paladin needs STR and CHA
-    elif normalized_class_name == 'Paladin':
-        if stats.strength < 13:
-            missing_requirements.append("STR 13")
-        if stats.charisma < 13:
-            missing_requirements.append("CHA 13")
-    # Ranger needs DEX and WIS
-    elif normalized_class_name == 'Ranger':
-        if stats.dexterity < 13:
-            missing_requirements.append("DEX 13")
-        if stats.wisdom < 13:
-            missing_requirements.append("WIS 13")
-    # All others need single ability score
-    else:
-        for ability, minimum in prerequisites.items():
-            ability_value = getattr(stats, ability, 0)
-            if ability_value < minimum:
-                missing_requirements.append(f"{ability.upper()} {minimum}")
-    
-    if missing_requirements:
-        return False, f"Missing prerequisites: {', '.join(missing_requirements)}"
+    # 1. Verify current class(es) prerequisites
+    current_classes = list(character.class_levels.all())
+    if not current_classes and character.character_class:
+        # Fallback to primary class if class_levels not yet populated
+        current_classes = [type('DummyClassLevel', (), {'character_class': character.character_class})()]
+        
+    for cl in current_classes:
+        cur_name = cl.character_class.name
+        meets, missing = check_class_prerequisites(stats, cur_name, ruleset)
+        if not meets:
+            return False, f"Missing prerequisites for current class {cur_name.title()}: {', '.join(missing)}"
+            
+    # 2. Verify target class prerequisites
+    meets, missing = check_class_prerequisites(stats, target_class_name, ruleset)
+    if not meets:
+        return False, f"Missing prerequisites for {target_class_name.title()}: {', '.join(missing)}"
     
     return True, "Prerequisites met"
 
@@ -123,6 +246,7 @@ def _get_class_levels(character):
 def calculate_multiclass_spell_slots(character):
     """
     Calculate spell slots for a multiclass character based on 5e rules.
+    Under 2024 rules (SRD 5.2), half-caster levels round up.
     Returns: dict mapping spell level to number of slots
     """
     class_levels = _get_class_levels(character)
@@ -132,6 +256,7 @@ def calculate_multiclass_spell_slots(character):
     
     # Calculate caster level
     caster_level = 0
+    is_2024 = getattr(character, 'ruleset_version', '2014') == '2024'
     
     for class_level in class_levels:
         class_name = class_level.character_class.name
@@ -142,10 +267,15 @@ def calculate_multiclass_spell_slots(character):
         if class_name_capitalized in FULL_CASTERS or class_name in FULL_CASTERS:
             caster_level += level
         elif class_name_capitalized in HALF_CASTERS or class_name in HALF_CASTERS:
-            caster_level += level // 2
+            if is_2024:
+                # 2024 SRD 5.2: half-caster levels round up
+                caster_level += (level + 1) // 2
+            else:
+                # 2014 rules: half-caster levels round down
+                caster_level += level // 2
         elif class_name_capitalized in THIRD_CASTERS or class_name in THIRD_CASTERS:
             caster_level += level // 3
-        # Warlock doesn't contribute to spell slot calculation
+        # Warlock doesn't contribute to standard multiclass spell slots (Pact Magic)
     
     # Multiclass spell slot table
     MULTICLASS_SPELL_SLOTS = {

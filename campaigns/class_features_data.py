@@ -1,5 +1,5 @@
 """
-D&D 5e Class Features by Level
+SRD 5.2 5e Class Features by Level
 
 This module contains class feature data for automatic application during level-up.
 Features are organized by class and level.
@@ -1827,7 +1827,7 @@ AVAILABLE_SUBCLASSES_2024 = {
 
 
 # Subclass features by subclass name and level
-# Only includes official D&D 5e Core Rules subclasses from Open5e
+# Only includes official SRD 5.2 5e Core Rules subclasses from Open5e
 SUBCLASS_FEATURES_2014 = {
     'Champion': {
         3: [
@@ -2648,20 +2648,15 @@ SUBCLASS_FEATURES_2014 = {
 }
 
 
-# 2024 Epic Boon Options
+# 2024 Epic Boon Options (SRD 5.2 approved - 7 Boons)
 EPIC_BOON_OPTIONS = [
     'Boon of Combat Prowess',
     'Boon of Dimensional Travel',
-    'Boon of Energy Resistance',
     'Boon of Fate',
-    'Boon of Fortitude',
     'Boon of Irresistible Offense',
-    'Boon of Recovery',
-    'Boon of Speed',
-    'Boon of Spell Recall',
     'Boon of the Night Spirit',
-    'Boon of Truesight',
-    'Boon of Undetectability'
+    'Boon of Spell Recall',
+    'Boon of Truesight'
 ]
 
 # 2024 Weapon Mastery Options
@@ -3020,35 +3015,7 @@ CLASS_FEATURES_2024 = {
         19: [{'name': 'Epic Boon', 'description': 'Choose an Epic Boon feat.', 'options': EPIC_BOON_OPTIONS, 'choice_limit': 1}],
         20: [{'name': 'Archdruid', 'description': 'Unlimited Wild Shape usage; ignore subtle spell components.'}]
     },
-    'Monk': {
-        19: [{'name': 'Epic Boon', 'description': 'Choose an Epic Boon feat.', 'options': EPIC_BOON_OPTIONS, 'choice_limit': 1}]
-    },
-    'Paladin': {
-        1: [
-            {'name': 'Lay on Hands', 'description': 'Pool of healing power (5 x Paladin level).'},
-            {'name': 'Spellcasting', 'description': 'Prepare spells equal to Level/2 + CHA mod.'},
-             {
-                'name': 'Weapon Mastery', 
-                'description': 'Choose 2 weapons to master.',
-                'options': WEAPON_MASTERY_OPTIONS,
-                'choice_limit': 2
-            }
-        ],
-        19: [{'name': 'Epic Boon', 'description': 'Choose an Epic Boon feat.', 'options': EPIC_BOON_OPTIONS, 'choice_limit': 1}]
-    },
-    'Ranger': {
-        1: [
-            {'name': 'Spellcasting', 'description': 'Wisdom-based spellcasting.'},
-            {'name': 'Favored Enemy', 'description': 'You always have Hunter\'s Mark prepared.'},
-             {
-                'name': 'Weapon Mastery', 
-                'description': 'Choose 2 weapons to master.',
-                'options': WEAPON_MASTERY_OPTIONS,
-                'choice_limit': 2
-            }
-        ],
-        19: [{'name': 'Epic Boon', 'description': 'Choose an Epic Boon feat.', 'options': EPIC_BOON_OPTIONS, 'choice_limit': 1}]
-    },
+
     'Rogue': {
         1: [
             {'name': 'Expertise', 'description': 'Double proficiency in 2 skills (or 1 skill + Thieves\' Tools).'},

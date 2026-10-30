@@ -1426,7 +1426,7 @@ class CombatParticipant(models.Model):
         else:
             self.conditions.remove(exhaustion_cond)
 
-        # 2024 D&D Rules: Level 10 Exhaustion is fatal
+        # 2024 SRD 5.2 Rules: Level 10 Exhaustion is fatal
         if lvl >= 10:
             self.current_hp = 0
             self.is_active = False
@@ -2581,7 +2581,7 @@ class CombatParticipant(models.Model):
             mod = self.get_ability_modifier(ability)
             base_dc = 8 + prof + mod
         
-        # 2024 D&D Rules: Subtract exhaustion level from spell save DC
+        # 2024 SRD 5.2 Rules: Subtract exhaustion level from spell save DC
         ex_level = self.get_exhaustion_level()
         if ex_level > 0:
             base_dc = max(1, base_dc - ex_level)

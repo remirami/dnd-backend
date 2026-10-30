@@ -4,29 +4,39 @@ from characters.models import Character, CharacterBackground, Feat
 
 
 class Command(BaseCommand):
-    help = 'Purge all non-SRD feats and backgrounds from the database.'
+    help = 'Purge non-SRD feats and backgrounds from the database based on SRD 5.2.'
 
     def handle(self, *args, **options):
         # 0. Get/Ensure SRD Target (Acolyte)
-        try:
-            acolyte = CharacterBackground.objects.get(name='acolyte')
-        except CharacterBackground.DoesNotExist:
+        acolyte = CharacterBackground.objects.filter(name__iexact='acolyte').first()
+        if not acolyte:
             self.stdout.write(self.style.ERROR("Acolyte background not found. Run populate_character_data first."))
             return
 
-        # 1. Reassign Characters with non-SRD backgrounds
-        srd_backgrounds = ['acolyte']
-        non_srd_chars = Character.objects.exclude(background__name__in=srd_backgrounds).exclude(background__isnull=True)
+        # 1. Allowed SRD 5.2 Backgrounds (case-insensitive)
+        srd_background_names = ['acolyte', 'criminal', 'sage', 'soldier']
+        non_srd_bgs = CharacterBackground.objects.exclude(name__iregex=r'^(' + '|'.join(srd_background_names) + r')$')
+        
+        # Reassign Characters with non-SRD backgrounds
+        non_srd_chars = Character.objects.filter(background__in=non_srd_bgs)
         count = non_srd_chars.count()
         if count > 0:
-            self.stdout.write(f"Reassigning {count} characters to 'acolyte' background...")
+            self.stdout.write(f"Reassigning {count} characters to '{acolyte.name}' background...")
             non_srd_chars.update(background=acolyte)
         
-        # 2. Purge Backgrounds
-        deleted_bgs, _ = CharacterBackground.objects.exclude(name__in=srd_backgrounds).delete()
+        # 2. Purge Non-SRD Backgrounds
+        deleted_bgs, _ = non_srd_bgs.delete()
         self.stdout.write(self.style.SUCCESS(f'Deleted {deleted_bgs} non-SRD backgrounds.'))
 
-        # 3. Purge Feats (Keep only Grappler)
-        srd_feats = ['Grappler']
-        deleted_feats, _ = Feat.objects.exclude(name__in=srd_feats).delete()
+        # 3. Allowed SRD 5.2 Feats
+        srd_feat_names = [
+            'Alert', 'Magic Initiate', 'Savage Attacker', 'Skilled',
+            'Ability Score Improvement', 'Archery', 'Defense',
+            'Great Weapon Fighting', 'Two Weapon Fighting',
+            'Boon of Combat Prowess', 'Boon of Dimensional Travel', 'Boon of Fate',
+            'Boon of Irresistible Offense', 'Boon of the Night Spirit',
+            'Boon of Spell Recall', 'Boon of Truesight', 'Grappler'
+        ]
+        non_srd_feats = Feat.objects.exclude(name__in=srd_feat_names)
+        deleted_feats, _ = non_srd_feats.delete()
         self.stdout.write(self.style.SUCCESS(f'Deleted {deleted_feats} non-SRD feats.'))

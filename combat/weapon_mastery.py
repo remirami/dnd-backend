@@ -1,5 +1,5 @@
 """
-Weapon Mastery System (D&D 5e 2024 Rules).
+Weapon Mastery System (SRD 5.2 5e 2024 Rules).
 Implements the 8 official 2024 Weapon Mastery properties:
 - Cleave (Greataxe, Halberd)
 - Graze (Glaive, Greatsword)

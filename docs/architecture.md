@@ -1,7 +1,7 @@
 # DnD Combat Simulator – Architecture Blueprint
 
 ## 🎯 Goal
-Build a D&D 5e Combat Simulator Web App with structured data, party vs monsters, combat logs, and future analytics.
+Build a SRD 5.2 5e Combat Simulator Web App with structured data, party vs monsters, combat logs, and future analytics.
 
 ## 🏗 Tech Stack
 - **Backend:** Django + Django REST Framework (DRF)
@@ -34,7 +34,7 @@ dnd_backend/
 - **Encounter** (M2M characters, M2M enemies)
 - **CombatLog** (encounter, message, timestamp)
 
-## ⚔️ Gameplay Rules (D&D 5e)
+## ⚔️ Gameplay Rules (SRD 5.2 5e)
 - Initiative
 - d20 to hit vs AC
 - Damage dice rolls

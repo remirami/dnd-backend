@@ -9,7 +9,7 @@ except ImportError:
 
 
 class DnDBeyondAPI:
-    """Integration with D&D Beyond API for monster data"""
+    """Integration with SRD 5.2 Beyond API for monster data"""
     
     BASE_URL = "https://www.dndbeyond.com/api"
     
@@ -38,7 +38,7 @@ class DnDBeyondAPI:
             return data.get('results', [])
             
         except requests.RequestException as e:
-            print(f"D&D Beyond API error: {e}")
+            print(f"SRD 5.2 Beyond API error: {e}")
             return []
     
     def get_monster_details(self, monster_id: str) -> dict | None:
@@ -52,11 +52,11 @@ class DnDBeyondAPI:
             return response.json()
             
         except requests.RequestException as e:
-            print(f"D&D Beyond API error: {e}")
+            print(f"SRD 5.2 Beyond API error: {e}")
             return None
     
     def parse_monster_data(self, dndbeyond_data: dict) -> dict:
-        """Convert D&D Beyond format to our internal format"""
+        """Convert SRD 5.2 Beyond format to our internal format"""
         try:
             monster = {
                 'name': dndbeyond_data.get('name', 'Unknown'),
@@ -172,7 +172,7 @@ class DnDBeyondAPI:
             return monster
             
         except Exception as e:
-            print(f"Error parsing D&D Beyond data: {e}")
+            print(f"Error parsing SRD 5.2 Beyond data: {e}")
             return {}
     
     def get_monster_by_name(self, name: str) -> dict | None:
@@ -273,7 +273,7 @@ class Open5eAPI:
         return str(speed_data)
 
 class SRDMonsterData:
-    """Official D&D 5e SRD monster data"""
+    """Official SRD 5.2 5e SRD monster data"""
     
     @staticmethod
     def get_srd_monsters() -> list[dict]:

@@ -106,11 +106,11 @@ print("\n" + "="*60)
 print("  SUCCESS! ALL SYSTEMS WORKING!")
 print("="*60 + "\n")
 
-print("Your treasure and encounter systems are now using real D&D content!")
+print("Your treasure and encounter systems are now using real SRD 5.2 content!")
 print(f"\nYou have {monster_count} monsters and {item_count} items in your database.")
 print("\nNext steps:")
 print("  1. Create a campaign via the API")
 print("  2. Start encounters")
-print("  3. Collect treasure with real D&D items!")
+print("  3. Collect treasure with real SRD 5.2 items!")
 print()
 

@@ -1,5 +1,5 @@
 """
-D&D 5e Rest Mechanics Engine (SRD 5.1 & 2024 SRD 5.2)
+SRD 5.2 5e Rest Mechanics Engine (SRD 5.1 & 2024 SRD 5.2)
 
 Provides comprehensive short rest and long rest execution:
 - Hit Dice expenditure & HP recovery (with CON modifier)
@@ -425,7 +425,7 @@ def execute_long_rest(character, sync_combat: bool = True) -> Dict[str, Any]:
     stats.ki_points_used = 0
     stats.sorcery_points_used = 0
 
-    # 5. Clear Exhaustion by 1 level if present (2024 D&D Rules)
+    # 5. Clear Exhaustion by 1 level if present (2024 SRD 5.2 Rules)
     old_exhaustion = getattr(stats, 'exhaustion_level', 0) or 0
     stats.exhaustion_level = max(0, old_exhaustion - 1)
     exhaustion_recovered = 1 if old_exhaustion > stats.exhaustion_level else 0

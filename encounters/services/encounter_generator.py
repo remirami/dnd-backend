@@ -13,7 +13,7 @@ class EncounterGenerator:
     
     CHAOS_THRESHOLD = 0.05  # 5% chance of chaotic encounter
     
-    # XP thresholds per party level (D&D 5e standard)
+    # XP thresholds per party level (SRD 5.2 5e standard)
     XP_THRESHOLDS = {
         1: {'easy': 25, 'medium': 50, 'hard': 75, 'deadly': 100},
         2: {'easy': 50, 'medium': 100, 'hard': 150, 'deadly': 200},
@@ -230,7 +230,7 @@ class EncounterGenerator:
                 current_hp=hp
             )
         
-        # Estimate XP (simplified - in real D&D this is complex)
+        # Estimate XP (simplified - in real SRD 5.2 this is complex)
         cr = self._cr_to_float(enemy.challenge_rating)
         xp_per_enemy = self._cr_to_xp(cr)
         
@@ -256,7 +256,7 @@ class EncounterGenerator:
         return float(cr_string)
     
     def _cr_to_xp(self, cr):
-        """Convert CR to XP (D&D 5e standard)"""
+        """Convert CR to XP (SRD 5.2 5e standard)"""
         CR_XP_MAP = {
             0: 10, 0.125: 25, 0.25: 50, 0.5: 100,
             1: 200, 2: 450, 3: 700, 4: 1100, 5: 1800,

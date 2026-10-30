@@ -21,9 +21,13 @@ BLACKLIST_MONSTERS = [
 ]
 
 BLACKLIST_RACES = [
-    "Tortle", "Tabaxi", "Gith", "Aarakocra", "Genasi", "Goliath", "Aasimar", "Firbolg", "Kenku"
+    "Tortle", "Tabaxi", "Gith", "Aarakocra", "Genasi", "Aasimar", "Firbolg", "Kenku"
     # Note: Some of these are in SRD 5.1 (e.g. Deep Gnome is Svirfneblin, but name is protected?)
     # Actually most non-PHB races are not in SRD.
+]
+
+FORBIDDEN_2024_SPECIES = [
+    "Half-Elf (2024)", "Half-Orc (2024)", "Aasimar"
 ]
 
 BLACKLIST_SPELL_TERMS = [
@@ -51,6 +55,14 @@ def audit():
             print(f"!! VIOLATION: Found {count} instances of '{name}'")
             violations += 1
 
+    # Check 2024 Forbidden Species
+    print("\n[Scanning 2024 Forbidden Species...]")
+    for name in FORBIDDEN_2024_SPECIES:
+        count = CharacterRace.objects.filter(name__icontains=name, source_ruleset='2024').count()
+        if count > 0:
+            print(f"!! VIOLATION: Found {count} forbidden 2024 species '{name}'")
+            violations += count
+
     # Check Spells
     print("\n[Scanning Spells...]")
     for term in BLACKLIST_SPELL_TERMS:
@@ -62,9 +74,9 @@ def audit():
             violations += 1
             
     if violations == 0:
-        print("\n✅ CLEAN SCAN: No obvious violations found based on blacklist.")
+        print("\n[PASS] CLEAN SCAN: No obvious violations found based on blacklist.")
     else:
-        print(f"\n❌ FAILED: Found {violations} potential violations.")
+        print(f"\n[FAIL] FAILED: Found {violations} potential violations.")
 
 if __name__ == "__main__":
     audit()

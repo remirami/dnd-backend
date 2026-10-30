@@ -1,5 +1,5 @@
 """
-D&D 5e / SRD 5.2 Subclass Combat Specialization Engine
+SRD 5.2 5e / SRD 5.2 Subclass Combat Specialization Engine
 
 Implements the official SRD 5.2 mechanics for priority subclasses:
 1. Fighter — Champion: Improved Critical (19-20), Superior Critical (18-20), Remarkable Athlete, Survivor.

@@ -52,7 +52,7 @@ class Command(BaseCommand):
             self.stdout.write(self.style.NOTICE("\n=== Step 2: Fetching full Open5e monster dataset to fix damage formulas ==="))
             url = "https://api.open5e.com/v1/monsters/?limit=100"
             page = 1
-            headers = {'User-Agent': 'D&D-Campaign-Engine/1.9'}
+            headers = {'User-Agent': 'SRD 5.2-Campaign-Engine/1.9'}
             updated_monsters = 0
 
             while url:

@@ -6,7 +6,7 @@ from characters.models import CharacterClass
 
 class Spell(models.Model):
     """
-    Central spell library for D&D 5e spells.
+    Central spell library for SRD 5.2 5e spells.
     Integrates with Open5e API for comprehensive spell data.
     """
     SPELL_LEVEL_CHOICES = [

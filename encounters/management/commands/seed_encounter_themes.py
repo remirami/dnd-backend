@@ -11,7 +11,7 @@ from encounters.models import BiomeEncounterWeight, EncounterTheme, EnemyThemeAs
 
 
 class Command(BaseCommand):
-    help = 'Seed encounter themes with D&D 5e themed data'
+    help = 'Seed encounter themes with SRD 5.2 5e themed data'
 
     def handle(self, *args, **options):
         self.stdout.write('Seeding encounter themes...')

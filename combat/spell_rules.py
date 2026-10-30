@@ -1,7 +1,7 @@
 """
 Spell Rules Engine - Centralized 5e rules lookup and resolution for specific spells.
 
-Provides declarative rules definitions for D&D 5e spells, including:
+Provides declarative rules definitions for SRD 5.2 5e spells, including:
 - Attack-roll vs saving-throw mechanics
 - Range and target constraints (e.g., humanoid only, no undead healing)
 - Post-cast riders (e.g., Shocking Grasp reaction denial, Ray of Frost speed reduction)
@@ -946,14 +946,220 @@ SPELL_RULES = {
         'requires_concentration': False,
         'description': 'A shimmering, multicolored plane of light forms an opaque wall with seven distinct layers of destructive power.',
     },
+    # --- SRD 5.2 Added Spells ---
+    'aura of life': {
+        'base_level': 4,
+        'range': 'Self',
+        'is_buff': True,
+        'requires_concentration': True,
+        'description': 'Nonhostile living creatures in 30 ft aura gain necrotic resistance and regain 1 HP at start of turn if at 0 HP.',
+    },
+    'charm monster': {
+        'base_level': 4,
+        'range': '30 feet',
+        'requires_saving_throw': True,
+        'save_type': 'WIS',
+        'applies_condition': 'charmed',
+    },
+    'chromatic orb': {
+        'base_level': 1,
+        'range': '90 feet',
+        'requires_attack_roll': True,
+        'attack_type': 'ranged_spell',
+        'damage_type': 'elemental_choice',
+        'damage': '3d8 elemental_choice',
+    },
+    'dissonant whispers': {
+        'base_level': 1,
+        'range': '60 feet',
+        'requires_saving_throw': True,
+        'save_type': 'WIS',
+        'damage_type': 'psychic',
+        'damage': '3d6 psychic',
+        'half_on_save': True,
+    },
+    'divine smite': {
+        'base_level': 1,
+        'range': 'Self',
+        'is_bonus_action': True,
+        'damage_type': 'radiant',
+        'damage': '2d8 radiant',
+        'description': 'Channels holy power on hit. Extra 1d8 if target is Fiend or Undead.',
+    },
+    "dragon's breath": {
+        'base_level': 2,
+        'range': 'Touch',
+        'is_bonus_action': True,
+        'requires_concentration': True,
+        'damage': '3d6 elemental_choice',
+    },
+    'elementalism': {
+        'base_level': 0,
+        'range': '30 feet',
+        'description': 'Minor elemental manipulation cantrip.',
+    },
+    'ensnaring strike': {
+        'base_level': 1,
+        'range': 'Self',
+        'is_bonus_action': True,
+        'requires_concentration': True,
+        'requires_saving_throw': True,
+        'save_type': 'STR',
+        'applies_condition': 'restrained',
+        'damage_type': 'piercing',
+        'damage': '1d6 piercing',
+    },
+    'hex': {
+        'base_level': 1,
+        'range': '90 feet',
+        'is_bonus_action': True,
+        'requires_concentration': True,
+        'damage_type': 'necrotic',
+        'damage': '1d6 necrotic',
+    },
+    'ice knife': {
+        'base_level': 1,
+        'range': '60 feet',
+        'requires_attack_roll': True,
+        'attack_type': 'ranged_spell',
+        'damage_type': 'piercing',
+        'damage': '1d10 piercing',
+        'secondary_save_type': 'DEX',
+        'secondary_damage': '2d6 cold',
+    },
+    'mind spike': {
+        'base_level': 2,
+        'range': '60 feet',
+        'requires_saving_throw': True,
+        'save_type': 'WIS',
+        'damage_type': 'psychic',
+        'damage': '3d8 psychic',
+        'half_on_save': True,
+    },
+    'phantasmal force': {
+        'base_level': 2,
+        'range': '60 feet',
+        'requires_saving_throw': True,
+        'save_type': 'INT',
+        'requires_concentration': True,
+        'damage_type': 'psychic',
+        'damage': '1d6 psychic',
+    },
+    'power word heal': {
+        'base_level': 9,
+        'range': 'Touch',
+        'is_healing': True,
+        'healing': 'max_hp',
+        'no_undead_or_construct': True,
+        'description': 'Target regains all HP and ends Charmed, Frightened, Paralyzed, and Stunned.',
+    },
+    'ray of sickness': {
+        'base_level': 1,
+        'range': '60 feet',
+        'requires_attack_roll': True,
+        'attack_type': 'ranged_spell',
+        'damage_type': 'poison',
+        'damage': '2d8 poison',
+        'applies_condition': 'poisoned',
+        'save_type': 'CON',
+    },
+    'searing smite': {
+        'base_level': 1,
+        'range': 'Self',
+        'is_bonus_action': True,
+        'requires_concentration': True,
+        'damage_type': 'fire',
+        'damage': '1d6 fire',
+    },
+    'sorcerous burst': {
+        'base_level': 0,
+        'range': '120 feet',
+        'requires_attack_roll': True,
+        'attack_type': 'ranged_spell',
+        'damage_type': 'elemental_choice',
+        'damage': '1d8 elemental_choice',
+    },
+    'starry wisp': {
+        'base_level': 0,
+        'range': '60 feet',
+        'requires_attack_roll': True,
+        'attack_type': 'ranged_spell',
+        'damage_type': 'radiant',
+        'damage': '1d8 radiant',
+    },
+    'summon dragon': {
+        'base_level': 5,
+        'range': '90 feet',
+        'requires_concentration': True,
+        'description': 'Calls forth a draconic spirit companion.',
+    },
+    'tsunami': {
+        'base_level': 8,
+        'range': 'Sight',
+        'requires_concentration': True,
+        'requires_saving_throw': True,
+        'save_type': 'STR',
+        'damage_type': 'bludgeoning',
+        'damage': '6d10 bludgeoning',
+    },
+    'vitriolic sphere': {
+        'base_level': 4,
+        'range': '150 feet',
+        'requires_saving_throw': True,
+        'save_type': 'DEX',
+        'damage_type': 'acid',
+        'damage': '10d4 acid',
+        'half_on_save': True,
+    },
+
 }
 
 
-def get_spell_rule(spell_name):
-    """Retrieve rule definition for a spell by name (case-insensitive)."""
+
+# 2024 Specific Revisions (Backward compatible: only used when ruleset='2024')
+SPELL_RULES_2024 = {
+    'cure wounds': {
+        'base_level': 1,
+        'range': 'Touch',
+        'is_healing': True,
+        'healing': '2d8',
+        'no_undead_or_construct': True,
+    },
+    'healing word': {
+        'base_level': 1,
+        'range': '60 feet',
+        'is_healing': True,
+        'healing': '2d4',
+        'is_bonus_action': True,
+        'no_undead_or_construct': True,
+    },
+    'mass cure wounds': {
+        'base_level': 5,
+        'range': '60 feet',
+        'is_healing': True,
+        'healing': '5d8',
+        'no_undead_or_construct': True,
+    },
+    'true strike': {
+        'range': 'Self',
+        'requires_attack_roll': True,
+        'attack_type': 'melee_spell',
+        'damage_type': 'radiant',
+        'damage': '1d6 radiant',
+        'description': 'Attack made with your spellcasting ability modifier, dealing extra radiant damage.',
+    },
+}
+
+def get_spell_rule(spell_name, ruleset='2014'):
+    """
+    Retrieve rule definition for a spell by name (case-insensitive).
+    Backward-compatible: if ruleset is '2024', checks SPELL_RULES_2024 first.
+    """
     if not spell_name:
         return {}
     clean = str(spell_name).strip().lower()
+    if ruleset == '2024' and clean in SPELL_RULES_2024:
+        return SPELL_RULES_2024[clean]
     return SPELL_RULES.get(clean, {})
 
 
@@ -970,7 +1176,7 @@ CANTRIP_NAMES = {
     'word of radiance', 'guidance', 'spare the dying', 'resistance',
     'mage hand', 'light', 'minor illusion', 'prestidigitation', 'true strike',
     'produce flame', 'shillelagh', 'thunderclap', 'mind sliver', 'frostbite',
-    'infestation', 'create bonfire', 'lightning lure', 'sword burst',
+    'infestation', 'create bonfire', 'lightning lure', 'sword burst', 'sorcerous burst', 'starry wisp', 'elementalism',
     'mending', 'message', 'dancing lights', 'druidcraft', 'thaumaturgy'
 }
 
@@ -991,7 +1197,7 @@ def is_cantrip(spell_name):
 
 def get_cantrip_multiplier(level):
     """
-    D&D 5e Cantrip scaling multiplier based on character level / CR:
+    SRD 5.2 5e Cantrip scaling multiplier based on character level / CR:
     - Levels 1-4: 1x (1 die)
     - Levels 5-10: 2x (2 dice)
     - Levels 11-16: 3x (3 dice)
@@ -1053,7 +1259,7 @@ def get_spell_base_level(spell_name, spell_obj=None, aoe_template=None):
 def scale_upcast_spell_damage(spell_name, formula, base_level, cast_slot_level):
     """
     Scales a leveled spell damage/healing formula when cast using a higher-level spell slot.
-    D&D 5e Upcasting rules:
+    SRD 5.2 5e Upcasting rules:
     - Standard additive: +1 die per slot level above base level (e.g. Fireball 8d6 @ lvl 3 -> 9d6 @ lvl 4, 10d6 @ lvl 5)
     - Scorching Ray: +2d6 (1 additional ray) per slot level above 2nd (6d6 @ lvl 2 -> 8d6 @ lvl 3, 10d6 @ lvl 4)
     - Sleep: +2d8 per slot level above 1st (5d8 @ lvl 1 -> 7d8 @ lvl 2, 9d8 @ lvl 3)
